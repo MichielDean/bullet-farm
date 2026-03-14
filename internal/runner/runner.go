@@ -1,5 +1,5 @@
 // Package runner manages named workers, persistent sandboxes, and Claude Code
-// sessions for executing workflow steps against beads.
+// sessions for executing workflow steps against work items.
 package runner
 
 import (
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/MichielDean/bullet-farm/internal/bd"
+	"github.com/MichielDean/bullet-farm/internal/queue"
 	"github.com/MichielDean/bullet-farm/internal/workflow"
 )
 
@@ -26,7 +26,7 @@ type Worker struct {
 type Runner struct {
 	repo     workflow.RepoConfig
 	workflow *workflow.Workflow
-	bd       *bd.Client
+	queue    *queue.Client
 
 	workers          []*Worker
 	sandboxBase      string // ~/.bullet-farm/sandboxes/<repo>/
@@ -39,7 +39,7 @@ type Runner struct {
 type Config struct {
 	Repo              workflow.RepoConfig
 	Workflow          *workflow.Workflow
-	BdClient          *bd.Client
+	QueueClient       *queue.Client
 	SandboxRoot       string // Override for sandbox root dir (default: ~/.bullet-farm/sandboxes)
 	HandoffThreshold  int    // Token threshold for session handoff (default: 150000)
 }
@@ -51,8 +51,8 @@ func New(cfg Config) (*Runner, error) {
 	if cfg.Workflow == nil {
 		return nil, fmt.Errorf("runner: workflow is required")
 	}
-	if cfg.BdClient == nil {
-		return nil, fmt.Errorf("runner: bd client is required")
+	if cfg.QueueClient == nil {
+		return nil, fmt.Errorf("runner: queue client is required")
 	}
 
 	sandboxRoot := cfg.SandboxRoot
@@ -79,7 +79,7 @@ func New(cfg Config) (*Runner, error) {
 	return &Runner{
 		repo:             cfg.Repo,
 		workflow:         cfg.Workflow,
-		bd:               cfg.BdClient,
+		queue:            cfg.QueueClient,
 		workers:          workers,
 		sandboxBase:      repoSandboxDir,
 		handoffThreshold: handoff,
@@ -148,11 +148,11 @@ func (r *Runner) IdleCount() int {
 	return n
 }
 
-// RunStep executes a single workflow step for a bead on the given worker.
+// RunStep executes a single workflow step for an item on the given worker.
 // It prepares the sandbox, builds context, spawns a Claude Code session,
 // polls for outcome, and returns the result.
-func (r *Runner) RunStep(w *Worker, bead *bd.Bead, step *workflow.WorkflowStep) (*Outcome, error) {
-	log.Printf("runner: %s/%s: step %q for bead %s", r.repo.Name, w.Name, step.Name, bead.ID)
+func (r *Runner) RunStep(w *Worker, item *queue.WorkItem, step *workflow.WorkflowStep) (*Outcome, error) {
+	log.Printf("runner: %s/%s: step %q for item %s", r.repo.Name, w.Name, step.Name, item.ID)
 
 	// 1. Ensure sandbox is ready (clone or pull).
 	if err := EnsureSandbox(w.SandboxDir, r.repo.URL); err != nil {
@@ -160,15 +160,15 @@ func (r *Runner) RunStep(w *Worker, bead *bd.Bead, step *workflow.WorkflowStep) 
 	}
 
 	// 2. Prepare context directory and CONTEXT.md.
-	notes, err := r.bd.GetNotes(bead.ID)
+	notes, err := r.queue.GetNotes(item.ID)
 	if err != nil {
-		log.Printf("runner: warning: could not fetch notes for %s: %v", bead.ID, err)
+		log.Printf("runner: warning: could not fetch notes for %s: %v", item.ID, err)
 	}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      step.Context,
 		SandboxDir: w.SandboxDir,
-		Bead:       bead,
+		Item:       item,
 		Step:       step,
 		Notes:      notes,
 	})

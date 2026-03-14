@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MichielDean/bullet-farm/internal/bd"
+	"github.com/MichielDean/bullet-farm/internal/queue"
 	"github.com/MichielDean/bullet-farm/internal/workflow"
 )
 
@@ -15,9 +15,9 @@ import (
 type ContextParams struct {
 	Level      workflow.ContextLevel
 	SandboxDir string
-	Bead       *bd.Bead
+	Item       *queue.WorkItem
 	Step       *workflow.WorkflowStep
-	Notes      []bd.StepNote
+	Notes      []queue.StepNote
 }
 
 // PrepareContext sets up the working directory for a step based on its context level.
@@ -82,7 +82,7 @@ func prepareDiffOnly(p ContextParams) (string, func(), error) {
 }
 
 // prepareSpecOnly creates a tmpdir with only spec.md and CONTEXT.md.
-// The agent sees only the bead description and step notes — no code.
+// The agent sees only the item description and step notes — no code.
 func prepareSpecOnly(p ContextParams) (string, func(), error) {
 	tmpDir, err := os.MkdirTemp("", "bf-spec-*")
 	if err != nil {
@@ -91,7 +91,7 @@ func prepareSpecOnly(p ContextParams) (string, func(), error) {
 	cleanup := func() { os.RemoveAll(tmpDir) }
 
 	specPath := filepath.Join(tmpDir, "spec.md")
-	spec := buildSpecContent(p.Bead)
+	spec := buildSpecContent(p.Item)
 	if err := os.WriteFile(specPath, []byte(spec), 0644); err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("write spec.md: %w", err)
@@ -106,23 +106,23 @@ func prepareSpecOnly(p ContextParams) (string, func(), error) {
 	return tmpDir, cleanup, nil
 }
 
-// writeContextFile writes CONTEXT.md with bead info and prior step notes.
+// writeContextFile writes CONTEXT.md with item info and prior step notes.
 func writeContextFile(path string, p ContextParams) error {
 	var b strings.Builder
 
 	b.WriteString("# Context\n\n")
-	b.WriteString(fmt.Sprintf("## Bead: %s\n\n", p.Bead.ID))
-	b.WriteString(fmt.Sprintf("**Title:** %s\n", p.Bead.Title))
-	b.WriteString(fmt.Sprintf("**Status:** %s\n", p.Bead.Status))
-	b.WriteString(fmt.Sprintf("**Priority:** %d\n", p.Bead.Priority))
-	if p.Bead.Assignee != "" {
-		b.WriteString(fmt.Sprintf("**Assignee:** %s\n", p.Bead.Assignee))
+	b.WriteString(fmt.Sprintf("## Item: %s\n\n", p.Item.ID))
+	b.WriteString(fmt.Sprintf("**Title:** %s\n", p.Item.Title))
+	b.WriteString(fmt.Sprintf("**Status:** %s\n", p.Item.Status))
+	b.WriteString(fmt.Sprintf("**Priority:** %d\n", p.Item.Priority))
+	if p.Item.Assignee != "" {
+		b.WriteString(fmt.Sprintf("**Assignee:** %s\n", p.Item.Assignee))
 	}
 	b.WriteString("\n")
 
-	if p.Bead.Description != "" {
+	if p.Item.Description != "" {
 		b.WriteString("### Description\n\n")
-		b.WriteString(p.Bead.Description)
+		b.WriteString(p.Item.Description)
 		b.WriteString("\n\n")
 	}
 
@@ -142,10 +142,10 @@ func writeContextFile(path string, p ContextParams) error {
 	if len(p.Notes) > 0 {
 		b.WriteString("## Prior Step Notes\n\n")
 		for _, n := range p.Notes {
-			if n.FromStep != "" {
-				b.WriteString(fmt.Sprintf("### From: %s\n\n", n.FromStep))
+			if n.StepName != "" {
+				b.WriteString(fmt.Sprintf("### From: %s\n\n", n.StepName))
 			}
-			b.WriteString(n.Text)
+			b.WriteString(n.Content)
 			b.WriteString("\n\n")
 		}
 	}
@@ -174,21 +174,16 @@ func generateDiff(sandboxDir string) ([]byte, error) {
 	return out, nil
 }
 
-// buildSpecContent creates a markdown spec from the bead description.
-func buildSpecContent(bead *bd.Bead) string {
+// buildSpecContent creates a markdown spec from the item description.
+func buildSpecContent(item *queue.WorkItem) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("# %s\n\n", bead.Title))
-	b.WriteString(fmt.Sprintf("**ID:** %s\n", bead.ID))
-	b.WriteString(fmt.Sprintf("**Priority:** %d\n\n", bead.Priority))
-	if bead.Description != "" {
+	b.WriteString(fmt.Sprintf("# %s\n\n", item.Title))
+	b.WriteString(fmt.Sprintf("**ID:** %s\n", item.ID))
+	b.WriteString(fmt.Sprintf("**Priority:** %d\n\n", item.Priority))
+	if item.Description != "" {
 		b.WriteString("## Description\n\n")
-		b.WriteString(bead.Description)
+		b.WriteString(item.Description)
 		b.WriteString("\n\n")
-	}
-	if bead.Notes != "" {
-		b.WriteString("## Notes\n\n")
-		b.WriteString(bead.Notes)
-		b.WriteString("\n")
 	}
 	return b.String()
 }

@@ -169,8 +169,8 @@ func TestValidateDuplicateStepName(t *testing.T) {
 func TestValidateFarmConfig_Valid(t *testing.T) {
 	cfg := &FarmConfig{
 		Repos: []RepoConfig{
-			{Name: "ScaledTest", Workers: 2, Names: []string{"max", "furiosa"}, BdPrefix: "st-"},
-			{Name: "bullet_farm", Workers: 1, Names: []string{"immortan"}, BdPrefix: "bf-"},
+			{Name: "ScaledTest", Workers: 2, Names: []string{"max", "furiosa"}, Prefix: "st"},
+			{Name: "bullet_farm", Workers: 1, Names: []string{"immortan"}, Prefix: "bf"},
 		},
 		MaxTotalWorkers: 3,
 	}
@@ -201,8 +201,8 @@ func TestValidateFarmConfig_MaxTotalWorkersZero(t *testing.T) {
 func TestValidateFarmConfig_DuplicateRepoName(t *testing.T) {
 	cfg := &FarmConfig{
 		Repos: []RepoConfig{
-			{Name: "dup", Workers: 1, BdPrefix: "a-"},
-			{Name: "dup", Workers: 1, BdPrefix: "b-"},
+			{Name: "dup", Workers: 1, Prefix: "a"},
+			{Name: "dup", Workers: 1, Prefix: "b"},
 		},
 		MaxTotalWorkers: 2,
 	}
@@ -212,17 +212,17 @@ func TestValidateFarmConfig_DuplicateRepoName(t *testing.T) {
 	}
 }
 
-func TestValidateFarmConfig_DuplicateBdPrefix(t *testing.T) {
+func TestValidateFarmConfig_DuplicatePrefix(t *testing.T) {
 	cfg := &FarmConfig{
 		Repos: []RepoConfig{
-			{Name: "r1", Workers: 1, BdPrefix: "shared-"},
-			{Name: "r2", Workers: 1, BdPrefix: "shared-"},
+			{Name: "r1", Workers: 1, Prefix: "shared"},
+			{Name: "r2", Workers: 1, Prefix: "shared"},
 		},
 		MaxTotalWorkers: 2,
 	}
 	err := ValidateFarmConfig(cfg)
-	if err == nil || !strings.Contains(err.Error(), "share bd_prefix") {
-		t.Errorf("expected shared bd_prefix error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "share prefix") {
+		t.Errorf("expected shared prefix error, got %v", err)
 	}
 }
 

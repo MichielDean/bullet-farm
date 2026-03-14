@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/bd"
+	"github.com/MichielDean/bullet-farm/internal/queue"
 	"github.com/MichielDean/bullet-farm/internal/workflow"
 )
 
@@ -55,83 +55,81 @@ func featureWorkflow() *workflow.Workflow {
 
 // --- pipeline-aware mocks ---
 
-// pipelineClient tracks a single bead through the entire workflow,
-// re-presenting it to GetReady with updated metadata until it reaches
+// pipelineClient tracks a single item through the entire workflow,
+// re-presenting it to GetReady with updated state until it reaches
 // a terminal state. Unlike the queue-based mockClient, this simulates
-// a bead that persists in the work queue until completion.
+// an item that persists in the work queue until completion.
 type pipelineClient struct {
 	mu        sync.Mutex
-	bead      bd.Bead
-	stepLog   []string       // every UpdateStep call in order
+	item      queue.WorkItem
+	stepLog   []string       // every Assign/CloseItem call in order
 	attached  []attachedNote // notes attached by steps
-	notes     []bd.StepNote  // accumulated notes (returned by GetNotes)
-	escalated string         // non-empty if escalated
+	notes     []queue.StepNote
+	escalated string
 	attempts  map[string]int
 	terminal  bool
 }
 
-func newPipelineClient(b bd.Bead) *pipelineClient {
+func newPipelineClient(item queue.WorkItem) *pipelineClient {
 	return &pipelineClient{
-		bead:     b,
+		item:     item,
 		attempts: make(map[string]int),
 	}
 }
 
-func (c *pipelineClient) GetReady(rig string) (*bd.Bead, error) {
+func (c *pipelineClient) GetReady(repo string) (*queue.WorkItem, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.terminal {
 		return nil, nil
 	}
-	// Return a copy with current metadata.
-	b := c.bead
-	if c.bead.Metadata != nil {
-		b.Metadata = make(map[string]any)
-		for k, v := range c.bead.Metadata {
-			b.Metadata[k] = v
-		}
-	}
-	return &b, nil
+	// Return a copy with current state.
+	item := c.item
+	return &item, nil
 }
 
-func (c *pipelineClient) UpdateStep(id, step string) error {
+func (c *pipelineClient) Assign(id, worker, step string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.stepLog = append(c.stepLog, step)
-	if c.bead.Metadata == nil {
-		c.bead.Metadata = make(map[string]any)
+	// Reset attempts when step changes (matches real queue behavior).
+	if c.item.CurrentStep != step {
+		c.attempts[id] = 0
 	}
-	c.bead.Metadata["step"] = step
-	if step == "done" {
-		c.terminal = true
+	c.stepLog = append(c.stepLog, step)
+	c.item.CurrentStep = step
+	if worker != "" {
+		c.item.Status = "in_progress"
+		c.item.Assignee = worker
+	} else {
+		c.item.Status = "open"
+		c.item.Assignee = ""
 	}
 	return nil
 }
 
-func (c *pipelineClient) IncrementAttempts(id, step string) (int, error) {
+func (c *pipelineClient) IncrementAttempts(id string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := id + ":" + step
-	c.attempts[key]++
-	return c.attempts[key], nil
+	c.attempts[id]++
+	return c.attempts[id], nil
 }
 
-func (c *pipelineClient) AttachNotes(id, fromStep, notes string) error {
+func (c *pipelineClient) AddNote(id, fromStep, notes string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.attached = append(c.attached, attachedNote{id, fromStep, notes})
-	c.notes = append(c.notes, bd.StepNote{
-		IssueID:  id,
-		FromStep: fromStep,
-		Text:     notes,
+	c.notes = append(c.notes, queue.StepNote{
+		ItemID:   id,
+		StepName: fromStep,
+		Content:  notes,
 	})
 	return nil
 }
 
-func (c *pipelineClient) GetNotes(id string) ([]bd.StepNote, error) {
+func (c *pipelineClient) GetNotes(id string) ([]queue.StepNote, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	result := make([]bd.StepNote, len(c.notes))
+	result := make([]queue.StepNote, len(c.notes))
 	copy(result, c.notes)
 	return result, nil
 }
@@ -140,6 +138,14 @@ func (c *pipelineClient) Escalate(id, reason string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.escalated = reason
+	c.terminal = true
+	return nil
+}
+
+func (c *pipelineClient) CloseItem(id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stepLog = append(c.stepLog, "done")
 	c.terminal = true
 	return nil
 }
@@ -191,20 +197,20 @@ func smokeConfig() workflow.FarmConfig {
 	return workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
 			{
-				Name:     "bullet-farm",
-				Workers:  1,
-				Names:    []string{"smoker"},
-				BdPrefix: "bf",
+				Name:    "bullet-farm",
+				Workers: 1,
+				Names:   []string{"smoker"},
+				Prefix:  "bf",
 			},
 		},
 		MaxTotalWorkers: 1,
 	}
 }
 
-func smokeScheduler(client BeadClient, runner StepRunner) *Scheduler {
+func smokeScheduler(client QueueClient, runner StepRunner) *Scheduler {
 	config := smokeConfig()
 	workflows := map[string]*workflow.Workflow{"bullet-farm": featureWorkflow()}
-	clients := map[string]BeadClient{"bullet-farm": client}
+	clients := map[string]QueueClient{"bullet-farm": client}
 	return NewFromParts(config, workflows, clients, runner)
 }
 
@@ -219,11 +225,11 @@ func advanceStep(t *testing.T, sched *Scheduler, runner *stepSequenceRunner) {
 
 // --- smoke tests ---
 
-// TestSmoke_FeatureWorkflow_HappyPath drives a bead through the complete
+// TestSmoke_FeatureWorkflow_HappyPath drives an item through the complete
 // feature pipeline: implement → review → qa → merge → done.
 // Verifies step routing, context levels, notes attachment, and terminal state.
 func TestSmoke_FeatureWorkflow_HappyPath(t *testing.T) {
-	client := newPipelineClient(bd.Bead{
+	client := newPipelineClient(queue.WorkItem{
 		ID:          "bf-smoke-1",
 		Title:       "Smoke test: add trivial comment",
 		Description: "Add a test comment to verify the pipeline end-to-end",
@@ -247,10 +253,11 @@ func TestSmoke_FeatureWorkflow_HappyPath(t *testing.T) {
 	defer client.mu.Unlock()
 
 	if !client.terminal {
-		t.Fatal("bead should have reached terminal state")
+		t.Fatal("item should have reached terminal state")
 	}
 
-	// Each step calls UpdateStep twice: once to set current, once to advance.
+	// Each step calls Assign twice: once to set current (with worker), once to advance (empty worker).
+	// Plus CloseItem appends "done".
 	// implement→review, review→qa, qa→merge, merge→done
 	wantLog := []string{
 		"implement", "review",
@@ -317,10 +324,10 @@ func TestSmoke_FeatureWorkflow_HappyPath(t *testing.T) {
 }
 
 // TestSmoke_FeatureWorkflow_RevisionLoop tests the review→implement
-// revision loop: review sends "revision" → bead returns to implement →
+// revision loop: review sends "revision" → item returns to implement →
 // second attempt passes review → continues to qa → merge → done.
 func TestSmoke_FeatureWorkflow_RevisionLoop(t *testing.T) {
-	client := newPipelineClient(bd.Bead{
+	client := newPipelineClient(queue.WorkItem{
 		ID:    "bf-smoke-2",
 		Title: "Smoke test: revision loop",
 	})
@@ -349,7 +356,7 @@ func TestSmoke_FeatureWorkflow_RevisionLoop(t *testing.T) {
 	defer client.mu.Unlock()
 
 	if !client.terminal {
-		t.Fatal("bead should have reached terminal state")
+		t.Fatal("item should have reached terminal state")
 	}
 
 	// Step log for the revision loop.
@@ -390,7 +397,7 @@ func TestSmoke_FeatureWorkflow_RevisionLoop(t *testing.T) {
 // TestSmoke_NotesForwarding verifies that each step receives accumulated
 // notes from all prior steps via context forwarding.
 func TestSmoke_NotesForwarding(t *testing.T) {
-	client := newPipelineClient(bd.Bead{
+	client := newPipelineClient(queue.WorkItem{
 		ID:    "bf-smoke-3",
 		Title: "Smoke test: notes forwarding",
 	})
@@ -418,9 +425,9 @@ func TestSmoke_NotesForwarding(t *testing.T) {
 	// review (step 1): 1 note from implement.
 	if len(runner.calls[1].Notes) != 1 {
 		t.Errorf("review should have 1 prior note, got %d", len(runner.calls[1].Notes))
-	} else if runner.calls[1].Notes[0].FromStep != "implement" {
-		t.Errorf("review note[0].FromStep = %q, want %q",
-			runner.calls[1].Notes[0].FromStep, "implement")
+	} else if runner.calls[1].Notes[0].StepName != "implement" {
+		t.Errorf("review note[0].StepName = %q, want %q",
+			runner.calls[1].Notes[0].StepName, "implement")
 	}
 
 	// qa (step 2): 2 notes (implement + review).
@@ -437,7 +444,7 @@ func TestSmoke_NotesForwarding(t *testing.T) {
 // TestSmoke_QAFailReturnsToImplement verifies that a QA failure routes
 // back to the implement step (not to blocked).
 func TestSmoke_QAFailReturnsToImplement(t *testing.T) {
-	client := newPipelineClient(bd.Bead{
+	client := newPipelineClient(queue.WorkItem{
 		ID:    "bf-smoke-4",
 		Title: "Smoke test: QA failure loop",
 	})
@@ -460,17 +467,8 @@ func TestSmoke_QAFailReturnsToImplement(t *testing.T) {
 
 	sched := smokeScheduler(client, runner)
 
-	// 8 steps: impl, review, qa(fail), impl, review, qa(pass), merge, done... wait
 	// implement → review → qa(fail) → implement → review → qa(pass) → merge → done
 	// That's 7 ticks of work.
-	// Actually: each "step" is one tick. So:
-	// tick 1: implement(pass)
-	// tick 2: review(pass)
-	// tick 3: qa(fail) → routes to implement
-	// tick 4: implement(pass)
-	// tick 5: review(pass)
-	// tick 6: qa(pass) → routes to merge
-	// tick 7: merge(pass) → done
 	for i := 0; i < 7; i++ {
 		advanceStep(t, sched, runner)
 	}
@@ -479,7 +477,7 @@ func TestSmoke_QAFailReturnsToImplement(t *testing.T) {
 	defer client.mu.Unlock()
 
 	if !client.terminal {
-		t.Fatal("bead should have reached terminal state")
+		t.Fatal("item should have reached terminal state")
 	}
 
 	// Verify qa failure routed back to implement (not blocked).

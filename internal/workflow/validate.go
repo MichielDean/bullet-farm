@@ -121,7 +121,7 @@ func ValidateFarmConfig(cfg *FarmConfig) error {
 	}
 
 	repoNames := make(map[string]bool, len(cfg.Repos))
-	bdPrefixes := make(map[string]string, len(cfg.Repos))
+	prefixes := make(map[string]string, len(cfg.Repos))
 
 	for i, repo := range cfg.Repos {
 		if repo.Name == "" {
@@ -132,11 +132,11 @@ func ValidateFarmConfig(cfg *FarmConfig) error {
 		}
 		repoNames[repo.Name] = true
 
-		if repo.BdPrefix != "" {
-			if other, ok := bdPrefixes[repo.BdPrefix]; ok {
-				return fmt.Errorf("farm config: repos %q and %q share bd_prefix %q", other, repo.Name, repo.BdPrefix)
+		if repo.Prefix != "" {
+			if other, ok := prefixes[repo.Prefix]; ok {
+				return fmt.Errorf("farm config: repos %q and %q share prefix %q", other, repo.Name, repo.Prefix)
 			}
-			bdPrefixes[repo.BdPrefix] = repo.Name
+			prefixes[repo.Prefix] = repo.Name
 		}
 
 		// Determine effective worker count.

@@ -1,4 +1,4 @@
-# Bullet Farm 🌾
+# Bullet Farm
 
 Agentic workflow orchestrator for software development. Composable AI pipelines
 where each step is either an AI agent doing cognitive work or automated code
@@ -7,9 +7,9 @@ doing mechanical work — and the two never get confused.
 ## The Problem with Pure AI Orchestration
 
 When you use an AI agent to decide what to run next, schedule work, and route
-outcomes, you're burning tokens on things a state machine does better. Gastown,
-CrewAI, AutoGen — they all have this problem. The coordination layer is AI when
-it shouldn't be.
+outcomes, you're burning tokens on things a state machine does better. CrewAI,
+AutoGen — they all have this problem. The coordination layer is AI when it
+shouldn't be.
 
 Bullet Farm flips this: **AI does cognitive work, code does mechanical work.**
 
@@ -73,17 +73,17 @@ Steps have a `type`:
 
 Each `agent` step uses a role. Roles are defined by a `CLAUDE.md` in `roles/`:
 
-- **implementer** — writes code for the bead, full codebase context
+- **implementer** — writes code for the work item, full codebase context
 - **reviewer** — adversarial code review, sees only the diff (no author, no history)
 - **qa** — writes and runs tests, full codebase context
 - **security** — security-focused audit, diff_only context
 - **docs** — updates documentation
-- **refiner** — takes a vague bead and sharpens it into an implementable spec
+- **refiner** — takes a vague work item and sharpens it into an implementable spec
 
 Context levels:
 - `full_codebase` — agent has full repo access
 - `diff_only` — agent receives only `git diff` output, no repo access (adversarial isolation)
-- `spec_only` — agent receives only the bead description
+- `spec_only` — agent receives only the work item description
 
 ### Context Isolation
 
@@ -93,7 +93,7 @@ A reviewer with `context: diff_only` gets:
 - A fresh tmux session
 - A temp directory with only the diff file
 - No git history
-- No bead description
+- No work item description
 - No author attribution
 
 The scheduler controls this. The reviewer agent cannot accidentally see what it
@@ -120,13 +120,15 @@ implementer sees the reviewer's notes when the work comes back).
 ```
 bullet-farm/
   cmd/
-    farm/               # main binary — scheduler + CLI
+    bt/                 # bt CLI — queue management and farm control
+    farm/               # farm binary — scheduler + CLI
   internal/
     scheduler/          # step scheduling, state machine
     workflow/           # YAML parser, workflow definitions
-    agent/              # Claude Code session management
-    bd/                 # bd client (work queue)
+    runner/             # Claude Code session management (was agent/)
+    queue/              # SQLite-backed work queue
     context/            # context preparation per step type
+    automated/          # deterministic step executors (PR create, CI gate, merge)
   workflows/
     feature.yaml        # default feature workflow
     bug.yaml            # bug fix (no refine step needed)
@@ -139,24 +141,42 @@ bullet-farm/
     security/CLAUDE.md
     refiner/CLAUDE.md
     docs/CLAUDE.md
-  config.yaml           # farm config (bd connection, agent limits, etc.)
+  config.yaml           # farm config (queue, agent limits, etc.)
 ```
 
 ## Work Queue
 
-Bullet Farm uses [bd](https://github.com/steveyegge/gastown) for the work queue.
-Beads drive the pipeline. Each bead has a `workflow` field that determines which
-pipeline it enters. The scheduler polls `bd ready` and assigns beads to the
-appropriate step agent.
+Bullet Farm uses a SQLite-backed work queue. Work items drive the pipeline.
+Each item flows through a workflow where the scheduler polls for ready items
+and assigns them to the appropriate step agent.
 
-Bead lifecycle:
+Work item lifecycle:
 
 ```
-open → assigned(implement) → assigned(review) → assigned(qa) → merged → closed
+open → in_progress(implement) → in_progress(review) → in_progress(qa) → closed
 ```
 
-The bead's status in bd always reflects which step it's at. No separate state
-store needed.
+The item's `current_step` field always reflects which step it's at. The
+`status` field tracks whether it's `open`, `in_progress`, `closed`, or
+`escalated`.
+
+## CLI
+
+The `bt` command manages the work queue and farm:
+
+```
+bt queue add --title "..." --description "..." --priority 1 --repo github.com/Org/Repo
+bt queue list [--repo <repo>] [--status open|in_progress|closed|escalated]
+bt queue show <id>
+bt queue note <id> "content"
+bt queue close <id>
+bt queue reopen <id>
+bt queue escalate <id> --reason "stuck"
+bt farm start [--config config.yaml]
+bt farm status
+bt farm config validate <path>
+bt version
+```
 
 ## Key Design Decisions
 
@@ -165,9 +185,9 @@ Routing is deterministic. The reviewer either passes or requests revision. Using
 an AI to decide that introduces latency, cost, and nondeterminism where none is
 needed.
 
-**Why not replace bd?**
-bd is good. Dolt-backed, git-history on every bead change, solid CLI. The work
-queue is solved. Bullet Farm is the pipeline on top of it.
+**Why SQLite for the queue?**
+SQLite is embedded, zero-dependency, and handles our concurrency needs. No
+external services to manage. The queue database lives at `~/.bullet-farm/queue.db`.
 
 **Why enforce context isolation in infrastructure?**
 An adversarial reviewer prompted to "pretend you don't know who wrote this" is
@@ -181,6 +201,4 @@ adds a step.
 
 ## Status
 
-🚧 Design phase — not yet implemented.
-
-See [issues](https://github.com/MichielDean/bullet-farm/issues) for the build plan.
+Under active development. See [issues](https://github.com/MichielDean/bullet-farm/issues) for the build plan.

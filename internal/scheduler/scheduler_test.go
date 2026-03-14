@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/bullet-farm/internal/bd"
+	"github.com/MichielDean/bullet-farm/internal/queue"
 	"github.com/MichielDean/bullet-farm/internal/workflow"
 )
 
@@ -19,13 +19,14 @@ import (
 
 type mockClient struct {
 	mu         sync.Mutex
-	readyBeads []*bd.Bead
+	readyItems []*queue.WorkItem
 	readyCalls int
 	steps      map[string]string
 	attempts   map[string]int
-	notes      map[string][]bd.StepNote
+	notes      map[string][]queue.StepNote
 	escalated  map[string]string
 	attached   []attachedNote
+	closed     map[string]bool
 }
 
 type attachedNote struct {
@@ -36,46 +37,50 @@ func newMockClient() *mockClient {
 	return &mockClient{
 		steps:     make(map[string]string),
 		attempts:  make(map[string]int),
-		notes:     make(map[string][]bd.StepNote),
+		notes:     make(map[string][]queue.StepNote),
 		escalated: make(map[string]string),
+		closed:    make(map[string]bool),
 	}
 }
 
-func (m *mockClient) GetReady(rig string) (*bd.Bead, error) {
+func (m *mockClient) GetReady(repo string) (*queue.WorkItem, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.readyCalls++
-	if len(m.readyBeads) == 0 {
+	if len(m.readyItems) == 0 {
 		return nil, nil
 	}
-	b := m.readyBeads[0]
-	m.readyBeads = m.readyBeads[1:]
+	b := m.readyItems[0]
+	m.readyItems = m.readyItems[1:]
 	return b, nil
 }
 
-func (m *mockClient) UpdateStep(id, step string) error {
+func (m *mockClient) Assign(id, worker, step string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Reset attempts when step changes (matches real queue behavior).
+	if m.steps[id] != step {
+		m.attempts[id] = 0
+	}
 	m.steps[id] = step
 	return nil
 }
 
-func (m *mockClient) IncrementAttempts(id, step string) (int, error) {
+func (m *mockClient) IncrementAttempts(id string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := id + ":" + step
-	m.attempts[key]++
-	return m.attempts[key], nil
+	m.attempts[id]++
+	return m.attempts[id], nil
 }
 
-func (m *mockClient) AttachNotes(id, fromStep, notes string) error {
+func (m *mockClient) AddNote(id, fromStep, notes string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.attached = append(m.attached, attachedNote{id, fromStep, notes})
 	return nil
 }
 
-func (m *mockClient) GetNotes(id string) ([]bd.StepNote, error) {
+func (m *mockClient) GetNotes(id string) ([]queue.StepNote, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.notes[id], nil
@@ -85,6 +90,14 @@ func (m *mockClient) Escalate(id, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.escalated[id] = reason
+	return nil
+}
+
+func (m *mockClient) CloseItem(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed[id] = true
+	m.steps[id] = "done"
 	return nil
 }
 
@@ -180,20 +193,20 @@ func testConfig() workflow.FarmConfig {
 	return workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
 			{
-				Name:     "test-repo",
-				Workers:  2,
-				Names:    []string{"alpha", "beta"},
-				BdPrefix: "test",
+				Name:    "test-repo",
+				Workers: 2,
+				Names:   []string{"alpha", "beta"},
+				Prefix:  "test",
 			},
 		},
 		MaxTotalWorkers: 4,
 	}
 }
 
-func testScheduler(client BeadClient, runner StepRunner) *Scheduler {
+func testScheduler(client QueueClient, runner StepRunner) *Scheduler {
 	config := testConfig()
 	workflows := map[string]*workflow.Workflow{"test-repo": testWorkflow()}
-	clients := map[string]BeadClient{"test-repo": client}
+	clients := map[string]QueueClient{"test-repo": client}
 	return NewFromParts(config, workflows, clients, runner)
 }
 
@@ -241,35 +254,35 @@ func TestIsTerminal(t *testing.T) {
 
 func TestCurrentStep_FirstStep(t *testing.T) {
 	wf := testWorkflow()
-	bead := &bd.Bead{ID: "b1"}
+	item := &queue.WorkItem{ID: "b1"}
 
-	step := currentStep(bead, wf)
+	step := currentStep(item, wf)
 	if step == nil || step.Name != "implement" {
 		t.Fatalf("expected first step 'implement', got %v", step)
 	}
 }
 
-func TestCurrentStep_FromMetadata(t *testing.T) {
+func TestCurrentStep_FromCurrentStep(t *testing.T) {
 	wf := testWorkflow()
-	bead := &bd.Bead{
-		ID:       "b1",
-		Metadata: map[string]any{"step": "review"},
+	item := &queue.WorkItem{
+		ID:          "b1",
+		CurrentStep: "review",
 	}
 
-	step := currentStep(bead, wf)
+	step := currentStep(item, wf)
 	if step == nil || step.Name != "review" {
-		t.Fatalf("expected step 'review' from metadata, got %v", step)
+		t.Fatalf("expected step 'review' from current_step, got %v", step)
 	}
 }
 
-func TestCurrentStep_UnknownMetadata(t *testing.T) {
+func TestCurrentStep_UnknownStep(t *testing.T) {
 	wf := testWorkflow()
-	bead := &bd.Bead{
-		ID:       "b1",
-		Metadata: map[string]any{"step": "nonexistent"},
+	item := &queue.WorkItem{
+		ID:          "b1",
+		CurrentStep: "nonexistent",
 	}
 
-	step := currentStep(bead, wf)
+	step := currentStep(item, wf)
 	if step != nil {
 		t.Fatalf("expected nil for unknown step, got %v", step)
 	}
@@ -277,7 +290,7 @@ func TestCurrentStep_UnknownMetadata(t *testing.T) {
 
 func TestTick_AssignsWork(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{{ID: "b1", Title: "test bead"}}
+	client.readyItems = []*queue.WorkItem{{ID: "b1", Title: "test item"}}
 
 	runner := newMockRunner()
 	runner.outcomes["implement"] = &Outcome{Result: ResultPass, Notes: "done"}
@@ -304,7 +317,7 @@ func TestTick_AssignsWork(t *testing.T) {
 
 func TestTick_RoutesToNextStep(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{{ID: "b1", Title: "test"}}
+	client.readyItems = []*queue.WorkItem{{ID: "b1", Title: "test"}}
 
 	runner := newMockRunner()
 	runner.outcomes["implement"] = &Outcome{Result: ResultPass, Notes: "impl done"}
@@ -327,8 +340,8 @@ func TestTick_RoutesToNextStep(t *testing.T) {
 
 func TestTick_TerminalDone(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{
-		{ID: "b1", Metadata: map[string]any{"step": "review"}},
+	client.readyItems = []*queue.WorkItem{
+		{ID: "b1", CurrentStep: "review"},
 	}
 
 	runner := newMockRunner()
@@ -344,15 +357,15 @@ func TestTick_TerminalDone(t *testing.T) {
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if client.steps["b1"] != "done" {
-		t.Errorf("expected terminal 'done', got %q", client.steps["b1"])
+	if !client.closed["b1"] {
+		t.Error("expected item to be closed for terminal 'done'")
 	}
 }
 
 func TestTick_TerminalBlocked(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{
-		{ID: "b1", Metadata: map[string]any{"step": "implement"}},
+	client.readyItems = []*queue.WorkItem{
+		{ID: "b1", CurrentStep: "implement"},
 	}
 
 	runner := newMockRunner()
@@ -369,14 +382,14 @@ func TestTick_TerminalBlocked(t *testing.T) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if _, ok := client.escalated["b1"]; !ok {
-		t.Error("expected bead escalated for terminal 'blocked'")
+		t.Error("expected item escalated for terminal 'blocked'")
 	}
 }
 
 func TestTick_GlobalCap(t *testing.T) {
 	client := newMockClient()
 	for i := range 10 {
-		client.readyBeads = append(client.readyBeads, &bd.Bead{
+		client.readyItems = append(client.readyItems, &queue.WorkItem{
 			ID: fmt.Sprintf("b%d", i),
 		})
 	}
@@ -385,12 +398,12 @@ func TestTick_GlobalCap(t *testing.T) {
 
 	config := workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
-			{Name: "r1", Workers: 3, Names: []string{"w1", "w2", "w3"}, BdPrefix: "r1"},
+			{Name: "r1", Workers: 3, Names: []string{"w1", "w2", "w3"}, Prefix: "r1"},
 		},
 		MaxTotalWorkers: 2,
 	}
 	wf := testWorkflow()
-	clients := map[string]BeadClient{"r1": client}
+	clients := map[string]QueueClient{"r1": client}
 	workflows := map[string]*workflow.Workflow{"r1": wf}
 	sched := NewFromParts(config, workflows, clients, runner)
 
@@ -409,8 +422,9 @@ func TestTick_GlobalCap(t *testing.T) {
 
 func TestTick_RetryBudgetOK(t *testing.T) {
 	client := newMockClient()
-	client.attempts["b1:implement"] = 2 // will become 3
-	client.readyBeads = []*bd.Bead{{ID: "b1"}}
+	client.attempts["b1"] = 2     // will become 3
+	client.steps["b1"] = "implement" // pre-set so Assign doesn't reset
+	client.readyItems = []*queue.WorkItem{{ID: "b1", CurrentStep: "implement"}}
 
 	runner := newMockRunner()
 
@@ -428,7 +442,7 @@ func TestTick_RetryBudgetOK(t *testing.T) {
 	}
 
 	config := testConfig()
-	clients := map[string]BeadClient{"test-repo": client}
+	clients := map[string]QueueClient{"test-repo": client}
 	workflows := map[string]*workflow.Workflow{"test-repo": wf}
 	sched := NewFromParts(config, workflows, clients, runner)
 	sched.Tick(context.Background())
@@ -440,8 +454,9 @@ func TestTick_RetryBudgetOK(t *testing.T) {
 
 func TestTick_RetryBudgetExceeded(t *testing.T) {
 	client := newMockClient()
-	client.attempts["b1:implement"] = 3 // will become 4, exceeds max of 3
-	client.readyBeads = []*bd.Bead{{ID: "b1"}}
+	client.attempts["b1"] = 3        // will become 4, exceeds max of 3
+	client.steps["b1"] = "implement" // pre-set so Assign doesn't reset
+	client.readyItems = []*queue.WorkItem{{ID: "b1", CurrentStep: "implement"}}
 
 	runner := newMockRunner()
 
@@ -459,7 +474,7 @@ func TestTick_RetryBudgetExceeded(t *testing.T) {
 	}
 
 	config := testConfig()
-	clients := map[string]BeadClient{"test-repo": client}
+	clients := map[string]QueueClient{"test-repo": client}
 	workflows := map[string]*workflow.Workflow{"test-repo": wf}
 	sched := NewFromParts(config, workflows, clients, runner)
 	sched.Tick(context.Background())
@@ -482,7 +497,7 @@ func TestTick_RetryBudgetExceeded(t *testing.T) {
 
 func TestTick_CrashRequeue(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{{ID: "b1"}}
+	client.readyItems = []*queue.WorkItem{{ID: "b1"}}
 
 	runner := newMockRunner()
 	runner.err = fmt.Errorf("agent crashed")
@@ -497,7 +512,7 @@ func TestTick_CrashRequeue(t *testing.T) {
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	// Bead stays at "implement" — not advanced, not escalated.
+	// Item stays at "implement" — not advanced, not escalated.
 	if client.steps["b1"] != "implement" {
 		t.Errorf("expected step to remain 'implement' after crash, got %q", client.steps["b1"])
 	}
@@ -508,9 +523,9 @@ func TestTick_CrashRequeue(t *testing.T) {
 
 func TestTick_NotesForwarding(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{{ID: "b1"}}
-	client.notes["b1"] = []bd.StepNote{
-		{ID: 1, IssueID: "b1", FromStep: "refine", Text: "specs clarified"},
+	client.readyItems = []*queue.WorkItem{{ID: "b1"}}
+	client.notes["b1"] = []queue.StepNote{
+		{ID: 1, ItemID: "b1", StepName: "refine", Content: "specs clarified"},
 	}
 
 	runner := newMockRunner()
@@ -528,7 +543,7 @@ func TestTick_NotesForwarding(t *testing.T) {
 	req := runner.calls[0]
 	runner.mu.Unlock()
 
-	if len(req.Notes) != 1 || req.Notes[0].FromStep != "refine" {
+	if len(req.Notes) != 1 || req.Notes[0].StepName != "refine" {
 		t.Errorf("expected prior notes forwarded, got %v", req.Notes)
 	}
 
@@ -541,7 +556,7 @@ func TestTick_NotesForwarding(t *testing.T) {
 
 func TestTick_NoRoute(t *testing.T) {
 	client := newMockClient()
-	client.readyBeads = []*bd.Bead{{ID: "b1"}}
+	client.readyItems = []*queue.WorkItem{{ID: "b1"}}
 
 	runner := newMockRunner()
 	runner.outcomes["implement"] = &Outcome{Result: ResultRevision} // no OnRevision set
@@ -582,14 +597,14 @@ func TestTick_NoWorkAvailable(t *testing.T) {
 func multiRepoConfig() workflow.FarmConfig {
 	return workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
-			{Name: "ScaledTest", Workers: 2, Names: []string{"max", "furiosa"}, BdPrefix: "st-"},
-			{Name: "bullet_farm", Workers: 1, Names: []string{"immortan"}, BdPrefix: "bf-"},
+			{Name: "ScaledTest", Workers: 2, Names: []string{"max", "furiosa"}, Prefix: "st"},
+			{Name: "bullet_farm", Workers: 1, Names: []string{"immortan"}, Prefix: "bf"},
 		},
 		MaxTotalWorkers: 3,
 	}
 }
 
-func multiRepoScheduler(clients map[string]BeadClient, runner StepRunner) *Scheduler {
+func multiRepoScheduler(clients map[string]QueueClient, runner StepRunner) *Scheduler {
 	config := multiRepoConfig()
 	wf := testWorkflow()
 	workflows := map[string]*workflow.Workflow{
@@ -599,28 +614,28 @@ func multiRepoScheduler(clients map[string]BeadClient, runner StepRunner) *Sched
 	return NewFromParts(config, workflows, clients, runner)
 }
 
-func TestMultiRepo_BeadsGoToCorrectWorkers(t *testing.T) {
+func TestMultiRepo_ItemsGoToCorrectWorkers(t *testing.T) {
 	stClient := newMockClient()
-	stClient.readyBeads = []*bd.Bead{
-		{ID: "st-1", Title: "scaled test bead 1"},
-		{ID: "st-2", Title: "scaled test bead 2"},
+	stClient.readyItems = []*queue.WorkItem{
+		{ID: "st-1", Title: "scaled test item 1"},
+		{ID: "st-2", Title: "scaled test item 2"},
 	}
 	bfClient := newMockClient()
-	bfClient.readyBeads = []*bd.Bead{
-		{ID: "bf-1", Title: "bullet farm bead 1"},
+	bfClient.readyItems = []*queue.WorkItem{
+		{ID: "bf-1", Title: "bullet farm item 1"},
 	}
 
 	runner := newMockRunner()
-	clients := map[string]BeadClient{
+	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
 		"bullet_farm": bfClient,
 	}
 	sched := multiRepoScheduler(clients, runner)
 
-	// First tick: should pick up beads from both repos.
+	// First tick: should pick up items from both repos.
 	sched.Tick(context.Background())
 
-	// ScaledTest has 2 workers and 2 beads; bullet_farm has 1 worker and 1 bead.
+	// ScaledTest has 2 workers and 2 items; bullet_farm has 1 worker and 1 item.
 	// All 3 should be assigned (total 3 = MaxTotalWorkers).
 	if !runner.waitCalls(3, 2*time.Second) {
 		t.Fatal("timed out waiting for 3 runner calls")
@@ -633,18 +648,18 @@ func TestMultiRepo_BeadsGoToCorrectWorkers(t *testing.T) {
 		t.Fatalf("expected 3 runner calls, got %d", len(runner.calls))
 	}
 
-	// Verify ScaledTest beads went to max/furiosa.
+	// Verify ScaledTest items went to max/furiosa.
 	stWorkers := map[string]bool{}
 	for _, call := range runner.calls {
 		if call.RepoConfig.Name == "ScaledTest" {
 			stWorkers[call.WorkerName] = true
 			if call.WorkerName != "max" && call.WorkerName != "furiosa" {
-				t.Errorf("ScaledTest bead %s assigned to wrong worker: %s", call.Bead.ID, call.WorkerName)
+				t.Errorf("ScaledTest item %s assigned to wrong worker: %s", call.Item.ID, call.WorkerName)
 			}
 		}
 		if call.RepoConfig.Name == "bullet_farm" {
 			if call.WorkerName != "immortan" {
-				t.Errorf("bullet_farm bead %s assigned to wrong worker: %s (expected immortan)", call.Bead.ID, call.WorkerName)
+				t.Errorf("bullet_farm item %s assigned to wrong worker: %s (expected immortan)", call.Item.ID, call.WorkerName)
 			}
 		}
 	}
@@ -657,15 +672,15 @@ func TestMultiRepo_BeadsGoToCorrectWorkers(t *testing.T) {
 func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
 	stClient := newMockClient()
 	for i := range 5 {
-		stClient.readyBeads = append(stClient.readyBeads, &bd.Bead{ID: fmt.Sprintf("st-%d", i)})
+		stClient.readyItems = append(stClient.readyItems, &queue.WorkItem{ID: fmt.Sprintf("st-%d", i)})
 	}
 	bfClient := newMockClient()
 	for i := range 5 {
-		bfClient.readyBeads = append(bfClient.readyBeads, &bd.Bead{ID: fmt.Sprintf("bf-%d", i)})
+		bfClient.readyItems = append(bfClient.readyItems, &queue.WorkItem{ID: fmt.Sprintf("bf-%d", i)})
 	}
 
 	blocker := newBlockingRunner()
-	clients := map[string]BeadClient{
+	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
 		"bullet_farm": bfClient,
 	}
@@ -694,12 +709,12 @@ func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
 
 func TestMultiRepo_WorkersNeverCrossRepoBoundaries(t *testing.T) {
 	stClient := newMockClient()
-	stClient.readyBeads = []*bd.Bead{{ID: "st-1"}}
+	stClient.readyItems = []*queue.WorkItem{{ID: "st-1"}}
 	bfClient := newMockClient()
-	bfClient.readyBeads = []*bd.Bead{{ID: "bf-1"}}
+	bfClient.readyItems = []*queue.WorkItem{{ID: "bf-1"}}
 
 	runner := newMockRunner()
-	clients := map[string]BeadClient{
+	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
 		"bullet_farm": bfClient,
 	}
@@ -717,11 +732,11 @@ func TestMultiRepo_WorkersNeverCrossRepoBoundaries(t *testing.T) {
 		switch call.RepoConfig.Name {
 		case "ScaledTest":
 			if call.WorkerName != "max" && call.WorkerName != "furiosa" {
-				t.Errorf("ScaledTest bead used non-ScaledTest worker: %s", call.WorkerName)
+				t.Errorf("ScaledTest item used non-ScaledTest worker: %s", call.WorkerName)
 			}
 		case "bullet_farm":
 			if call.WorkerName != "immortan" {
-				t.Errorf("bullet_farm bead used non-bullet_farm worker: %s", call.WorkerName)
+				t.Errorf("bullet_farm item used non-bullet_farm worker: %s", call.WorkerName)
 			}
 		default:
 			t.Errorf("unexpected repo: %s", call.RepoConfig.Name)
@@ -734,7 +749,7 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 	bfClient := newMockClient()
 
 	runner := newMockRunner()
-	clients := map[string]BeadClient{
+	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
 		"bullet_farm": bfClient,
 	}
@@ -760,12 +775,12 @@ func TestMultiRepo_RoundRobinPolling(t *testing.T) {
 }
 
 func TestMultiRepo_OneRepoEmptyOtherHasWork(t *testing.T) {
-	stClient := newMockClient() // No beads
+	stClient := newMockClient() // No items
 	bfClient := newMockClient()
-	bfClient.readyBeads = []*bd.Bead{{ID: "bf-1"}}
+	bfClient.readyItems = []*queue.WorkItem{{ID: "bf-1"}}
 
 	runner := newMockRunner()
-	clients := map[string]BeadClient{
+	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
 		"bullet_farm": bfClient,
 	}
@@ -782,8 +797,8 @@ func TestMultiRepo_OneRepoEmptyOtherHasWork(t *testing.T) {
 	if len(runner.calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(runner.calls))
 	}
-	if runner.calls[0].Bead.ID != "bf-1" {
-		t.Errorf("expected bf-1, got %s", runner.calls[0].Bead.ID)
+	if runner.calls[0].Item.ID != "bf-1" {
+		t.Errorf("expected bf-1, got %s", runner.calls[0].Item.ID)
 	}
 	if runner.calls[0].WorkerName != "immortan" {
 		t.Errorf("expected immortan, got %s", runner.calls[0].WorkerName)
@@ -791,21 +806,21 @@ func TestMultiRepo_OneRepoEmptyOtherHasWork(t *testing.T) {
 }
 
 func TestMultiRepo_RepoWorkersExhausted(t *testing.T) {
-	// ScaledTest has 2 workers. Give it 3 beads. Only 2 should be assigned.
+	// ScaledTest has 2 workers. Give it 3 items. Only 2 should be assigned.
 	stClient := newMockClient()
-	stClient.readyBeads = []*bd.Bead{
+	stClient.readyItems = []*queue.WorkItem{
 		{ID: "st-1"}, {ID: "st-2"}, {ID: "st-3"},
 	}
 	bfClient := newMockClient()
 
 	blocker := newBlockingRunner()
-	clients := map[string]BeadClient{
+	clients := map[string]QueueClient{
 		"ScaledTest":  stClient,
 		"bullet_farm": bfClient,
 	}
 	sched := multiRepoScheduler(clients, blocker)
 
-	// Multiple ticks. ScaledTest pool has 2 workers, so max 2 beads assigned.
+	// Multiple ticks. ScaledTest pool has 2 workers, so max 2 items assigned.
 	for range 3 {
 		sched.Tick(context.Background())
 	}
@@ -820,21 +835,21 @@ func TestMultiRepo_RepoWorkersExhausted(t *testing.T) {
 
 func TestTick_PerRepoIsolation(t *testing.T) {
 	client1 := newMockClient()
-	client1.readyBeads = []*bd.Bead{{ID: "r1-b1"}}
+	client1.readyItems = []*queue.WorkItem{{ID: "r1-b1"}}
 	client2 := newMockClient()
-	client2.readyBeads = []*bd.Bead{{ID: "r2-b1"}}
+	client2.readyItems = []*queue.WorkItem{{ID: "r2-b1"}}
 
 	runner := newMockRunner()
 
 	config := workflow.FarmConfig{
 		Repos: []workflow.RepoConfig{
-			{Name: "repo1", Workers: 1, Names: []string{"w1"}, BdPrefix: "r1"},
-			{Name: "repo2", Workers: 1, Names: []string{"w2"}, BdPrefix: "r2"},
+			{Name: "repo1", Workers: 1, Names: []string{"w1"}, Prefix: "r1"},
+			{Name: "repo2", Workers: 1, Names: []string{"w2"}, Prefix: "r2"},
 		},
 		MaxTotalWorkers: 10,
 	}
 	wf := testWorkflow()
-	clients := map[string]BeadClient{"repo1": client1, "repo2": client2}
+	clients := map[string]QueueClient{"repo1": client1, "repo2": client2}
 	workflows := map[string]*workflow.Workflow{"repo1": wf, "repo2": wf}
 	sched := NewFromParts(config, workflows, clients, runner)
 	sched.Tick(context.Background())
@@ -850,11 +865,11 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 	}
 
 	for _, call := range runner.calls {
-		if call.Bead.ID == "r1-b1" && call.WorkerName != "w1" {
-			t.Errorf("repo1 bead assigned to wrong worker: %s", call.WorkerName)
+		if call.Item.ID == "r1-b1" && call.WorkerName != "w1" {
+			t.Errorf("repo1 item assigned to wrong worker: %s", call.WorkerName)
 		}
-		if call.Bead.ID == "r2-b1" && call.WorkerName != "w2" {
-			t.Errorf("repo2 bead assigned to wrong worker: %s", call.WorkerName)
+		if call.Item.ID == "r2-b1" && call.WorkerName != "w2" {
+			t.Errorf("repo2 item assigned to wrong worker: %s", call.WorkerName)
 		}
 	}
 }
@@ -881,7 +896,7 @@ func TestWorkerPool_Basic(t *testing.T) {
 		t.Fatalf("expected first idle worker 'a', got %v", w)
 	}
 
-	pool.Assign(w, "bead-1", "implement")
+	pool.Assign(w, "item-1", "implement")
 	if pool.BusyCount() != 1 {
 		t.Errorf("expected 1 busy, got %d", pool.BusyCount())
 	}
@@ -891,7 +906,7 @@ func TestWorkerPool_Basic(t *testing.T) {
 		t.Fatalf("expected second idle worker 'b', got %v", w2)
 	}
 
-	pool.Assign(w2, "bead-2", "review")
+	pool.Assign(w2, "item-2", "review")
 	if pool.BusyCount() != 2 {
 		t.Errorf("expected 2 busy, got %d", pool.BusyCount())
 	}
@@ -928,9 +943,9 @@ func TestDefaultWorkerNames(t *testing.T) {
 
 func TestWriteContext(t *testing.T) {
 	dir := t.TempDir()
-	notes := []bd.StepNote{
-		{FromStep: "implement", Text: "wrote the feature"},
-		{FromStep: "review", Text: "needs error handling"},
+	notes := []queue.StepNote{
+		{StepName: "implement", Content: "wrote the feature"},
+		{StepName: "review", Content: "needs error handling"},
 	}
 
 	if err := WriteContext(dir, notes); err != nil {

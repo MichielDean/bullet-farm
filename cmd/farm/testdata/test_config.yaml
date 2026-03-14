@@ -6,7 +6,7 @@ repos:
     names:
       - max
       - furiosa
-    bd_prefix: st-
+    prefix: st
 
   - name: bullet_farm
     url: https://github.com/example/bullet-farm
@@ -14,7 +14,7 @@ repos:
     workers: 1
     names:
       - immortan
-    bd_prefix: bf-
+    prefix: bf
 
 max_total_workers: 3
 handoff_token_threshold: 150000

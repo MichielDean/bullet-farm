@@ -7,17 +7,27 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/MichielDean/bullet-farm/internal/bd"
+	"github.com/MichielDean/bullet-farm/internal/queue"
 	"github.com/MichielDean/bullet-farm/internal/workflow"
 )
 
+func testQueueClient(t *testing.T) *queue.Client {
+	t.Helper()
+	c, err := queue.New(filepath.Join(t.TempDir(), "test.db"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return c
+}
+
 func testRepoConfig() workflow.RepoConfig {
 	return workflow.RepoConfig{
-		Name:     "testrepo",
-		URL:      "https://github.com/example/testrepo",
-		Workers:  3,
-		Names:    []string{"alice", "bob", "charlie"},
-		BdPrefix: "tr-",
+		Name:    "testrepo",
+		URL:     "https://github.com/example/testrepo",
+		Workers: 3,
+		Names:   []string{"alice", "bob", "charlie"},
+		Prefix:  "tr",
 	}
 }
 
@@ -35,7 +45,7 @@ func TestNewRunner_NamedWorkers(t *testing.T) {
 	cfg := Config{
 		Repo:        testRepoConfig(),
 		Workflow:    testWorkflow(),
-		BdClient:    bd.NewClient("bd", ""),
+		QueueClient: testQueueClient(t),
 		SandboxRoot: t.TempDir(),
 	}
 
@@ -77,7 +87,7 @@ func TestNewRunner_NumberedWorkers(t *testing.T) {
 	cfg := Config{
 		Repo:        repo,
 		Workflow:    testWorkflow(),
-		BdClient:    bd.NewClient("bd", ""),
+		QueueClient: testQueueClient(t),
 		SandboxRoot: t.TempDir(),
 	}
 
@@ -97,8 +107,8 @@ func TestNewRunner_NumberedWorkers(t *testing.T) {
 
 func TestNewRunner_NoWorkflow(t *testing.T) {
 	cfg := Config{
-		Repo:     testRepoConfig(),
-		BdClient: bd.NewClient("bd", ""),
+		Repo:        testRepoConfig(),
+		QueueClient: testQueueClient(t),
 	}
 	_, err := New(cfg)
 	if err == nil {
@@ -106,14 +116,14 @@ func TestNewRunner_NoWorkflow(t *testing.T) {
 	}
 }
 
-func TestNewRunner_NoBdClient(t *testing.T) {
+func TestNewRunner_NoQueueClient(t *testing.T) {
 	cfg := Config{
 		Repo:     testRepoConfig(),
 		Workflow: testWorkflow(),
 	}
 	_, err := New(cfg)
 	if err == nil {
-		t.Fatal("expected error for nil bd client")
+		t.Fatal("expected error for nil queue client")
 	}
 }
 
@@ -121,7 +131,7 @@ func TestClaimRelease(t *testing.T) {
 	cfg := Config{
 		Repo:        testRepoConfig(),
 		Workflow:    testWorkflow(),
-		BdClient:    bd.NewClient("bd", ""),
+		QueueClient: testQueueClient(t),
 		SandboxRoot: t.TempDir(),
 	}
 
@@ -172,7 +182,7 @@ func TestStepByName(t *testing.T) {
 	cfg := Config{
 		Repo:        testRepoConfig(),
 		Workflow:    testWorkflow(),
-		BdClient:    bd.NewClient("bd", ""),
+		QueueClient: testQueueClient(t),
 		SandboxRoot: t.TempDir(),
 	}
 
@@ -240,9 +250,9 @@ func TestWriteContextFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CONTEXT.md")
 
-	bead := &bd.Bead{
+	item := &queue.WorkItem{
 		ID:          "bf-123",
-		Title:       "Test bead",
+		Title:       "Test item",
 		Status:      "in_progress",
 		Priority:    1,
 		Description: "Fix the thing",
@@ -255,14 +265,14 @@ func TestWriteContextFile(t *testing.T) {
 		Context: "full_codebase",
 	}
 
-	notes := []bd.StepNote{
-		{FromStep: "review", Text: "Looks good but needs tests"},
+	notes := []queue.StepNote{
+		{StepName: "review", Content: "Looks good but needs tests"},
 	}
 
 	err := writeContextFile(path, ContextParams{
 		Level:      "full_codebase",
 		SandboxDir: dir,
-		Bead:       bead,
+		Item:       item,
 		Step:       step,
 		Notes:      notes,
 	})
@@ -279,7 +289,7 @@ func TestWriteContextFile(t *testing.T) {
 	checks := []string{
 		"# Context",
 		"bf-123",
-		"Test bead",
+		"Test item",
 		"implementer",
 		"From: review",
 		"Looks good but needs tests",
@@ -294,13 +304,13 @@ func TestWriteContextFile(t *testing.T) {
 
 func TestPrepareContext_FullCodebase(t *testing.T) {
 	dir := t.TempDir()
-	bead := &bd.Bead{ID: "bf-1", Title: "Test", Status: "open", Priority: 1}
+	item := &queue.WorkItem{ID: "bf-1", Title: "Test", Status: "open", Priority: 1}
 	step := &workflow.WorkflowStep{Name: "implement", Type: "agent", Context: "full_codebase"}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      workflow.ContextFullCodebase,
 		SandboxDir: dir,
-		Bead:       bead,
+		Item:       item,
 		Step:       step,
 	})
 	if err != nil {
@@ -318,7 +328,7 @@ func TestPrepareContext_FullCodebase(t *testing.T) {
 }
 
 func TestPrepareContext_SpecOnly(t *testing.T) {
-	bead := &bd.Bead{
+	item := &queue.WorkItem{
 		ID:          "bf-2",
 		Title:       "Spec test",
 		Status:      "open",
@@ -330,7 +340,7 @@ func TestPrepareContext_SpecOnly(t *testing.T) {
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      workflow.ContextSpecOnly,
 		SandboxDir: t.TempDir(),
-		Bead:       bead,
+		Item:       item,
 		Step:       step,
 	})
 	if err != nil {
@@ -344,7 +354,7 @@ func TestPrepareContext_SpecOnly(t *testing.T) {
 		t.Fatal("expected spec.md")
 	}
 	if !contains(string(specData), "Spec test") {
-		t.Error("spec.md missing bead title")
+		t.Error("spec.md missing item title")
 	}
 
 	// CONTEXT.md should exist.
@@ -511,13 +521,13 @@ func TestPrepareContext_DiffOnly_Isolation(t *testing.T) {
 	mustRun(t, gitCmd(sandbox, "add", "."))
 	mustRun(t, gitCmd(sandbox, "commit", "-m", "add smoke test comment"))
 
-	bead := &bd.Bead{ID: "bf-smoke", Title: "Smoke", Status: "open", Priority: 1}
+	item := &queue.WorkItem{ID: "bf-smoke", Title: "Smoke", Status: "open", Priority: 1}
 	step := &workflow.WorkflowStep{Name: "review", Type: "agent", Context: "diff_only"}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      workflow.ContextDiffOnly,
 		SandboxDir: sandbox,
-		Bead:       bead,
+		Item:       item,
 		Step:       step,
 	})
 	if err != nil {
@@ -563,12 +573,6 @@ func TestPrepareContext_DiffOnly_Isolation(t *testing.T) {
 	}
 	if !contains(string(diff), "smoke test comment") {
 		t.Error("diff.patch should contain the change ('smoke test comment')")
-	}
-
-	// Verify diff.patch does NOT contain the full source file.
-	if contains(string(diff), "package main\n\n// smoke") {
-		// The diff should contain a diff format, not raw file contents.
-		// This is fine — git diff includes the changed lines as context.
 	}
 
 	// Verify no .git directory (no repo access).

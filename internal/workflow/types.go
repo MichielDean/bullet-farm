@@ -47,7 +47,7 @@ type RepoConfig struct {
 	WorkflowPath string   `yaml:"workflow_path"`
 	Workers      int      `yaml:"workers"`
 	Names        []string `yaml:"names,omitempty"`
-	BdPrefix     string   `yaml:"bd_prefix"`
+	Prefix       string   `yaml:"prefix"`
 }
 
 // FarmConfig is the top-level configuration for a bullet farm instance.

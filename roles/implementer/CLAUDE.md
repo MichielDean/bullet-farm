@@ -17,21 +17,38 @@ implement.
 
 ## Protocol
 
-1. **Read CONTEXT.md** — understand the bead requirements and any revision notes
+1. **Read CONTEXT.md** — understand the work item requirements and any revision notes
 2. **Explore the codebase** — understand existing patterns, conventions, and
    architecture before writing code
 3. **Implement** — write the minimal code that satisfies the requirements
 4. **Self-check** — verify the code compiles and passes basic sanity checks
-5. **Write outcome.json** — report your result
+5. **Commit your changes** — REQUIRED before writing outcome.json (see below)
+6. **Write outcome.json** — report your result
 
 ## Implementation Rules
 
 - Follow existing codebase conventions (naming, structure, error handling)
 - Make focused, minimal changes — do not refactor unrelated code
-- Do not add features beyond what the bead describes
+- Do not add features beyond what the item describes
 - Do not introduce security vulnerabilities (injection, auth bypass, exposed secrets)
-- Commit frequently with descriptive messages
 - If revision notes reference specific issues, address every one of them
+
+## Committing Changes — MANDATORY
+
+Before writing outcome.json, you MUST commit your changes:
+
+```bash
+git add -A
+git commit -m "<item-id>: <short description of what was done>"
+```
+
+Example: `git commit -m "bu-ewuhz: add --output flag to bf queue list"`
+
+**This is not optional.** The reviewer receives a diff of your committed changes.
+If you do not commit, the reviewer sees an empty diff and cannot review your work,
+causing the item to fail. Always commit before writing outcome.json.
+
+Do NOT push to origin. Local commit only.
 
 ## Outcome
 

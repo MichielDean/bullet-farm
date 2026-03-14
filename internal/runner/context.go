@@ -163,15 +163,34 @@ func writeContextFile(path string, p ContextParams) error {
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
-// generateDiff runs git diff in the sandbox to capture changes.
+// generateDiff captures all local changes vs origin/main — both committed on a
+// local branch and uncommitted working-tree changes — so the reviewer always
+// receives a non-empty diff even when the implementer forgot to commit.
 func generateDiff(sandboxDir string) ([]byte, error) {
-	cmd := exec.Command("git", "diff", "origin/main...HEAD")
-	cmd.Dir = sandboxDir
-	out, err := cmd.Output()
+	// Stage everything so git diff --cached captures uncommitted changes.
+	addCmd := exec.Command("git", "add", "-A")
+	addCmd.Dir = sandboxDir
+	// Ignore error — sandbox may be clean, that's fine.
+	_ = addCmd.Run()
+
+	// Committed changes on a local branch vs origin/main.
+	committedCmd := exec.Command("git", "diff", "origin/main...HEAD")
+	committedCmd.Dir = sandboxDir
+	committed, err := committedCmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git diff in %s: %w", sandboxDir, err)
+		return nil, fmt.Errorf("git diff committed in %s: %w", sandboxDir, err)
 	}
-	return out, nil
+
+	// Staged (uncommitted) changes vs HEAD.
+	stagedCmd := exec.Command("git", "diff", "--cached", "HEAD")
+	stagedCmd.Dir = sandboxDir
+	staged, err := stagedCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git diff staged in %s: %w", sandboxDir, err)
+	}
+
+	combined := append(committed, staged...)
+	return combined, nil
 }
 
 // buildSpecContent creates a markdown spec from the item description.

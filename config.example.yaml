@@ -1,0 +1,21 @@
+repos:
+  - name: ScaledTest
+    url: https://github.com/example/ScaledTest
+    workflow_path: workflows/feature.yaml
+    workers: 2
+    names:
+      - furiosa
+      - rictus
+    bd_prefix: st-
+
+  - name: bullet_farm
+    url: https://github.com/example/bullet_farm
+    workflow_path: workflows/feature.yaml
+    workers: 2
+    names:
+      - nux
+      - dementus
+    bd_prefix: bf-
+
+max_total_workers: 4
+handoff_token_threshold: 100000

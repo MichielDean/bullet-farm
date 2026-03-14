@@ -1,0 +1,7 @@
+name: broken-ref
+steps:
+  - name: implement
+    type: agent
+    role: implementer
+    on_pass: nonexistent-step
+    on_fail: blocked

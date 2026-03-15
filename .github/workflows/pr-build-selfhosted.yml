@@ -3,6 +3,10 @@ name: PR build (self-hosted)
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
 

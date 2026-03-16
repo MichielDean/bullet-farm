@@ -2,7 +2,7 @@
 
 > Water is life. Code is water. The Cistern keeps it moving.
 
-Cistern is an agentic workflow orchestrator built around a water metaphor. Droplets of work enter the cistern, flow through an aqueduct tended by named cataracta operators, are refined by adversarial reviewers and quality gatekeepers, and what flows free at the other end is clean enough to ship.
+Cistern is an agentic workflow orchestrator built around a water metaphor. Droplets of work enter the cistern, flow through an aqueduct tended by named cataracta operators, are refined by adversarial reviewers and quality gatekeepers, and what emerges at the other end is clean enough to ship.
 
 ## The Vocabulary
 
@@ -16,7 +16,7 @@ Cistern is an agentic workflow orchestrator built around a water metaphor. Dropl
 | **Castellarius** | The overseer. Watches all aqueducts, routes droplets into aqueducts, runs drought protocols. External to the cistern — pure state machine, no AI. |
 | **Cataracta** | A gate along the aqueduct. Each cataracta implements, inspects, or diverts (LLMs working). |
 | **Recirculate** | Send a droplet back to a previous cataracta for further processing — revision from reviewer or QA. |
-| **Flows free** | A droplet that made it: PR merged, delivered. |
+| **Delivered** | A droplet that made it: PR merged, delivered. |
 | **Stagnant** | A droplet that can't flow without human intervention. |
 ||
 
@@ -49,7 +49,7 @@ ct droplet list
 Every droplet flows through a sequence of cataractae:
 
 ```
-Intake → Filtration (optional) → Implement → Inspect → QA → PR opens → CI gate → Flows free
+Intake → Filtration (optional) → Implement → Inspect → QA → PR opens → CI gate → Delivered
 ```
 
 1. **Implement** (`implement`) — The Implementer cataracta reads the droplet, writes tests first (TDD/BDD), implements, commits. No outcome until tests pass.
@@ -148,7 +148,7 @@ ct flow config validate        Validate config
 ct droplet add --title "..." --repo myproject   Add a droplet
 ct droplet list                                 List droplets
 ct droplet show <id>                            Show droplet details
-ct droplet close <id>                           Mark flows free
+ct droplet close <id>                           Mark delivered
 ct droplet reopen <id>                          Return to cistern
 ct droplet purge --older-than 30d               Drain old droplets
 ct droplet escalate <id> --reason "..."         Mark a droplet stagnant

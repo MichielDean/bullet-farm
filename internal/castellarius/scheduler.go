@@ -509,7 +509,7 @@ func isTerminal(name string) bool {
 func (s *Castellarius) handleTerminal(client CisternClient, itemID, terminal, fromStep string) {
 	switch strings.ToLower(terminal) {
 	case "done":
-		s.logger.Info("Droplet flows free", "droplet", itemID)
+		s.logger.Info("Droplet delivered", "droplet", itemID)
 		if err := client.CloseItem(itemID); err != nil {
 			s.logger.Error("close failed", "droplet", itemID, "error", err)
 		}

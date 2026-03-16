@@ -124,7 +124,7 @@ func displayStatus(status string) string {
 	case "escalated":
 		return "stagnant"
 	case "closed":
-		return "flows free"
+		return "delivered"
 	default:
 		return status
 	}
@@ -204,7 +204,7 @@ var dropletNoteCmd = &cobra.Command{
 
 var dropletCloseCmd = &cobra.Command{
 	Use:   "close <id>",
-		Short: "Close a droplet — it flows free",
+	Short: "Close a droplet — mark as delivered",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := cistern.New(resolveDBPath(), "")
@@ -216,7 +216,7 @@ var dropletCloseCmd = &cobra.Command{
 		if err := c.CloseItem(args[0]); err != nil {
 			return err
 		}
-			fmt.Printf("droplet %s flows free\n", args[0])
+			fmt.Printf("droplet %s delivered\n", args[0])
 		return nil
 	},
 }

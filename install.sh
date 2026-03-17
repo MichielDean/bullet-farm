@@ -26,6 +26,16 @@ error() { printf "${RED}error:${NC} %s\n" "$*" >&2; }
 fatal() { error "$@"; exit 1; }
 step()  { printf "\n${BLUE}━━━${NC} ${BOLD}%s${NC}\n" "$*"; }
 
+# resolve_gobin returns the directory where `go install` places binaries.
+resolve_gobin() {
+  local gobin
+  gobin="$(go env GOBIN 2>/dev/null)"
+  if [ -z "${gobin}" ]; then
+    gobin="$(go env GOPATH 2>/dev/null)/bin"
+  fi
+  echo "${gobin}"
+}
+
 # --- check_go: require go >= MIN_GO_VERSION ---
 check_go() {
   if ! command -v go &>/dev/null; then
@@ -114,22 +124,65 @@ check_api_key() {
   info "ANTHROPIC_API_KEY ✓"
 }
 
+# --- configure_git: ensure go module fetching works for private repos ---
+configure_git() {
+  # Rewrite HTTPS GitHub URLs to SSH so `go install` works with SSH key auth.
+  local existing
+  existing="$(git config --global url."git@github.com:".insteadOf 2>/dev/null || true)"
+  if [ "${existing}" != "https://github.com/" ]; then
+    git config --global url."git@github.com:".insteadOf "https://github.com/"
+    info "Git configured to use SSH for GitHub ✓"
+  else
+    info "Git SSH rewrite already configured ✓"
+  fi
+
+  # Tell the Go toolchain to skip the public checksum database for this repo.
+  export GOPRIVATE="${GOPRIVATE:+${GOPRIVATE},}github.com/MichielDean/*"
+  info "GOPRIVATE set ✓"
+}
+
 # --- install_ct: install via go install ---
 install_ct() {
   info "Installing ct..."
-  CGO_ENABLED=1 go install "${REPO}/cmd/ct@latest"
+  CGO_ENABLED=1 GOPRIVATE="github.com/MichielDean/*" go install "${REPO}/cmd/ct@latest"
 
-  # Verify the binary is on PATH.
-  if command -v ct &>/dev/null; then
-    info "ct $(ct version 2>/dev/null || echo '?') installed at $(command -v ct)"
+  local gobin ct_bin
+  gobin="$(resolve_gobin)"
+  ct_bin="${gobin}/ct"
+
+  if [ ! -x "${ct_bin}" ]; then
+    fatal "ct binary not found at ${ct_bin} after install — check your Go setup"
+  fi
+
+  local ct_version
+  ct_version="$(${ct_bin} version 2>/dev/null | sed 's/^ct //' || echo 'dev')"
+  info "ct ${ct_version} installed at ${ct_bin}"
+}
+
+# --- ensure_path: add Go bin dir to shell profile if not already there ---
+ensure_path() {
+  local gobin
+  gobin="$(resolve_gobin)"
+
+  # Detect the user's shell profile file.
+  local profile=""
+  local shell_name
+  shell_name="$(basename "${SHELL:-bash}")"
+  case "${shell_name}" in
+    zsh)  profile="${ZDOTDIR:-${HOME}}/.zshrc" ;;
+    bash) profile="${HOME}/.bashrc" ;;
+    *)    profile="${HOME}/.profile" ;;
+  esac
+
+  local export_line="export PATH=\"\${PATH}:${gobin}\""
+
+  if grep -qF "${gobin}" "${profile}" 2>/dev/null; then
+    info "${gobin} already in ${profile} ✓"
   else
-    local gobin
-    gobin="$(go env GOBIN)"
-    if [ -z "${gobin}" ]; then
-      gobin="$(go env GOPATH)/bin"
-    fi
-    warn "ct installed to ${gobin}/ct but it's not on your PATH."
-    warn "Add this to your shell profile:  export PATH=\"\${PATH}:${gobin}\""
+    printf '\n# Added by Cistern installer\n%s\n' "${export_line}" >> "${profile}"
+    info "Added ${gobin} to ${profile}"
+    # Export for the remainder of this script session.
+    export PATH="${PATH}:${gobin}"
   fi
 }
 
@@ -139,7 +192,7 @@ setup_dirs() {
   mkdir -p "${CT_DIR}/sandboxes" "${CT_DIR}/logs"
 }
 
-# --- create_config: write starter cistern.yaml if none exists ---
+# --- create_config: initialize cistern if not already done ---
 create_config() {
   local cfg="${CT_DIR}/cistern.yaml"
 
@@ -148,107 +201,35 @@ create_config() {
     return
   fi
 
-  info "Creating starter config at ${cfg}..."
-  cat > "${cfg}" << 'YAML'
-# Cistern configuration
-# Edit this file to add your repos and configure your farm.
-#
-# See https://github.com/MichielDean/cistern for full documentation.
-
-# Maximum total workers across all repos (0 = unlimited).
-max_sluices: 4
-
-# How long to keep closed/escalated work items before purging.
-retention_days: 90
-
-# How often the background retention cleanup runs.
-cleanup_interval: 24h
-
-repos:
-  # Example repo — replace with your own.
-  # - name: my-project
-  #   url: git@github.com:you/my-project.git
-  #   prefix: mp
-  #   workflow_path: ~/.cistern/workflows/feature.yaml
-  #   max_workers: 2
-  #   workers:
-  #     - name: worker-a
-  #     - name: worker-b
-YAML
-
-  # Also create a workflows directory with the bundled feature workflow.
-  mkdir -p "${CT_DIR}/workflows"
-
-  local wf="${CT_DIR}/workflows/feature.yaml"
-  if [ ! -f "${wf}" ]; then
-    info "Creating default workflow at ${wf}..."
-    cat > "${wf}" << 'YAML'
-name: feature
-steps:
-  - name: implement
-    type: agent
-    role: implementer
-    model: sonnet
-    context: full_codebase
-    max_iterations: 3
-    timeout_minutes: 30
-    on_pass: adversarial-review
-    on_fail: blocked
-    on_escalate: human
-
-  - name: adversarial-review
-    type: agent
-    role: reviewer
-    model: sonnet
-    context: diff_only
-    timeout_minutes: 15
-    on_pass: qa
-    on_fail: implement
-    on_revision: implement
-    on_escalate: human
-
-  - name: qa
-    type: agent
-    role: qa
-    model: haiku
-    context: full_codebase
-    timeout_minutes: 20
-    on_pass: merge
-    on_fail: implement
-    on_escalate: human
-
-  - name: merge
-    type: automated
-    timeout_minutes: 5
-    on_pass: done
-    on_fail: human
-YAML
-  fi
+  info "Initializing Cistern..."
+  local gobin
+  gobin="$(resolve_gobin)"
+  "${gobin}/ct" init
 }
 
 # --- add_shell_completion: write completion for bash/zsh ---
 add_shell_completion() {
-  local shell_name
+  local gobin ct_bin shell_name
+  gobin="$(resolve_gobin)"
+  ct_bin="${gobin}/ct"
   shell_name="$(basename "${SHELL:-bash}")"
 
   case "${shell_name}" in
     bash)
       local comp_dir="${HOME}/.local/share/bash-completion/completions"
       mkdir -p "${comp_dir}"
-      if command -v ct &>/dev/null; then
-        ct completion bash > "${comp_dir}/ct" 2>/dev/null || true
+      if "${ct_bin}" completion bash > "${comp_dir}/ct" 2>/dev/null; then
         info "Bash completion installed"
       fi
       ;;
     zsh)
       local comp_dir="${HOME}/.zsh/completions"
       mkdir -p "${comp_dir}"
-      if command -v ct &>/dev/null; then
-        ct completion zsh > "${comp_dir}/_ct" 2>/dev/null || true
+      if "${ct_bin}" completion zsh > "${comp_dir}/_ct" 2>/dev/null; then
         info "Zsh completion installed"
-        if ! grep -q 'fpath.*\.zsh/completions' "${HOME}/.zshrc" 2>/dev/null; then
-          warn "Add to your .zshrc:  fpath=(~/.zsh/completions \$fpath)"
-        fi
+      fi
+      if ! grep -q 'fpath.*\.zsh/completions' "${HOME}/.zshrc" 2>/dev/null; then
+        warn "Add to your .zshrc:  fpath=(~/.zsh/completions \$fpath)"
       fi
       ;;
     *)
@@ -266,17 +247,18 @@ print_success() {
   printf "\n"
   printf "  1. Edit your config:\n"
   printf "     ${BLUE}%s/cistern.yaml${NC}\n" "${CT_DIR}"
-  printf "     Add at least one repo with a URL, prefix, and workers.\n"
+  printf "     Add at least one repo with a URL and operator names.\n"
   printf "\n"
-  printf "  2. Add a work item:\n"
-  printf "     ${BLUE}ct queue add --title \"My first task\" --repo <repo-name>${NC}\n"
+  printf "  2. Add a droplet:\n"
+  printf "     ${BLUE}ct droplet add --title \"My first task\" --repo <repo-name>${NC}\n"
   printf "\n"
-  printf "  3. Start the farm:\n"
-  printf "     ${BLUE}ct flow start --config ~/.cistern/cistern.yaml${NC}\n"
+  printf "  3. Wake the Castellarius:\n"
+  printf "     ${BLUE}ct castellarius start${NC}\n"
   printf "\n"
   printf "${BOLD}Paths:${NC}\n"
   printf "  Config:     %s/cistern.yaml\n" "${CT_DIR}"
-  printf "  Workflows:  %s/workflows/\n" "${CT_DIR}"
+  printf "  Aqueducts:  %s/aqueduct/\n" "${CT_DIR}"
+  printf "  Cataractae: %s/cataractae/\n" "${CT_DIR}"
   printf "  Queue DB:   %s/cistern.db\n" "${CT_DIR}"
   printf "  Sandboxes:  %s/sandboxes/\n" "${CT_DIR}"
   printf "\n"
@@ -292,11 +274,15 @@ main() {
   check_deps
   step "Checking API key"
   check_api_key
+  step "Configuring git"
+  configure_git
   step "Installing ct"
   install_ct
+  step "Updating PATH"
+  ensure_path
   step "Setting up directories"
   setup_dirs
-  step "Creating starter config"
+  step "Initializing config"
   create_config
   step "Shell completion"
   add_shell_completion

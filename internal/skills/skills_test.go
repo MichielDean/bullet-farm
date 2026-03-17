@@ -80,6 +80,20 @@ func TestInstall_HTTPError(t *testing.T) {
 	}
 }
 
+func TestInstall_PathTraversal(t *testing.T) {
+	err := Install("../../evil", "http://example.com/SKILL.md")
+	if err == nil {
+		t.Fatal("expected error for path-traversal skill name, got nil")
+	}
+}
+
+func TestForceUpdate_PathTraversal(t *testing.T) {
+	err := ForceUpdate("../escape", "http://example.com/SKILL.md")
+	if err == nil {
+		t.Fatal("expected error for path-traversal skill name, got nil")
+	}
+}
+
 func TestInstall_ForceUpdate(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

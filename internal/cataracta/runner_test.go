@@ -612,6 +612,58 @@ func TestWriteContextFile_AvailableSkillsBlock(t *testing.T) {
 	}
 }
 
+func TestWriteContextFile_XMLEscapedDescription(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CONTEXT.md")
+
+	// Write a fake cached SKILL.md whose first description line contains XML
+	// special characters — this should be escaped in the output, not injected.
+	skillCacheDir := filepath.Join(dir, ".cistern", "skills", "evil-skill")
+	if err := os.MkdirAll(skillCacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillCacheDir, "SKILL.md"),
+		[]byte("# Evil Skill\n\n<script>alert('xss')</script>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", dir)
+
+	item := &cistern.Droplet{ID: "xss-1", Title: "XSS test", Status: "open", Priority: 1}
+	step := &aqueduct.WorkflowCataracta{
+		Name:    "implement",
+		Type:    "agent",
+		Context: "full_codebase",
+		Skills: []aqueduct.SkillRef{
+			{Name: "evil-skill", URL: "https://example.com/SKILL.md"},
+		},
+	}
+
+	err := writeContextFile(path, ContextParams{
+		Level:      "full_codebase",
+		SandboxDir: dir,
+		Item:       item,
+		Step:       step,
+	})
+	if err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read CONTEXT.md: %v", err)
+	}
+
+	content := string(data)
+	// Raw script tag must NOT appear — that would be a prompt injection.
+	if contains(content, "<script>") {
+		t.Error("CONTEXT.md contains raw <script> tag — prompt injection not escaped")
+	}
+	// XML-escaped version must be present.
+	if !contains(content, "&lt;script&gt;") {
+		t.Error("CONTEXT.md missing XML-escaped description (&lt;script&gt;)")
+	}
+}
+
 func TestWriteContextFile_NoSkillsBlock_WhenEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CONTEXT.md")

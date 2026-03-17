@@ -152,13 +152,15 @@ func resolveWorkflowPaths() ([]string, error) {
 }
 
 // collectAllSkillRefs returns all unique SkillRefs declared across all cataractae.
+// If the same skill name appears with different URLs, the first URL wins and a
+// warning is printed to stderr.
 func collectAllSkillRefs() ([]aqueduct.SkillRef, error) {
 	wfPaths, err := resolveWorkflowPaths()
 	if err != nil {
 		return nil, err
 	}
 
-	seen := map[string]bool{}
+	seenURL := map[string]string{} // name -> first URL seen
 	var refs []aqueduct.SkillRef
 	for _, wfPath := range wfPaths {
 		w, err := aqueduct.ParseWorkflow(wfPath)
@@ -168,8 +170,13 @@ func collectAllSkillRefs() ([]aqueduct.SkillRef, error) {
 		}
 		for _, cat := range w.Cataractae {
 			for _, sk := range cat.Skills {
-				if !seen[sk.Name] {
-					seen[sk.Name] = true
+				if existingURL, seen := seenURL[sk.Name]; seen {
+					if existingURL != sk.URL {
+						fmt.Fprintf(os.Stderr, "warning: skill %q has conflicting URLs: %q vs %q; using first\n",
+							sk.Name, existingURL, sk.URL)
+					}
+				} else {
+					seenURL[sk.Name] = sk.URL
 					refs = append(refs, sk)
 				}
 			}

@@ -1,6 +1,8 @@
 package cataracta
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +13,18 @@ import (
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/skills"
 )
+
+// xmlEscape returns s with XML special characters escaped so it is safe to
+// embed inside XML element content. This prevents prompt injection via
+// crafted skill names or SKILL.md descriptions.
+func xmlEscape(s string) string {
+	var buf bytes.Buffer
+	if err := xml.EscapeText(&buf, []byte(s)); err != nil {
+		// EscapeText only fails on invalid UTF-8; fall back to raw string.
+		return s
+	}
+	return buf.String()
+}
 
 // ContextParams holds everything needed to prepare a step's execution context.
 type ContextParams struct {
@@ -153,9 +167,9 @@ func writeContextFile(path string, p ContextParams) error {
 		b.WriteString("<available_skills>\n")
 		for _, skill := range p.Step.Skills {
 			b.WriteString("  <skill>\n")
-			b.WriteString(fmt.Sprintf("    <name>%s</name>\n", skill.Name))
-			b.WriteString(fmt.Sprintf("    <description>%s</description>\n", skillDescription(skill.Name)))
-			b.WriteString(fmt.Sprintf("    <location>.claude/skills/%s/SKILL.md</location>\n", skill.Name))
+			b.WriteString(fmt.Sprintf("    <name>%s</name>\n", xmlEscape(skill.Name)))
+			b.WriteString(fmt.Sprintf("    <description>%s</description>\n", xmlEscape(skillDescription(skill.Name))))
+			b.WriteString(fmt.Sprintf("    <location>.claude/skills/%s/SKILL.md</location>\n", xmlEscape(skill.Name)))
 			b.WriteString("  </skill>\n")
 		}
 		b.WriteString("</available_skills>\n\n")

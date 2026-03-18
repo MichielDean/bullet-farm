@@ -672,6 +672,33 @@ body{font-family:ui-monospace,SFMono-Regular,Menlo,"Courier New",monospace;margi
 .droplet-table tr:last-child td{border-bottom:none}
 .id{color:#7ec8e3}.muted{color:#4a5f80}.title-col{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status-flowing{color:#57d57a}.status-queued{color:#f0c86b}.status-stagnant{color:#e05c5c}.status-delivered{color:#5a7aaa}
+/* Aqueduct arch diagram */
+.aq-list{display:flex;flex-direction:column;gap:20px}
+.aq-row{display:flex;align-items:flex-start;gap:12px}
+.aq-row-name{min-width:70px;padding-top:6px;color:#5a7aaa;font-size:12px;font-weight:600;letter-spacing:.04em}
+.aq-arch{flex:1;display:flex;flex-direction:column;gap:0}
+.channel{font-size:12px;color:#2a3d5a;line-height:1.3;white-space:nowrap}
+.channel-top,.channel-bot{color:#2a3d5a}
+.ch-corner{color:#3a5070}
+.ch-seg{display:inline-block;width:calc(25% - 10px);border-top:1px solid #2a3d5a;vertical-align:middle;margin:0 2px}
+.ch-joint{color:#3a5070}
+.channel-water{font-size:13px;padding:5px 14px;background:#0e1828;border-left:1px solid #2a3d5a;border-right:1px solid #2a3d5a;min-height:28px;display:flex;align-items:center;gap:8px}
+.channel-water.flowing{color:#57d57a}
+.channel-water.idle{color:#3a4f6a;font-style:italic}
+.wave{color:#3a7a55;opacity:.7}
+.droplet-id{color:#57d57a;font-weight:700}
+.elapsed{color:#9db1db;font-size:12px}
+.bar-wrap{display:inline-block;width:80px;height:8px;background:#1a2a40;border-radius:2px;overflow:hidden;vertical-align:middle}
+.bar-fill{height:100%;background:#57d57a;border-radius:2px;transition:width .4s}
+.piers{display:flex;justify-content:space-around;padding:0 8px}
+.pier{display:flex;flex-direction:column;align-items:center;gap:0;flex:1}
+.pier-stem{color:#2a3d5a;font-size:12px;line-height:1}
+.pier-box{border:1px solid #2a3d5a;padding:6px 12px;border-radius:3px;margin-top:0}
+.pier-active .pier-box{border-color:#57d57a;box-shadow:0 0 8px rgba(87,213,122,.2)}
+.pier-sym{font-size:16px;color:#3a4f6a}
+.pier-active .pier-sym{color:#57d57a}
+.pier-label{margin-top:5px;font-size:11px;color:#3a5070;text-align:center;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pier-active .pier-label{color:#57d57a;font-weight:700}
 /* Easter egg */
 #easter-egg{position:fixed;right:12px;bottom:10px;opacity:.2;cursor:default;user-select:none;font-size:11px;color:#7a91b8}
 #easter-egg .hint{display:none;position:absolute;right:0;bottom:18px;white-space:pre-line;width:320px;padding:12px;border-radius:8px;background:#0f1728;border:1px solid #2a3d5a;color:#ced9f0;font-size:11px}
@@ -688,55 +715,84 @@ body{font-family:ui-monospace,SFMono-Regular,Menlo,"Courier New",monospace;margi
 		data.FlowingCount, data.QueuedCount, data.DoneCount))
 	sb.WriteString(fmt.Sprintf(`<div class="timestamp">last update: %s — auto-refreshes every 3s</div>`, data.FetchedAt.Format("15:04:05")))
 
-	// Flow graph.
+	// Aqueduct arch diagram.
 	sb.WriteString(`<hr class="sep">`)
 	sb.WriteString(`<div class="section-label">Aqueducts</div>`)
-	sb.WriteString(`<table class="flow-table">`)
-	for _, ch := range data.Cataractae {
-		sb.WriteString(`<tr><td class="aq-name">` + html.EscapeString(ch.Name) + `</td><td>`)
-		// Build flow graph row.
-		for i, step := range ch.Steps {
-			if i > 0 {
-				if ch.CataractaIndex > 0 && i == ch.CataractaIndex {
-					sb.WriteString(`<span class="edge">──</span><span class="node-active">●</span><span class="edge">──▶ </span>`)
-				} else {
-					sb.WriteString(`<span class="edge"> ──○──▶ </span>`)
-				}
-			}
-			if i == ch.CataractaIndex && ch.DropletID != "" {
-				sb.WriteString(`<span class="node-active">` + html.EscapeString(step) + `</span>`)
-			} else if ch.DropletID == "" {
-				sb.WriteString(`<span class="node-idle">` + html.EscapeString(step) + `</span>`)
-			} else {
-				sb.WriteString(`<span class="flow-graph">` + html.EscapeString(step) + `</span>`)
-			}
-		}
-		if ch.DropletID == "" {
-			sb.WriteString(` <span class="muted">— idle</span>`)
-		}
-		sb.WriteString(`</td></tr>`)
-		// Pointer row.
-		if ch.DropletID != "" {
-			elapsed := formatElapsed(ch.Elapsed)
-			pct := 0
-			if ch.TotalCataractae > 0 {
-				pct = (ch.CataractaIndex * 8) / ch.TotalCataractae
-			}
-			bar := strings.Repeat("█", pct) + strings.Repeat("░", 8-pct)
-			sb.WriteString(fmt.Sprintf(
-				`<tr><td></td><td class="flow-pointer">↑ %s · <span class="id">%s</span>  %s  <span class="progress-fill">%s</span><span class="progress-empty">%s</span></td></tr>`,
-				html.EscapeString(ch.Name),
-				html.EscapeString(ch.DropletID),
-				html.EscapeString(elapsed),
-				html.EscapeString(bar[:pct]),
-				html.EscapeString(bar[pct:]),
-			))
-		}
-	}
 	if len(data.Cataractae) == 0 {
-		sb.WriteString(`<tr><td colspan="2" class="muted">No aqueducts configured</td></tr>`)
+		sb.WriteString(`<div class="muted">No aqueducts configured</div>`)
+	} else {
+		sb.WriteString(`<div class="aq-list">`)
+		for _, ch := range data.Cataractae {
+			isFlowing := ch.DropletID != ""
+			elapsed := ""
+			bar := ""
+			if isFlowing {
+				elapsed = formatElapsed(ch.Elapsed)
+				pct := 0
+				if ch.TotalCataractae > 0 {
+					pct = (ch.CataractaIndex * 100) / ch.TotalCataractae
+				}
+				bar = fmt.Sprintf(`<div class="bar-wrap"><div class="bar-fill" style="width:%d%%"></div></div>`, pct)
+			}
+
+			// Channel (top).
+			sb.WriteString(`<div class="aq-row">`)
+			sb.WriteString(`<div class="aq-row-name">` + html.EscapeString(ch.Name) + `</div>`)
+			sb.WriteString(`<div class="aq-arch">`)
+
+			// Channel top.
+			sb.WriteString(`<div class="channel">`)
+			sb.WriteString(`<div class="channel-top"><span class="ch-corner">╔</span>`)
+			for i := range ch.Steps {
+				if i > 0 {
+					sb.WriteString(`<span class="ch-joint">╤</span>`)
+				}
+				sb.WriteString(`<span class="ch-seg"></span>`)
+			}
+			sb.WriteString(`<span class="ch-corner">╗</span></div>`)
+
+			// Channel water line.
+			if isFlowing {
+				sb.WriteString(fmt.Sprintf(
+					`<div class="channel-water flowing"><span class="wave">≈ ≈</span> <span class="droplet-id">%s</span> <span class="elapsed">%s</span> %s <span class="wave">≈ ≈</span></div>`,
+					html.EscapeString(ch.DropletID), html.EscapeString(elapsed), bar))
+			} else {
+				sb.WriteString(`<div class="channel-water idle">— idle —</div>`)
+			}
+
+			// Channel bottom.
+			sb.WriteString(`<div class="channel-bot"><span class="ch-corner">╚</span>`)
+			for i := range ch.Steps {
+				if i > 0 {
+					sb.WriteString(`<span class="ch-joint">╧</span>`)
+				}
+				sb.WriteString(`<span class="ch-seg"></span>`)
+			}
+			sb.WriteString(`<span class="ch-corner">╝</span></div>`)
+			sb.WriteString(`</div>`) // .channel
+
+			// Piers.
+			sb.WriteString(`<div class="piers">`)
+			for i, step := range ch.Steps {
+				active := i == ch.CataractaIndex && isFlowing
+				cls := "pier"
+				if active {
+					cls += " pier-active"
+				}
+				sym := "○"
+				if active {
+					sym = "●"
+				}
+				sb.WriteString(fmt.Sprintf(
+					`<div class="%s"><div class="pier-stem">│</div><div class="pier-box"><div class="pier-sym">%s</div></div><div class="pier-label">%s</div></div>`,
+					cls, sym, html.EscapeString(step)))
+			}
+			sb.WriteString(`</div>`) // .piers
+			sb.WriteString(`</div>`) // .aq-arch
+			sb.WriteString(`</div>`) // .aq-row
+		}
+		sb.WriteString(`</div>`) // .aq-list
 	}
-	sb.WriteString(`</table>`)
 
 	// Cistern — active droplets.
 	sb.WriteString(`<hr class="sep">`)

@@ -265,14 +265,15 @@ func TestDashboard_ExitsWhenInputClosed(t *testing.T) {
 // --- TestRenderDashboard ---
 
 func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
+	steps := []string{"implement", "review", "merge"}
 	data := &DashboardData{
-		CataractaCount:  2,
-		FlowingCount: 1,
-		QueuedCount:  1,
-		DoneCount:    3,
+		CataractaCount: 2,
+		FlowingCount:   1,
+		QueuedCount:    1,
+		DoneCount:      3,
 		Cataractae: []CataractaInfo{
-			{Name: "virgo", DropletID: "ci-abc12", Step: "implement", CataractaIndex: 1, TotalCataractae: 6, Elapsed: 2*time.Minute + 14*time.Second},
-			{Name: "marcia"},
+			{Name: "virgo", DropletID: "ci-abc12", Step: "implement", Steps: steps, CataractaIndex: 1, TotalCataractae: 3, Elapsed: 2*time.Minute + 14*time.Second},
+			{Name: "marcia", Steps: steps},
 		},
 		CisternItems: []*cistern.Droplet{
 			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataracta: "implement", Complexity: 2},
@@ -286,23 +287,152 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 
 	out := renderDashboard(data)
 
-	sections := []string{"CISTERN", "AQUEDUCTS", "CISTERN", "RECENT FLOW"}
-	for _, s := range sections {
-		if !strings.Contains(out, s) {
-			t.Errorf("output missing section %q", s)
+	// Flow graph should contain step names and node symbols.
+	for _, want := range []string{"implement", "review", "merge", "●", "○"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q in flow graph", want)
 		}
 	}
+	// Aqueduct names appear in the flow graph rows.
 	if !strings.Contains(out, "virgo") {
 		t.Error("output missing cataracta name virgo")
 	}
 	if !strings.Contains(out, "marcia") {
 		t.Error("output missing cataracta name marcia")
 	}
+	// Cistern counts.
+	if !strings.Contains(out, "flowing") {
+		t.Error("output missing flowing count")
+	}
+	if !strings.Contains(out, "queued") {
+		t.Error("output missing queued count")
+	}
+	// Recent flow section.
+	if !strings.Contains(out, "RECENT FLOW") {
+		t.Error("output missing RECENT FLOW section")
+	}
+	// Timestamp and footer.
 	if !strings.Contains(out, "15:07:42") {
 		t.Error("output missing last update timestamp")
 	}
 	if !strings.Contains(out, "q to quit") {
 		t.Error("output missing footer hint")
+	}
+}
+
+func TestRenderFlowGraphRow_ActiveStep(t *testing.T) {
+	ch := CataractaInfo{
+		Name:            "virgo",
+		DropletID:       "ci-s76ho",
+		Step:            "implement",
+		Steps:           []string{"implement", "review", "qa"},
+		Elapsed:         3*time.Minute + 12*time.Second,
+		CataractaIndex:  1,
+		TotalCataractae: 3,
+	}
+	graphLine, infoLine := renderFlowGraphRow(ch)
+
+	if !strings.Contains(graphLine, "●") {
+		t.Error("graph line should contain filled node ● for active step")
+	}
+	if !strings.Contains(graphLine, "○") {
+		t.Error("graph line should contain hollow node ○ for inactive steps")
+	}
+	if !strings.Contains(graphLine, "implement") {
+		t.Error("graph line should contain the active step name")
+	}
+	if !strings.Contains(graphLine, "review") {
+		t.Error("graph line should contain subsequent step names")
+	}
+	if !strings.Contains(infoLine, "↑") {
+		t.Error("info line should contain pointer ↑")
+	}
+	if !strings.Contains(infoLine, "virgo") {
+		t.Error("info line should contain aqueduct name")
+	}
+	if !strings.Contains(infoLine, "ci-s76ho") {
+		t.Error("info line should contain droplet ID")
+	}
+	if !strings.Contains(infoLine, "3m 12s") {
+		t.Error("info line should contain elapsed time")
+	}
+}
+
+func TestRenderFlowGraphRow_Idle(t *testing.T) {
+	ch := CataractaInfo{
+		Name:  "marcia",
+		Steps: []string{"implement", "review", "qa"},
+	}
+	graphLine, infoLine := renderFlowGraphRow(ch)
+
+	if strings.Contains(graphLine, "●") {
+		t.Error("idle graph line should not contain filled node ●")
+	}
+	if !strings.Contains(graphLine, "○") {
+		t.Error("idle graph line should contain hollow nodes ○")
+	}
+	if infoLine != "" {
+		t.Errorf("idle aqueduct should have no info line, got %q", infoLine)
+	}
+}
+
+func TestRenderFlowGraphRow_PointerAligned(t *testing.T) {
+	ch := CataractaInfo{
+		Name:            "virgo",
+		DropletID:       "ci-abc",
+		Step:            "review",
+		Steps:           []string{"implement", "review", "qa"},
+		CataractaIndex:  2,
+		TotalCataractae: 3,
+	}
+	graphLine, infoLine := renderFlowGraphRow(ch)
+
+	// Strip ANSI escape codes to get visually clean strings.
+	stripANSI := func(s string) string {
+		var out strings.Builder
+		inEsc := false
+		for _, r := range s {
+			if r == '\033' {
+				inEsc = true
+				continue
+			}
+			if inEsc {
+				if r == 'm' {
+					inEsc = false
+				}
+				continue
+			}
+			out.WriteRune(r)
+		}
+		return out.String()
+	}
+
+	// runeIndex returns the rune (visual) index of sub in s.
+	// strings.Index returns byte offsets; multi-byte chars (─, ○, ●, ▶, ↑)
+	// mean byte offset ≠ visual column — so we convert explicitly.
+	runeIndex := func(s, sub string) int {
+		byteIdx := strings.Index(s, sub)
+		if byteIdx < 0 {
+			return -1
+		}
+		return len([]rune(s[:byteIdx]))
+	}
+
+	cleanGraph := stripANSI(graphLine)
+	cleanInfo := stripANSI(infoLine)
+
+	// Find the ● position (rune column) in the clean graph.
+	bulletPos := runeIndex(cleanGraph, "●")
+	if bulletPos < 0 {
+		t.Fatal("no ● in graph line")
+	}
+	// The ↑ in the info line should be at the same visual column.
+	arrowPos := runeIndex(cleanInfo, "↑")
+	if arrowPos < 0 {
+		t.Fatal("no ↑ in info line")
+	}
+	if bulletPos != arrowPos {
+		t.Errorf("● at visual col %d, ↑ at visual col %d — should be aligned", bulletPos, arrowPos)
 	}
 }
 

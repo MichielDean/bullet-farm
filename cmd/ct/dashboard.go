@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	dashboardInnerWidth      = 56 // inner content width (between ║ borders)
 	refreshInterval          = 2 * time.Second
 	recentEventLimit         = 5
 	defaultDashboardHTMLPort = 5737
@@ -38,37 +37,38 @@ const (
 )
 
 const dashboardEasterEggText = `Four letters guard the gate you seek,
-Each one counted in a way that’s unique.
-Not by their place in the alphabet’s line,
+Each one counted in a way that's unique.
+Not by their place in the alphabet's line,
 But by where they stand among numbers prime.
 
-Take each letter’s secret prime,
-Then trim away what’s second in time.
-What’s left behind, when placed in a row,
+Take each letter's secret prime,
+Then trim away what's second in time.
+What's left behind, when placed in a row,
 Reveals the port where you must go.`
 
 // CataractaInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataracta chain that droplet is.
 type CataractaInfo struct {
-	Name       string
-	DropletID  string
-	Step       string
-	Elapsed    time.Duration
+	Name            string
+	DropletID       string
+	Step            string
+	Steps           []string // workflow step names in order
+	Elapsed         time.Duration
 	CataractaIndex  int // 1-based index of current cataracta; 0 if unknown
 	TotalCataractae int
 }
 
 // DashboardData holds all data required to render the dashboard.
 type DashboardData struct {
-	CataractaCount  int
-	FlowingCount int
-	QueuedCount  int
-	DoneCount    int
-	Cataractae      []CataractaInfo
-	CisternItems []*cistern.Droplet // flowing + queued
-	RecentItems  []*cistern.Droplet // recently closed/escalated
-	BlockedByMap map[string]string  // droplet ID -> first blocking dep ID
-	FarmRunning  bool
-	FetchedAt    time.Time
+	CataractaCount int
+	FlowingCount   int
+	QueuedCount    int
+	DoneCount      int
+	Cataractae     []CataractaInfo
+	CisternItems   []*cistern.Droplet // flowing + queued
+	RecentItems    []*cistern.Droplet // recently closed/escalated
+	BlockedByMap   map[string]string  // droplet ID -> first blocking dep ID
+	FarmRunning    bool
+	FetchedAt      time.Time
 }
 
 // fetchDashboardData loads config and queue state into a DashboardData.
@@ -112,7 +112,11 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	if err != nil {
 		cataractae := make([]CataractaInfo, len(configCataractae))
 		for i, ch := range configCataractae {
-			cataractae[i] = CataractaInfo{Name: ch.name}
+			ci := CataractaInfo{Name: ch.name}
+			if wf, ok := allSteps[ch.repo]; ok {
+				ci.Steps = stepNames(wf)
+			}
+			cataractae[i] = ci
 		}
 		data.Cataractae = cataractae
 		return data
@@ -123,7 +127,11 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	if err != nil {
 		cataractae := make([]CataractaInfo, len(configCataractae))
 		for i, ch := range configCataractae {
-			cataractae[i] = CataractaInfo{Name: ch.name}
+			ci := CataractaInfo{Name: ch.name}
+			if wf, ok := allSteps[ch.repo]; ok {
+				ci.Steps = stepNames(wf)
+			}
+			cataractae[i] = ci
 		}
 		data.Cataractae = cataractae
 		return data
@@ -149,6 +157,9 @@ func fetchDashboardData(cfgPath, dbPath string) *DashboardData {
 	cataractae := make([]CataractaInfo, len(configCataractae))
 	for i, ch := range configCataractae {
 		ci := CataractaInfo{Name: ch.name}
+		if wf, ok := allSteps[ch.repo]; ok {
+			ci.Steps = stepNames(wf)
+		}
 		if item, ok := assigneeMap[ch.name]; ok {
 			ci.DropletID = item.ID
 			ci.Step = item.CurrentCataracta
@@ -203,6 +214,15 @@ func cataractaIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCat
 	return 0
 }
 
+// stepNames extracts step names from a workflow cataracta slice.
+func stepNames(wf []aqueduct.WorkflowCataracta) []string {
+	names := make([]string, len(wf))
+	for i, s := range wf {
+		names[i] = s.Name
+	}
+	return names
+}
+
 // progressBar renders a filled/empty progress bar of barWidth characters.
 // E.g. stepIndex=2, total=6, barWidth=6 → "████░░"
 func progressBar(stepIndex, total, barWidth int) string {
@@ -239,132 +259,103 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(r))
 }
 
-// borderLine returns a full-width double-line separator "╠═...═╣".
-func borderLine() string {
-	return "╠" + strings.Repeat("═", dashboardInnerWidth+2) + "╣"
-}
+// renderFlowGraphRow renders a single aqueduct as a horizontal flow graph.
+// The aqueduct name is shown as a left-column prefix so every row is labelled.
+// graphLine shows the pipeline with ● for the active node and ○ for inactive nodes.
+// infoLine shows the ↑ pointer with droplet details (empty when idle).
+func renderFlowGraphRow(ch CataractaInfo) (graphLine, infoLine string) {
+	const namePad = 12 // fixed visual width for the name column
+	namePfx := padRight(ch.Name, namePad)
+	// prefix: "  <name>  " — 2 + namePad + 2 = namePad+4 visual chars
+	const pfxWidth = namePad + 4
 
-// contentLine wraps content in ║ borders, padded to dashboardInnerWidth.
-func contentLine(content string) string {
-	return "║ " + padRight(content, dashboardInnerWidth) + " ║"
+	if len(ch.Steps) == 0 {
+		if ch.DropletID == "" {
+			return "  " + namePfx + "  " + colorDim + "(idle)" + colorReset, ""
+		}
+		return "  " + colorGreen + namePfx + colorReset + "  " + ch.Step, ""
+	}
+
+	var g strings.Builder
+	g.WriteString("  ")
+	g.WriteString(colorDim + namePfx + colorReset)
+	g.WriteString("  ")
+	activeCol := -1
+	visualCol := pfxWidth
+
+	for i, step := range ch.Steps {
+		if i > 0 {
+			prevStep := ch.Steps[i-1]
+			if prevStep == ch.Step && ch.DropletID != "" {
+				g.WriteString(colorDim + " ──" + colorReset + colorGreen + "●" + colorReset + colorDim + "──▶ " + colorReset)
+				activeCol = visualCol + 3
+			} else {
+				g.WriteString(colorDim + " ──○──▶ " + colorReset)
+			}
+			visualCol += 8
+		}
+		if step == ch.Step && ch.DropletID != "" {
+			g.WriteString(colorGreen + step + colorReset)
+		} else {
+			g.WriteString(colorDim + step + colorReset)
+		}
+		visualCol += len([]rune(step))
+	}
+
+	// Trailing node if the last step is active.
+	if len(ch.Steps) > 0 && ch.Steps[len(ch.Steps)-1] == ch.Step && ch.DropletID != "" {
+		g.WriteString(colorDim + " ──" + colorReset + colorGreen + "●" + colorReset)
+		activeCol = visualCol + 3
+	}
+
+	graphLine = g.String()
+	if activeCol >= 0 {
+		bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
+		infoLine = strings.Repeat(" ", activeCol) + "↑ " + ch.Name + " · " + ch.DropletID + "  " + formatElapsed(ch.Elapsed) + "  " + bar
+	}
+	return
 }
 
 // renderDashboard produces the full dashboard string for the given data.
 func renderDashboard(data *DashboardData) string {
 	var sb strings.Builder
-	totalWidth := dashboardInnerWidth + 4 // "║ " + content + " ║"
+	sep := strings.Repeat("─", 70)
 
-	// Header.
-	title := " CISTERN "
-	padTotal := totalWidth - 2 - len(title)
-	leftPad := padTotal / 2
-	rightPad := padTotal - leftPad
-	sb.WriteString("╔" + strings.Repeat("═", leftPad) + title + strings.Repeat("═", rightPad) + "╗\n")
-
-	// Summary line.
-	summary := fmt.Sprintf("%d flowing  •  %d queued  •  %d delivered",
-		data.FlowingCount, data.QueuedCount, data.DoneCount)
-	sb.WriteString(contentLine(summary) + "\n")
-
-	// AQUEDUCTS section.
-	sb.WriteString(borderLine() + "\n")
-	sb.WriteString(contentLine("AQUEDUCTS") + "\n")
-
+	// Flow graph — one row per aqueduct.
 	if len(data.Cataractae) == 0 {
-		sb.WriteString(contentLine("  No aqueducts configured") + "\n")
+		sb.WriteString("  No aqueducts configured\n")
 	} else {
 		for _, ch := range data.Cataractae {
-			sb.WriteString(contentLine(renderCataractaLine(ch)) + "\n")
+			g, info := renderFlowGraphRow(ch)
+			sb.WriteString(g + "\n")
+			if info != "" {
+				sb.WriteString(info + "\n")
+			}
 		}
 	}
+	sb.WriteString(sep + "\n")
 
-	// CISTERN section.
-	sb.WriteString(borderLine() + "\n")
-	sb.WriteString(contentLine("CISTERN") + "\n")
+	// Cistern counts.
+	sb.WriteString(fmt.Sprintf("  ● %d flowing  ○ %d queued  ✓ %d delivered\n",
+		data.FlowingCount, data.QueuedCount, data.DoneCount))
+	sb.WriteString(sep + "\n")
 
-	if len(data.CisternItems) == 0 {
-		sb.WriteString(contentLine("  Cistern dry.") + "\n")
-	} else {
-		for _, item := range data.CisternItems {
-			sb.WriteString(contentLine(renderCisternLine(item, data.BlockedByMap)) + "\n")
-		}
-	}
-
-	// RECENT FLOW section.
-	sb.WriteString(borderLine() + "\n")
-	sb.WriteString(contentLine("RECENT FLOW") + "\n")
-
+	// Recent flow.
+	sb.WriteString("  RECENT FLOW\n")
 	if len(data.RecentItems) == 0 {
-		sb.WriteString(contentLine("  No recent flow.") + "\n")
+		sb.WriteString("  No recent flow.\n")
 	} else {
 		for _, item := range data.RecentItems {
-			sb.WriteString(contentLine(renderRecentLine(item)) + "\n")
+			sb.WriteString("  " + renderRecentLine(item) + "\n")
 		}
 	}
+	sb.WriteString(sep + "\n")
 
 	// Footer.
-	sb.WriteString("╚" + strings.Repeat("═", dashboardInnerWidth+2) + "╝\n")
 	sb.WriteString(fmt.Sprintf("  q to quit  •  r to refresh  •  last update: %s\n",
 		data.FetchedAt.Format("15:04:05")))
 
 	return sb.String()
-}
-
-// renderCataractaLine builds the aqueduct row string (without borders).
-func renderCataractaLine(ch CataractaInfo) string {
-	if ch.DropletID == "" {
-		// Idle aqueduct.
-		name := padRight(ch.Name, 10)
-		return colorDim + "  " + name + "idle" + colorReset
-	}
-
-	name := padRight(ch.Name, 10)
-	id := padRight(ch.DropletID, 10)
-	step := "[" + ch.Step + "]"
-	elapsed := formatElapsed(ch.Elapsed)
-	bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 6)
-
-	// Line: "  name → id  [cataracta]  elapsed  bar"
-	line := fmt.Sprintf("%s%s→ %s%s  %-18s  %-8s  %s%s",
-		colorGreen, "  "+name, id, colorReset, step, elapsed, bar, colorReset)
-	return line
-}
-
-// renderCisternLine builds a cistern row string. blockedByMap maps droplet ID
-// to its first blocking dep ID; if the item appears there it is shown dimmed.
-func renderCisternLine(item *cistern.Droplet, blockedByMap map[string]string) string {
-	id := padRight(item.ID, 10)
-	cx := padRight(complexityName(item.Complexity), 9)
-	status := displayStatus(item.Status)
-	step := item.CurrentCataracta
-	if step == "" {
-		step = "—"
-	}
-
-	if depID, blocked := blockedByMap[item.ID]; blocked {
-		return fmt.Sprintf("%s  %s%s⊘ blocked   %s  waiting: %s%s",
-			colorDim, id, cx, cx[:0], depID, colorReset)
-	}
-
-	var statusColor string
-	switch item.Status {
-	case "in_progress":
-		statusColor = colorGreen
-	case "open":
-		statusColor = colorYellow
-	case "stagnant":
-		statusColor = colorRed
-	default:
-		statusColor = colorDim
-	}
-
-	return fmt.Sprintf("  %s%s%s%s%-12s  %s%s%s  %s",
-		colorDim, id, colorReset,
-		cx,
-		statusColor+status+colorReset,
-		"",
-		"", "",
-		step)
 }
 
 // renderRecentLine builds a recent-flow row string.

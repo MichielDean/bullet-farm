@@ -38,7 +38,6 @@ type dashboardTUIModel struct {
 	logoLines []string
 	width     int
 	height    int
-	scroll    int
 }
 
 func newDashboardTUIModel(cfgPath, dbPath string) dashboardTUIModel {
@@ -46,7 +45,7 @@ func newDashboardTUIModel(cfgPath, dbPath string) dashboardTUIModel {
 		cfgPath:   cfgPath,
 		dbPath:    dbPath,
 		logoLines: loadLogoLines(),
-		width:     80,
+		width:     100,
 		height:    24,
 	}
 }
@@ -88,20 +87,14 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "r", "R":
 			return m, m.fetchDataCmd()
-		case "up", "k":
-			if m.scroll > 0 {
-				m.scroll--
-			}
-		case "down", "j":
-			m.scroll++
 		}
 	}
 	return m, nil
 }
 
 func (m dashboardTUIModel) View() string {
-	if m.width < 80 || m.height < 20 {
-		return fmt.Sprintf("Terminal too small — need at least 80×20 (current: %d×%d)\n", m.width, m.height)
+	if m.width < 100 || m.height < 24 {
+		return fmt.Sprintf("Terminal too small — need at least 100×24 (current: %d×%d)\n", m.width, m.height)
 	}
 	if m.data == nil {
 		return "  Loading…\n"
@@ -112,28 +105,23 @@ func (m dashboardTUIModel) View() string {
 
 	// 1. Logo header.
 	parts = append(parts, m.viewLogo()...)
+	parts = append(parts, sep)
 
-	// 2. Status bar.
+	// 2. Flow graph — one row per aqueduct.
+	parts = append(parts, m.viewFlowGraph()...)
+	parts = append(parts, sep)
+
+	// 3. Cistern counts.
 	parts = append(parts, m.viewStatusBar())
 	parts = append(parts, sep)
 
-	// 3. AQUEDUCTS section.
-	parts = append(parts, tuiStyleHeader.Render("  AQUEDUCTS"))
-	parts = append(parts, m.viewAqueducts()...)
-	parts = append(parts, sep)
-
-	// 4. CISTERN section.
-	parts = append(parts, tuiStyleHeader.Render("  CISTERN"))
-	parts = append(parts, m.viewCistern()...)
-	parts = append(parts, sep)
-
-	// 5. RECENT FLOW section.
+	// 4. Recent flow.
 	parts = append(parts, tuiStyleHeader.Render("  RECENT FLOW"))
 	parts = append(parts, m.viewRecentFlow()...)
 	parts = append(parts, sep)
 
-	// 6. Footer.
-	parts = append(parts, tuiStyleFooter.Render("  q quit  r refresh  ↑↓ scroll  ? help"))
+	// 5. Footer.
+	parts = append(parts, tuiStyleFooter.Render("  q quit  r refresh  ? help"))
 
 	return strings.Join(parts, "\n")
 }
@@ -169,111 +157,85 @@ func (m dashboardTUIModel) viewStatusBar() string {
 	return fmt.Sprintf("  %s  %s  %s  %s", flowing, queued, done, ts)
 }
 
-func (m dashboardTUIModel) viewAqueducts() []string {
+// viewFlowGraph renders each aqueduct as a left-to-right flow graph.
+func (m dashboardTUIModel) viewFlowGraph() []string {
 	if len(m.data.Cataractae) == 0 {
 		return []string{tuiStyleDim.Render("  No aqueducts configured")}
 	}
-	lines := make([]string, 0, len(m.data.Cataractae))
+	var lines []string
 	for _, ch := range m.data.Cataractae {
-		lines = append(lines, m.viewAqueductRow(ch))
-	}
-	return lines
-}
-
-func (m dashboardTUIModel) viewAqueductRow(ch CataractaInfo) string {
-	name := padRight(ch.Name, 14)
-	if ch.DropletID == "" {
-		return fmt.Sprintf("  %s%s", name, tuiStyleDim.Render("idle"))
-	}
-	bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
-	elapsed := formatElapsed(ch.Elapsed)
-	dropletID := padRight(ch.DropletID, 10)
-	step := "[" + padRight(ch.Step, 20) + "]"
-	return fmt.Sprintf("  %s  %s  %s  %-8s  %s",
-		tuiStyleGreen.Render(name),
-		dropletID,
-		tuiStyleDim.Render(step),
-		elapsed,
-		tuiStyleGreen.Render(bar),
-	)
-}
-
-func (m dashboardTUIModel) viewCistern() []string {
-	items := m.data.CisternItems
-	if len(items) == 0 {
-		return []string{tuiStyleDim.Render("  Cistern dry.")}
-	}
-
-	// Clamp scroll.
-	maxScroll := len(items) - 1
-	if m.scroll > maxScroll {
-		m.scroll = maxScroll
-	}
-	if m.scroll < 0 {
-		m.scroll = 0
-	}
-
-	// Show up to 1/3 of terminal height, minimum 3 rows.
-	maxVisible := m.height / 3
-	if maxVisible < 3 {
-		maxVisible = 3
-	}
-
-	start := m.scroll
-	end := start + maxVisible
-	if end > len(items) {
-		end = len(items)
-	}
-
-	lines := make([]string, 0, maxVisible+1)
-	for _, item := range items[start:end] {
-		lines = append(lines, m.viewCisternRow(item))
-	}
-	if len(items) > maxVisible {
-		extra := len(items) - (end - start)
-		if extra > 0 {
-			lines = append(lines, tuiStyleDim.Render(fmt.Sprintf("  … %d more  (↑↓ to scroll)", extra)))
+		graphLine, infoLine := m.tuiFlowGraphRow(ch)
+		lines = append(lines, graphLine)
+		if infoLine != "" {
+			lines = append(lines, infoLine)
 		}
 	}
 	return lines
 }
 
-func (m dashboardTUIModel) viewCisternRow(item *cistern.Droplet) string {
-	step := item.CurrentCataracta
-	if step == "" {
-		step = "—"
+// tuiFlowGraphRow renders a single aqueduct as a styled flow graph row.
+// The aqueduct name is shown as a left-column prefix so every row is labelled.
+// Returns graphLine (the pipeline) and infoLine (↑ pointer with droplet info, or empty).
+// Visual column tracking is kept separate from the ANSI-escaped string builder.
+func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaInfo) (graphLine, infoLine string) {
+	const namePad = 12 // fixed visual width for the name column
+	namePfx := padRight(ch.Name, namePad)
+	const pfxWidth = namePad + 4 // "  <name>  " = 2 + namePad + 2
+
+	if len(ch.Steps) == 0 {
+		if ch.DropletID == "" {
+			return "  " + tuiStyleDim.Render(namePfx+"  (idle)"), ""
+		}
+		return "  " + tuiStyleGreen.Render(namePfx) + "  " + ch.Step, ""
 	}
 
-	var statusStyled string
-	switch item.Status {
-	case "in_progress":
-		statusStyled = tuiStyleGreen.Render(padRight(displayStatus(item.Status), 10))
-	case "open":
-		statusStyled = tuiStyleYellow.Render(padRight(displayStatus(item.Status), 10))
-	case "stagnant":
-		statusStyled = tuiStyleRed.Render(padRight(displayStatus(item.Status), 10))
-	default:
-		statusStyled = tuiStyleDim.Render(padRight(displayStatus(item.Status), 10))
+	var g strings.Builder
+	g.WriteString("  ")
+	g.WriteString(tuiStyleDim.Render(namePfx))
+	g.WriteString("  ")
+	activeVisualCol := -1
+	visualCol := pfxWidth
+
+	for i, step := range ch.Steps {
+		if i > 0 {
+			prevStep := ch.Steps[i-1]
+			// " ──" = 3 visual chars, "●"/"○" = 1, "──▶ " = 4 → total 8
+			if prevStep == ch.Step && ch.DropletID != "" {
+				g.WriteString(tuiStyleDim.Render(" ──"))
+				g.WriteString(tuiStyleGreen.Render("●"))
+				activeVisualCol = visualCol + 3
+				g.WriteString(tuiStyleDim.Render("──▶ "))
+			} else {
+				g.WriteString(tuiStyleDim.Render(" ──○──▶ "))
+			}
+			visualCol += 8
+		}
+		if step == ch.Step && ch.DropletID != "" {
+			g.WriteString(tuiStyleGreen.Bold(true).Render(step))
+		} else {
+			g.WriteString(tuiStyleDim.Render(step))
+		}
+		visualCol += len([]rune(step))
 	}
 
-	// Truncate title to fill remaining terminal width.
-	fixedWidth := 2 + 10 + 2 + 10 + 2 + 20 + 2 // "  id  status  step  "
-	titleWidth := m.width - fixedWidth
-	if titleWidth < 8 {
-		titleWidth = 8
-	}
-	title := item.Title
-	r := []rune(title)
-	if len(r) > titleWidth {
-		title = string(r[:titleWidth-3]) + "..."
+	// Trailing node if the last step is active.
+	if len(ch.Steps) > 0 && ch.Steps[len(ch.Steps)-1] == ch.Step && ch.DropletID != "" {
+		g.WriteString(tuiStyleDim.Render(" ──"))
+		g.WriteString(tuiStyleGreen.Render("●"))
+		activeVisualCol = visualCol + 3
 	}
 
-	return fmt.Sprintf("  %s  %s  %-20s  %s",
-		tuiStyleDim.Render(padRight(item.ID, 10)),
-		statusStyled,
-		step,
-		title,
-	)
+	graphLine = g.String()
+	if activeVisualCol >= 0 {
+		bar := progressBar(ch.CataractaIndex, ch.TotalCataractae, 8)
+		infoLine = strings.Repeat(" ", activeVisualCol) +
+			tuiStyleDim.Render("↑ ") +
+			tuiStyleGreen.Render(ch.Name) +
+			tuiStyleDim.Render(" · "+ch.DropletID) +
+			"  " + formatElapsed(ch.Elapsed) +
+			"  " + tuiStyleGreen.Render(bar)
+	}
+	return
 }
 
 func (m dashboardTUIModel) viewRecentFlow() []string {
@@ -304,7 +266,7 @@ func (m dashboardTUIModel) viewRecentRow(item *cistern.Droplet) string {
 		icon = tuiStyleDim.Render("·")
 	}
 
-	// Truncate title to fit.
+	// Truncate title to fit terminal width.
 	fixedWidth := 2 + 5 + 2 + 10 + 2 + 20 + 2 + 2 + 2
 	titleWidth := m.width - fixedWidth
 	if titleWidth < 8 {

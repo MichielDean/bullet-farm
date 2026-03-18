@@ -152,7 +152,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 			wfPath = filepath.Join(cfgDir, wfPath)
 		}
 
-		// Check 4: aqueduct YAML valid.
+		// Check 3: aqueduct YAML valid.
 		wf, wfErr := aqueduct.ParseWorkflow(wfPath)
 		wfLabel := fmt.Sprintf("aqueduct: %s", wfPath)
 		if wfErr == nil {
@@ -193,8 +193,13 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 		}
 
 		// Check 2: Skills installed (deduplicated by name across all repos).
+		// In-repo skills (skill.Path != "") are resolved from the repo itself and
+		// do not require a ~/.cistern/skills/<name>/SKILL.md installation.
 		for _, step := range wf.Cataractae {
 			for _, skill := range step.Skills {
+				if skill.Path != "" {
+					continue // in-repo skill; no install check needed
+				}
 				if seenSkills[skill.Name] {
 					continue
 				}
@@ -213,7 +218,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 		}
 	}
 
-	// Check 3: Castellarius process (informational — does not affect ok).
+	// Check 4: Castellarius process (informational — does not affect ok).
 	checkCastellariusProcess()
 
 	// Check 5: Stalled droplets (warnings only — does not affect ok).
@@ -227,7 +232,10 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 func checkClaudeMdIntegrity(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("missing — run: ct cataractae generate")
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing — run: ct cataractae generate")
+		}
+		return fmt.Errorf("unreadable (%w) — run: ct cataractae generate", err)
 	}
 	if !strings.Contains(string(data), "ct droplet pass") {
 		return fmt.Errorf("corrupt (missing sentinel) — run: ct cataractae generate")

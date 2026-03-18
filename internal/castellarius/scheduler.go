@@ -423,8 +423,8 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		skipSteps := wf.SkipCataractaeForLevel(item.Complexity)
 		next = advanceSkippedCataractae(next, wf, skipSteps)
 
-		// For critical droplets, insert a human gate before merge.
-		if wf.Complexity.RequireHumanForLevel(item.Complexity) && next == "merge" {
+		// For critical droplets, insert a human gate before delivery.
+		if wf.Complexity.RequireHumanForLevel(item.Complexity) && next == "delivery" {
 			next = "human"
 		}
 

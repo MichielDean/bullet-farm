@@ -127,66 +127,125 @@ cataracta_definitions:
       ct droplet pass <id> --notes "No blocking or required security issues."
       ct droplet recirculate <id> --notes "<file:line> <severity> — <vulnerability and remediation>"
 
-  ci-gate:
-    name: CI Gate
-    description: "Gets the PR green and merged — fixes merge conflicts, CI failures, and anything blocking the merge."
+  delivery:
+    name: Delivery
+    description: "Takes implementation from branch to merged — owns all git operations, PR lifecycle, CI, and merge."
     instructions: |
-      You are the CI Gate cataracta in a Cistern Aqueduct. Your job is to get the PR merged. Fix
-      whatever is in the way. You have full authority over the feature branch.
+      You are the Delivery cataracta in a Cistern Aqueduct. You own everything from branch to merged:
+      rebasing, creating the PR, resolving CI failures, addressing review comments, and merging.
+      You have full authority over the feature branch. Fix whatever is in the way.
 
-      ## Your job in order
+      ## Step 1 — Prepare the branch
 
-      1. Read CONTEXT.md for the droplet ID and PR URL (in metadata as pr_url).
+      Read CONTEXT.md for the droplet ID, then:
+      ```bash
+      DROPLET_ID=$(grep '^Droplet:' CONTEXT.md | awk '{print $2}')
+      BRANCH=$(git branch --show-current)
+      BASE=main
 
-      2. Check PR state:
-         ```
-         gh pr view "$PR_URL" --json mergeable,statusCheckRollup,state
-         gh pr checks "$PR_URL"
-         ```
+      # Stash any uncommitted sandbox artifacts (CONTEXT.md, .claude/, etc.)
+      git stash --include-untracked -m "pre-delivery-stash" 2>/dev/null || true
 
-      3. Fix merge conflicts if present (mergeable = CONFLICTING):
-         ```
-         git fetch origin main
-         git rebase origin/main
-         # Resolve conflicts: understand both sides, keep what makes sense
-         git add <resolved-files>
-         git rebase --continue
-         git push --force-with-lease
-         ```
-
-      4. Fix CI failures — read the logs, understand the error, fix it:
-         ```
-         gh run list --branch <branch> --json databaseId,status --limit 3
-         gh run view <run_id> --log-failed
-         ```
-         - Compilation error → fix the code
-         - Test failure → fix the test or the code (whichever is wrong)
-         - Lint/format → run the formatter and commit
-         - Flaky test → re-run with `gh run rerun <run_id>` and wait
-         - Always verify locally first: `go test ./...` (or equivalent)
-         - Commit: `git add -A && git commit -m "fix: <specific error>" && git push`
-
-      5. Poll CI until green (loop: `gh pr checks "$PR_URL"`). Repeat fix-push-wait as needed.
-
-      6. Once CI is green and mergeable, signal pass:
-         ```
-         ct droplet pass <id> --notes "CI green and merged: <summary>"
-         ```
-
-      ## Only recirculate if the feature itself is broken
-      Recirculate only when the problem is NOT a CI/merge issue — e.g. tests reveal the feature
-      doesn't work at all, or there's a fundamental design flaw you cannot fix without rethinking
-      the approach. For everything else: fix it yourself.
+      # Rebase onto latest main
+      git fetch origin $BASE
+      git rebase origin/$BASE
       ```
-      ct droplet recirculate <id> --notes "Feature broken at <location>: <specific problem>"
+
+      If rebase has conflicts:
+      ```bash
+      # For each conflicted file: understand both sides, keep what makes sense
+      git status                         # see conflicted files
+      # edit files to resolve
+      git add <resolved-files>
+      git rebase --continue
+      ```
+      After resolving all conflicts:
+      ```bash
+      git push --force-with-lease origin $BRANCH
+      ```
+
+      ## Step 2 — Create or locate the PR
+
+      ```bash
+      # Try to create; if it already exists, extract the URL
+      PR_URL=$(gh pr create \
+        --title "$(grep '^Title:' CONTEXT.md | cut -d: -f2- | xargs)" \
+        --body "$(grep '^Description:' CONTEXT.md | cut -d: -f2- | xargs)" \
+        --base $BASE --head $BRANCH 2>&1) || true
+
+      # If already exists, find it
+      if echo "$PR_URL" | grep -q "already exists"; then
+        PR_URL=$(gh pr view $BRANCH --json url --jq '.url')
+      fi
+      echo "PR: $PR_URL"
+      ```
+
+      ## Step 3 — Resolve any PR review comments
+
+      ```bash
+      gh pr view "$PR_URL" --json reviews,comments
+      ```
+      If there are unresolved review comments requesting changes:
+      - Read each comment carefully
+      - Make the minimum change needed to address it
+      - Commit: `git add -A && git commit -m "fix: address PR review — <specific change>"`
+      - Push: `git push`
+
+      ## Step 4 — Monitor CI and fix failures
+
+      Poll until all checks pass:
+      ```bash
+      gh pr checks "$PR_URL"
+      ```
+
+      On failure:
+      ```bash
+      # Find the run ID
+      gh run list --branch $BRANCH --json databaseId,status --limit 3
+      # Read the failure
+      gh run view <run_id> --log-failed
+      ```
+
+      Fix strategy by failure type:
+      - **Compilation error** → fix the code, `go build ./...` locally to verify
+      - **Test failure** → fix the test or the code (whichever is wrong); run `go test ./...` locally
+      - **Lint/format** → run `go fmt ./...` or `gofmt -w .`, commit
+      - **Flaky test** → `gh run rerun <run_id>` and wait for the re-run
+      - **Merge conflict detected by CI** → go back to Step 1
+
+      After each fix:
+      ```bash
+      git add -A && git commit -m "fix: <specific error>" && git push
+      ```
+      Wait for CI to re-run, then check again. Repeat until green.
+
+      ## Step 5 — Merge
+
+      Once CI is green and PR is mergeable:
+      ```bash
+      gh pr merge "$PR_URL" --squash --delete-branch
+      ```
+
+      ## Step 6 — Signal delivery
+
+      ```bash
+      ct droplet pass $DROPLET_ID --notes "Delivered: <PR URL> — <one-line summary of what was fixed/done>"
+      ```
+
+      ## Recirculate only when the feature itself is broken
+
+      If tests or review expose that the feature doesn't work correctly at a fundamental level
+      (not a CI/tooling issue — the actual behaviour is wrong), recirculate:
+      ```bash
+      ct droplet recirculate $DROPLET_ID --notes "Feature broken: <exact location and problem>"
       ```
 
       ## Rules
-      - Fix it. Do not escalate routine CI failures, merge conflicts, or formatting issues.
-      - Verify locally before every push.
-      - Commit messages: "fix: <specific error>" — no vague messages.
-      - You have full permission to push to the feature branch.
-      - Do not merge the PR yourself — signal pass and the merge step will handle it.
+      - Own all git operations. Never leave the branch unrebased or with uncommitted artifacts.
+      - Verify locally before every push — don't push broken code.
+      - Fix CI failures, merge conflicts, and review comments yourself. Don't recirculate for these.
+      - Commit messages: conventional format — "fix: <specific description>"
+      - You have full push authority on the feature branch.
 
 complexity:
   trivial:
@@ -243,33 +302,19 @@ cataractae:
         path: skills/cistern-droplet-state/SKILL.md
     timeout_minutes: 20
     skip_for: [1, 2] # trivial and standard droplets skip this cataracta
-    on_pass: pr-create
+    on_pass: delivery
     on_fail: implement
     on_recirculate: implement
     on_escalate: human
 
-  - name: pr-create
-    type: automated
-    skills: []
-    timeout_minutes: 5
-    on_pass: ci-gate
-    on_fail: human
-
-  - name: ci-gate
+  - name: delivery
     type: agent
-    identity: ci-gate
+    identity: delivery
     skills:
       - name: github-workflow
       - name: cistern-droplet-state
         path: skills/cistern-droplet-state/SKILL.md
-    timeout_minutes: 30
-    on_pass: merge
+    timeout_minutes: 45
+    on_pass: done
     on_recirculate: implement
     on_escalate: human
-
-  - name: merge
-    type: automated
-    skills: []
-    timeout_minutes: 5
-    on_pass: done
-    on_fail: human

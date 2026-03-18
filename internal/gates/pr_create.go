@@ -53,6 +53,16 @@ func (e *Executor) PRCreate(ctx context.Context, bc DropletContext) (*StepOutcom
 		_ = fetchOut
 	}
 
+	// Stash any uncommitted changes (e.g. CONTEXT.md, .claude/) before rebasing
+	// so the worktree is clean. We pop the stash after the rebase regardless.
+	stashOut, _ := e.ExecFn(ctx, bc.WorkDir, "git", "stash", "--include-untracked", "--message", "pre-rebase-stash")
+	didStash := !strings.Contains(string(stashOut), "No local changes")
+	defer func() {
+		if didStash {
+			e.ExecFn(ctx, bc.WorkDir, "git", "stash", "pop") //nolint:errcheck
+		}
+	}()
+
 	// Rebase onto base branch before pushing to avoid merge conflicts in the PR.
 	rebaseOut, rebaseErr := e.ExecFn(ctx, bc.WorkDir, "git", "rebase", "origin/"+baseBranch)
 	if rebaseErr != nil {

@@ -1011,10 +1011,8 @@ func complexityWorkflow() *aqueduct.Workflow {
 		Cataractae: []aqueduct.WorkflowCataracta{
 			{Name: "implement", Type: aqueduct.CataractaTypeAgent, OnPass: "adversarial-review", OnFail: "blocked"},
 			{Name: "adversarial-review", Type: aqueduct.CataractaTypeAgent, SkipFor: []int{1}, OnPass: "qa", OnFail: "implement", OnRecirculate: "implement"},
-			{Name: "qa", Type: aqueduct.CataractaTypeAgent, SkipFor: []int{1, 2}, OnPass: "pr-create", OnFail: "implement"},
-			{Name: "pr-create", Type: aqueduct.CataractaTypeAutomated, OnPass: "ci-gate", OnFail: "human"},
-			{Name: "ci-gate", Type: aqueduct.CataractaTypeAutomated, OnPass: "merge", OnFail: "implement"},
-			{Name: "merge", Type: aqueduct.CataractaTypeAutomated, OnPass: "done", OnFail: "human"},
+			{Name: "qa", Type: aqueduct.CataractaTypeAgent, SkipFor: []int{1, 2}, OnPass: "delivery", OnFail: "implement"},
+			{Name: "delivery", Type: aqueduct.CataractaTypeAgent, OnPass: "done", OnRecirculate: "implement", OnEscalate: "human"},
 		},
 		Complexity: aqueduct.ComplexityConfig{
 			Trivial:  aqueduct.ComplexityLevel{Level: 1, SkipCataractae: []string{"adversarial-review", "qa"}},
@@ -1029,10 +1027,10 @@ func TestAdvanceSkipped_TrivialSkipsReviewAndQA(t *testing.T) {
 	wf := complexityWorkflow()
 	skipSteps := wf.Complexity.SkipCataractaeForLevel(1) // ["adversarial-review", "qa"]
 
-	// After implement passes, next is adversarial-review — should skip to pr-create.
+	// After implement passes, next is adversarial-review — should skip to delivery.
 	got := advanceSkippedCataractae("adversarial-review", wf, skipSteps)
-	if got != "pr-create" {
-		t.Errorf("advanceSkippedCataractae(adversarial-review, trivial) = %q, want %q", got, "pr-create")
+	if got != "delivery" {
+		t.Errorf("advanceSkippedCataractae(adversarial-review, trivial) = %q, want %q", got, "delivery")
 	}
 }
 
@@ -1040,10 +1038,10 @@ func TestAdvanceSkipped_StandardSkipsQA(t *testing.T) {
 	wf := complexityWorkflow()
 	skipSteps := wf.Complexity.SkipCataractaeForLevel(2) // ["qa"]
 
-	// adversarial-review passes → qa → should skip to pr-create.
+	// adversarial-review passes → qa → should skip to delivery.
 	got := advanceSkippedCataractae("qa", wf, skipSteps)
-	if got != "pr-create" {
-		t.Errorf("advanceSkippedCataractae(qa, standard) = %q, want %q", got, "pr-create")
+	if got != "delivery" {
+		t.Errorf("advanceSkippedCataractae(qa, standard) = %q, want %q", got, "delivery")
 	}
 
 	// adversarial-review itself is not skipped.
@@ -1075,11 +1073,11 @@ func TestComplexity_CriticalHumanGateBeforeMerge(t *testing.T) {
 	wf := complexityWorkflow()
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
-		{ID: "crit-1", CurrentCataracta: "ci-gate", Complexity: 4},
+		{ID: "crit-1", CurrentCataracta: "qa", Complexity: 4},
 	}
 
 	cataracta := newMockRunner(client)
-	// default outcome "pass"; ci-gate.OnPass = "merge" → critical → "human" → escalate
+	// default outcome "pass"; qa.OnPass = "delivery" → critical → "human" → escalate
 
 	config := aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -1100,9 +1098,9 @@ func TestComplexity_CriticalHumanGateBeforeMerge(t *testing.T) {
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	// ci-gate passes → next is merge → critical requires human gate → should escalate.
+	// qa passes → next is delivery → critical requires human gate → should escalate.
 	if _, ok := client.escalated["crit-1"]; !ok {
-		t.Errorf("expected critical droplet escalated to human before merge, got step %q", client.steps["crit-1"])
+		t.Errorf("expected critical droplet escalated to human before delivery, got step %q", client.steps["crit-1"])
 	}
 }
 
@@ -1115,7 +1113,7 @@ func TestTick_TrivialDropSkipsReviewAndQA(t *testing.T) {
 
 	cataracta := newMockRunner(client)
 	// default outcome "pass"; implement.OnPass = "adversarial-review"
-	// trivial skips adversarial-review and qa → goes to pr-create
+	// trivial skips adversarial-review and qa → goes to delivery
 
 	config := aqueduct.AqueductConfig{
 		Repos: []aqueduct.RepoConfig{
@@ -1136,9 +1134,9 @@ func TestTick_TrivialDropSkipsReviewAndQA(t *testing.T) {
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	// implement passes → adversarial-review skipped → qa skipped → should go to pr-create.
-	if client.steps["triv-1"] != "pr-create" {
-		t.Errorf("expected trivial droplet at pr-create, got %q", client.steps["triv-1"])
+	// implement passes → adversarial-review skipped → qa skipped → should go to delivery.
+	if client.steps["triv-1"] != "delivery" {
+		t.Errorf("expected trivial droplet at delivery, got %q", client.steps["triv-1"])
 	}
 }
 

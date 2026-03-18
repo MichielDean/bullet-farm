@@ -122,8 +122,8 @@ func TestFlowInspectCisternCounts(t *testing.T) {
 	if out.Queue.Stagnant != 1 {
 		t.Errorf("stagnant: got %d, want 1", out.Queue.Stagnant)
 	}
-	if out.Queue.Closed != 1 {
-		t.Errorf("closed: got %d, want 1", out.Queue.Closed)
+	if out.Queue.Delivered != 1 {
+		t.Errorf("delivered: got %d, want 1", out.Queue.Delivered)
 	}
 	if out.Queue.Total != 3 { // flowing + queued + stagnant, not closed
 		t.Errorf("total: got %d, want 3", out.Queue.Total)
@@ -230,7 +230,7 @@ func TestBuildInspectOutput_UsesProvidedPathsAndIncludesStagnant(t *testing.T) {
 	if len(out.Droplets) != 1 {
 		t.Fatalf("droplets: got %d, want 1", len(out.Droplets))
 	}
-	if out.Droplets[0].Status != "escalated" {
-		t.Errorf("droplet status: got %q, want escalated", out.Droplets[0].Status)
+	if out.Droplets[0].Status != "stagnant" {
+		t.Errorf("droplet status: got %q, want stagnant", out.Droplets[0].Status)
 	}
 }

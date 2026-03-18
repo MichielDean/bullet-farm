@@ -889,8 +889,8 @@ func TestDefaultWorkerNames(t *testing.T) {
 	if len(names) != 3 {
 		t.Fatalf("expected 3 names, got %d", len(names))
 	}
-	if names[0] != "worker-0" {
-		t.Errorf("expected 'worker-0', got %q", names[0])
+	if names[0] != "operator-0" {
+		t.Errorf("expected 'operator-0', got %q", names[0])
 	}
 
 	names = defaultWorkerNames(0)
@@ -916,14 +916,14 @@ func TestWriteContext(t *testing.T) {
 	}
 
 	content := string(data)
-	if !strings.Contains(content, "## Step: implement") {
-		t.Error("missing implement step header")
+	if !strings.Contains(content, "## Cataracta: implement") {
+		t.Error("missing implement cataracta header")
 	}
 	if !strings.Contains(content, "wrote the feature") {
 		t.Error("missing implement note text")
 	}
-	if !strings.Contains(content, "## Step: review") {
-		t.Error("missing review step header")
+	if !strings.Contains(content, "## Cataracta: review") {
+		t.Error("missing review cataracta header")
 	}
 	if !strings.Contains(content, "needs error handling") {
 		t.Error("missing review note text")

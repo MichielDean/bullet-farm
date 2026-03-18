@@ -46,6 +46,7 @@ func TestPRCreate_Success(t *testing.T) {
 	rec := &recorder{responses: []response{
 		{out: []byte("feature-branch\n")},                      // git branch --show-current
 		{out: []byte("ok\n")},                                  // git fetch origin main
+		{out: []byte("No local changes to save\n")},            // git stash (nothing to stash)
 		{out: []byte("ok\n")},                                  // git rebase origin/main
 		{out: []byte("ok\n")},                                  // git push --force-with-lease
 		{out: []byte("https://github.com/org/repo/pull/42\n")}, // gh pr create
@@ -73,8 +74,8 @@ func TestPRCreate_Success(t *testing.T) {
 		t.Errorf("want pr_number=42, got %q", out.Annotations[AnnoPRNumber])
 	}
 
-	// Verify gh pr create was called with correct args (index 4 now: branch, fetch, rebase, push, gh).
-	ghCall := rec.calls[4]
+	// Verify gh pr create was called with correct args (index 5: branch, fetch, stash, rebase, push, gh).
+	ghCall := rec.calls[5]
 	if ghCall.name != "gh" {
 		t.Errorf("want gh command, got %q", ghCall.name)
 	}
@@ -92,6 +93,7 @@ func TestPRCreate_Success(t *testing.T) {
 func TestPRCreate_BranchProvided(t *testing.T) {
 	rec := &recorder{responses: []response{
 		{out: []byte("ok\n")},                                  // git fetch origin main
+		{out: []byte("No local changes to save\n")},            // git stash (nothing)
 		{out: []byte("ok\n")},                                  // git rebase origin/main
 		{out: []byte("ok\n")},                                  // git push --force-with-lease
 		{out: []byte("https://github.com/org/repo/pull/7\n")}, // gh pr create
@@ -112,15 +114,15 @@ func TestPRCreate_BranchProvided(t *testing.T) {
 	if out.Result != ResultPass {
 		t.Fatalf("want pass, got %s: %s", out.Result, out.Notes)
 	}
-	// Should have called fetch + rebase + push + gh (no git branch --show-current when branch provided).
-	if len(rec.calls) != 4 {
-		t.Fatalf("want 4 calls (fetch+rebase+push+gh), got %d: %v", len(rec.calls), rec.calls)
+	// Should have called fetch + stash + rebase + push + gh (no git branch --show-current when branch provided).
+	if len(rec.calls) != 5 {
+		t.Fatalf("want 5 calls (fetch+stash+rebase+push+gh), got %d: %v", len(rec.calls), rec.calls)
 	}
-	if rec.calls[2].name != "git" || rec.calls[2].args[0] != "push" {
-		t.Errorf("want git push at index 2, got %q %v", rec.calls[2].name, rec.calls[2].args)
+	if rec.calls[3].name != "git" || rec.calls[3].args[0] != "push" {
+		t.Errorf("want git push at index 3, got %q %v", rec.calls[3].name, rec.calls[3].args)
 	}
-	if rec.calls[3].name != "gh" {
-		t.Errorf("want gh at index 3, got %q", rec.calls[3].name)
+	if rec.calls[4].name != "gh" {
+		t.Errorf("want gh at index 4, got %q", rec.calls[4].name)
 	}
 }
 
@@ -129,6 +131,7 @@ func TestPRCreate_GhFails(t *testing.T) {
 	rec := &recorder{responses: []response{
 		{out: []byte("feature\n")},                       // git branch --show-current
 		{out: []byte("ok\n")},                            // git fetch
+		{out: []byte("No local changes to save\n")},      // git stash
 		{out: []byte("ok\n")},                            // git rebase
 		{out: []byte("ok\n")},                            // git push
 		{out: []byte("authentication required"), err: errors.New("exit 1")}, // gh pr create
@@ -157,6 +160,7 @@ func TestPRCreate_AlreadyExists(t *testing.T) {
 	rec := &recorder{responses: []response{
 		{out: []byte("feature\n")},            // git branch --show-current
 		{out: []byte("ok\n")},                 // git fetch
+		{out: []byte("No local changes to save\n")}, // git stash
 		{out: []byte("ok\n")},                 // git rebase
 		{out: []byte("ok\n")},                 // git push
 		{out: []byte(existingMsg), err: errors.New("exit 1")}, // gh pr create
@@ -184,8 +188,10 @@ func TestPRCreate_RebaseConflict(t *testing.T) {
 	rec := &recorder{responses: []response{
 		{out: []byte("feature\n")},                                     // git branch --show-current
 		{out: []byte("ok\n")},                                          // git fetch
+		{out: []byte("stash@{0}: On feature: pre-rebase-stash\n")},     // git stash (stashed)
 		{out: []byte("CONFLICT (content): Merge conflict in foo.go\n"), err: errors.New("exit 1")}, // git rebase
 		{out: []byte("ok\n")},                                          // git rebase --abort
+		{out: []byte("ok\n")},                                          // git stash pop (deferred)
 	}}
 
 	e := newExecutor(rec)
@@ -227,6 +233,7 @@ func TestPRCreate_NoBranch(t *testing.T) {
 func TestPRCreate_DefaultTitle(t *testing.T) {
 	rec := &recorder{responses: []response{
 		{out: []byte("ok\n")},                                 // git fetch
+		{out: []byte("No local changes to save\n")},           // git stash (nothing)
 		{out: []byte("ok\n")},                                 // git rebase
 		{out: []byte("ok\n")},                                 // git push
 		{out: []byte("https://github.com/org/repo/pull/1\n")}, // gh pr create
@@ -247,7 +254,7 @@ func TestPRCreate_DefaultTitle(t *testing.T) {
 		t.Fatalf("want pass, got %s: %s", out.Result, out.Notes)
 	}
 
-	ghCall := rec.calls[3] // fetch + rebase + push + gh
+	ghCall := rec.calls[4] // fetch + stash + rebase + push + gh
 	// Title should be "droplet bf-xyz".
 	for i, a := range ghCall.args {
 		if a == "--title" && i+1 < len(ghCall.args) {

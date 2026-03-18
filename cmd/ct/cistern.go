@@ -121,10 +121,6 @@ func displayStatus(status string) string {
 		return "flowing"
 	case "open":
 		return "queued"
-	case "escalated":
-		return "stagnant"
-	case "closed":
-		return "delivered"
 	default:
 		return status
 	}
@@ -395,7 +391,7 @@ func init() {
 	dropletAddCmd.Flags().StringVarP(&addComplexity, "complexity", "x", "3", "droplet complexity: 1/trivial, 2/standard, 3/full (default), 4/critical")
 
 	dropletListCmd.Flags().StringVar(&listRepo, "repo", "", "filter by repo")
-	dropletListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (open|in_progress|closed|escalated)")
+	dropletListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status (open|in_progress|delivered|stagnant)")
 	dropletListCmd.Flags().StringVar(&listOutput, "output", "table", "output format: table or json")
 
 	dropletEscalateCmd.Flags().StringVar(&escalateReason, "reason", "", "escalation reason (required)")

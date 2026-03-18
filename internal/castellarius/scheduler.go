@@ -198,7 +198,7 @@ func defaultWorkerNames(n int) []string {
 	}
 	names := make([]string, n)
 	for i := range names {
-		names[i] = fmt.Sprintf("worker-%d", i)
+		names[i] = fmt.Sprintf("operator-%d", i)
 	}
 	return names
 }
@@ -740,7 +740,7 @@ func WriteContext(dir string, notes []cistern.CataractaNote) error {
 		if header == "" {
 			header = "unknown"
 		}
-		b = append(b, fmt.Sprintf("## Step: %s\n\n%s\n\n", header, n.Content)...)
+		b = append(b, fmt.Sprintf("## Cataracta: %s\n\n%s\n\n", header, n.Content)...)
 	}
 
 	return os.WriteFile(filepath.Join(dir, "CONTEXT.md"), b, 0o644)

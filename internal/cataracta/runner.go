@@ -122,12 +122,12 @@ func initWorkers(repo aqueduct.RepoConfig, sandboxBase string) ([]*Worker, error
 }
 
 // workerName returns the name for worker at index i.
-// Uses the config namepool if available, otherwise "worker-N".
+// Uses the config namepool if available, otherwise "operator-N".
 func workerName(repo aqueduct.RepoConfig, i int) string {
 	if i < len(repo.Names) {
 		return repo.Names[i]
 	}
-	return fmt.Sprintf("worker-%d", i)
+	return fmt.Sprintf("operator-%d", i)
 }
 
 // Claim finds an idle worker and marks it busy. Returns nil if all workers are busy.

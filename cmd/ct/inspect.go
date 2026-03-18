@@ -36,8 +36,8 @@ type cisternInfo struct {
 	Total    int `json:"total"`
 	Flowing  int `json:"flowing"`
 	Queued   int `json:"queued"`
-	Stagnant int `json:"stagnant"`
-	Closed   int `json:"closed"`
+	Stagnant  int `json:"stagnant"`
+	Delivered int `json:"delivered"`
 }
 
 type dropletInfo struct {
@@ -58,9 +58,9 @@ type recentEvent struct {
 }
 
 type inspectOutput struct {
-	Cistern      cisternStateInfo `json:"cistern"`
-	Cataractae      []cataractaInfo     `json:"cataractae"`
-	Queue        cisternInfo      `json:"queue"`
+	Cistern      cisternStateInfo `json:"daemon"`
+	Cataractae   []cataractaInfo  `json:"cataractae"`
+	Queue        cisternInfo      `json:"cistern"`
 	Droplets     []dropletInfo    `json:"droplets"`
 	RecentEvents []recentEvent    `json:"recent_events"`
 }
@@ -135,11 +135,11 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 		case "open":
 			queueState.Queued++
 			queueState.Total++
-		case "escalated":
+		case "stagnant":
 			queueState.Stagnant++
 			queueState.Total++
-		case "closed":
-			queueState.Closed++
+		case "delivered":
+			queueState.Delivered++
 		}
 		if item.Assignee != "" {
 			assigneeMap[item.Assignee] = assignInfo{
@@ -177,9 +177,9 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 		out.Cataractae = []cataractaInfo{}
 	}
 
-	// Build droplets (exclude closed).
+	// Build droplets (exclude delivered).
 	for _, item := range allItems {
-		if item.Status == "closed" {
+		if item.Status == "delivered" {
 			continue
 		}
 		out.Droplets = append(out.Droplets, dropletInfo{
@@ -221,8 +221,8 @@ func printInspectTable(out inspectOutput) error {
 	defer tw.Flush()
 	fmt.Fprintf(tw, "Config:\t%s\n", out.Cistern.Config)
 	fmt.Fprintf(tw, "Running:\t%v\n", out.Cistern.Running)
-	fmt.Fprintf(tw, "\nQueue:\ttotal=%d  flowing=%d  queued=%d  stagnant=%d  closed=%d\n",
-		out.Queue.Total, out.Queue.Flowing, out.Queue.Queued, out.Queue.Stagnant, out.Queue.Closed)
+	fmt.Fprintf(tw, "\nCistern:\ttotal=%d  flowing=%d  queued=%d  stagnant=%d  delivered=%d\n",
+		out.Queue.Total, out.Queue.Flowing, out.Queue.Queued, out.Queue.Stagnant, out.Queue.Delivered)
 	if len(out.Cataractae) > 0 {
 		fmt.Fprintf(tw, "\\nCataractae:\n")
 		for _, ch := range out.Cataractae {

@@ -440,8 +440,8 @@ func TestWorkerName_Fallback(t *testing.T) {
 	if got := workerName(repo, 0); got != "alpha" {
 		t.Errorf("workerName(0) = %q, want %q", got, "alpha")
 	}
-	if got := workerName(repo, 1); got != "worker-1" {
-		t.Errorf("workerName(1) = %q, want %q", got, "worker-1")
+	if got := workerName(repo, 1); got != "operator-1" {
+		t.Errorf("workerName(1) = %q, want %q", got, "operator-1")
 	}
 }
 

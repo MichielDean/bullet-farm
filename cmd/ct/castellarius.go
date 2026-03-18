@@ -311,7 +311,7 @@ var statusCmd = &cobra.Command{
 				}
 			case "open":
 				queued++
-			case "closed":
+			case "delivered":
 				done++
 			}
 		}
@@ -385,14 +385,14 @@ func resolveConfigPath() string {
 }
 
 // repoWorkerNames returns the configured worker names for a repo,
-// falling back to worker-0, worker-1, etc.
+// falling back to operator-0, operator-1, etc.
 func repoWorkerNames(repo aqueduct.RepoConfig) []string {
 	if len(repo.Names) > 0 {
 		return repo.Names
 	}
 	names := make([]string, repo.Cataractae)
 	for i := range names {
-		names[i] = fmt.Sprintf("worker-%d", i)
+		names[i] = fmt.Sprintf("operator-%d", i)
 	}
 	return names
 }

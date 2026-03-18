@@ -278,7 +278,7 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 			{ID: "ci-abc12", Repo: "cistern", Status: "in_progress", CurrentCataracta: "implement", Complexity: 2},
 		},
 		RecentItems: []*cistern.Droplet{
-			{ID: "ci-xyz99", Status: "closed", CurrentCataracta: "merge", UpdatedAt: time.Now()},
+			{ID: "ci-xyz99", Status: "delivered", CurrentCataracta: "merge", UpdatedAt: time.Now()},
 		},
 		FarmRunning: true,
 		FetchedAt:   time.Date(2026, 3, 14, 15, 7, 42, 0, time.UTC),
@@ -325,7 +325,7 @@ func TestRenderDashboardHTML_ContainsEasterEggHoverText(t *testing.T) {
 		Cataractae: []cataractaInfo{
 			{Name: "upstream", DropletID: &dropletID, Stage: &stage, ElapsedSeconds: &elapsed},
 		},
-		Queue: cisternInfo{Flowing: 1, Queued: 0, Closed: 0},
+		Queue: cisternInfo{Flowing: 1, Queued: 0, Delivered: 0},
 	}
 
 	out := renderDashboardHTML(snapshot)
@@ -350,15 +350,15 @@ func TestDashboardListenAddr_UsesProvidedPort(t *testing.T) {
 
 func TestRenderDashboardHTML_ShowsEscalatedDropFromInspectSnapshot(t *testing.T) {
 	snapshot := inspectOutput{
-		Droplets: []dropletInfo{{ID: "ct-poisn1", Status: "escalated", Stage: "qa", UpdatedAt: time.Now()}},
+		Droplets: []dropletInfo{{ID: "ct-poisn1", Status: "stagnant", Stage: "qa", UpdatedAt: time.Now()}},
 	}
 
 	out := renderDashboardHTML(snapshot)
 	if !strings.Contains(out, "ct-poisn1") {
 		t.Error("html dashboard should render droplet id from inspect snapshot")
 	}
-	if !strings.Contains(out, displayStatus("escalated")) {
-		t.Error("html dashboard should render escalated display status from inspect snapshot")
+	if !strings.Contains(out, displayStatus("stagnant")) {
+		t.Error("html dashboard should render stagnant display status from inspect snapshot")
 	}
 }
 

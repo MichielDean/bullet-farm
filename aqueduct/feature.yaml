@@ -150,7 +150,7 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-droplet-state
-        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+        path: skills/cistern-droplet-state/SKILL.md
       - name: github-workflow
         url: https://raw.githubusercontent.com/callstackincubator/agent-skills/main/skills/github/SKILL.md
     timeout_minutes: 30
@@ -165,7 +165,7 @@ cataractae:
     context: diff_only
     skills:
       - name: cistern-droplet-state
-        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+        path: skills/cistern-droplet-state/SKILL.md
     timeout_minutes: 15
     skip_for: [1] # trivial droplets skip this cataracta
     on_pass: qa
@@ -180,7 +180,7 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-droplet-state
-        url: https://raw.githubusercontent.com/MichielDean/Cistern/main/skills/cistern-droplet-state/SKILL.md
+        path: skills/cistern-droplet-state/SKILL.md
     timeout_minutes: 20
     skip_for: [1, 2] # trivial and standard droplets skip this cataracta
     on_pass: pr-create

@@ -19,10 +19,13 @@ const (
 	ContextSpecOnly     ContextLevel = "spec_only"
 )
 
-// SkillRef references a skill by name and the URL to its SKILL.md file.
+// SkillRef references a skill by name. Exactly one of URL or Path should be set.
+// Path is a repo-relative path (e.g. "skills/foo/SKILL.md") resolved against
+// the agent's sandbox worktree — no HTTP involved. URL is for external skills.
 type SkillRef struct {
 	Name string `yaml:"name"`
-	URL  string `yaml:"url"` // raw GitHub URL to SKILL.md
+	URL  string `yaml:"url,omitempty"`  // raw URL to SKILL.md (for external skills)
+	Path string `yaml:"path,omitempty"` // repo-relative path to SKILL.md (for in-repo skills)
 }
 
 // WorkflowCataracta defines a single step in an aqueduct.

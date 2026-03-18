@@ -221,16 +221,25 @@ func (r *Runner) SpawnStep(w *Worker, item *cistern.Droplet, step *aqueduct.Work
 
 	// 3. Install and copy skills into sandbox/.claude/skills/<name>/SKILL.md.
 	for _, skill := range step.Skills {
-		if err := skills.Install(skill.Name, skill.URL); err != nil {
-			log.Printf("cataracta: warning: failed to install skill %q: %v", skill.Name, err)
-			continue
+		var src string
+		if skill.Path != "" {
+			// In-repo skill: resolve path relative to the sandbox worktree.
+			// No HTTP — the file is already on disk.
+			src = filepath.Join(w.SandboxDir, skill.Path)
+		} else {
+			// External skill: download once and cache in ~/.cistern/skills/.
+			if err := skills.Install(skill.Name, skill.URL); err != nil {
+				log.Printf("cataracta: warning: failed to install skill %q: %v", skill.Name, err)
+				continue
+			}
+			src = skills.CachePath(skill.Name)
 		}
 		dest := filepath.Join(w.SandboxDir, ".claude", "skills", skill.Name, "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			log.Printf("cataracta: warning: mkdir skills dir for %q: %v", skill.Name, err)
 			continue
 		}
-		if err := copyFile(skills.CachePath(skill.Name), dest); err != nil {
+		if err := copyFile(src, dest); err != nil {
 			log.Printf("cataracta: warning: copy skill %q: %v", skill.Name, err)
 		}
 	}

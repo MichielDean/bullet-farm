@@ -400,6 +400,21 @@ cataractae:
         path: skills/cistern-droplet-state/SKILL.md
     timeout_minutes: 20
     skip_for: [1, 2] # trivial and standard droplets skip this cataracta
+    on_pass: security-review
+    on_fail: implement
+    on_recirculate: implement
+    on_escalate: human
+
+  - name: security-review
+    type: agent
+    identity: security
+    model: sonnet
+    context: diff_only
+    skills:
+      - name: cistern-droplet-state
+        path: skills/cistern-droplet-state/SKILL.md
+    timeout_minutes: 15
+    skip_for: [1, 2, 3] # only critical droplets run security review
     on_pass: delivery
     on_fail: implement
     on_recirculate: implement

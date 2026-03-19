@@ -28,24 +28,71 @@ func (c *Config) applyDefaults() {
 }
 
 // RateLimiter enforces per-IP and per-token sliding-window request limits.
-// It is safe for concurrent use.
+// It is safe for concurrent use. Call Close when the limiter is no longer
+// needed to stop the background eviction goroutine.
 type RateLimiter struct {
 	mu          sync.Mutex
 	ipCounters  map[string]*windowCounter
 	tokCounters map[string]*windowCounter
 	cfg         Config
 	now         func() time.Time // injectable for testing
+	done        chan struct{}
 }
 
 // NewRateLimiter returns a RateLimiter with the given config.
 // Zero-value fields in cfg receive their defaults.
+// Call Close to stop the background eviction goroutine.
 func NewRateLimiter(cfg Config) *RateLimiter {
 	cfg.applyDefaults()
-	return &RateLimiter{
+	rl := &RateLimiter{
 		ipCounters:  make(map[string]*windowCounter),
 		tokCounters: make(map[string]*windowCounter),
 		cfg:         cfg,
 		now:         time.Now,
+		done:        make(chan struct{}),
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+// Close stops the background eviction goroutine.
+func (rl *RateLimiter) Close() {
+	close(rl.done)
+}
+
+// cleanupLoop periodically evicts stale counters to bound memory usage.
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.cfg.Window)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-rl.done:
+			return
+		case <-ticker.C:
+			rl.evictExpired()
+		}
+	}
+}
+
+// evictExpired removes counters whose sliding window contains no active
+// timestamps. This bounds map growth from rotating IPs/tokens that sent
+// requests in a prior window but have since gone quiet.
+func (rl *RateLimiter) evictExpired() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := rl.now()
+	w := rl.cfg.Window
+	for ip, c := range rl.ipCounters {
+		c.pruneAndCount(now, w)
+		if len(c.times) == 0 {
+			delete(rl.ipCounters, ip)
+		}
+	}
+	for tok, c := range rl.tokCounters {
+		c.pruneAndCount(now, w)
+		if len(c.times) == 0 {
+			delete(rl.tokCounters, tok)
+		}
 	}
 }
 

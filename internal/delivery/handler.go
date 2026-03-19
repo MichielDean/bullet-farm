@@ -14,7 +14,9 @@ type DropletAdder interface {
 }
 
 // Handler is an http.Handler for the droplet ingestion endpoint (POST /droplets).
-// It enforces authentication via Bearer token and applies rate limiting.
+// A Bearer token is required in the Authorization header; it is used as the
+// per-token rate-limit key. No token whitelist is enforced — the Bearer value
+// is an opaque bucket key, not a secret credential.
 type Handler struct {
 	adder       DropletAdder
 	limiter     *RateLimiter

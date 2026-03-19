@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -155,8 +156,73 @@ func TestRateLimiter_IPLimitBlocksEvenIfTokenIsUnder(t *testing.T) {
 func TestRateLimiter_DefaultConfig(t *testing.T) {
 	// Config with zero values should use defaults and not panic.
 	rl := NewRateLimiter(Config{})
+	defer rl.Close()
 	if !rl.Allow("1.2.3.4", "tok-a") {
 		t.Fatal("first request with default config should be allowed")
+	}
+}
+
+// TestRateLimiter_RejectPathEvictsEmptyCounter checks that when a request is
+// rejected due to the IP limit, a freshly-created (empty) token counter is
+// removed from the map rather than left as a permanent zero-entry.
+func TestRateLimiter_RejectPathEvictsEmptyCounter(t *testing.T) {
+	clk := &mockClock{t: time.Now()}
+	rl := newTestLimiter(1, 100, time.Minute, clk)
+	defer rl.Close()
+
+	// Fill the IP limit with tok-a.
+	if !rl.Allow("1.2.3.4", "tok-a") {
+		t.Fatal("first request should be allowed")
+	}
+
+	// Second request with a fresh token; rejected by IP limit.
+	// "tok-b" counter is created then immediately eligible for eviction.
+	if rl.Allow("1.2.3.4", "tok-b") {
+		t.Fatal("second request from same IP should be denied")
+	}
+
+	rl.mu.Lock()
+	_, hasTokB := rl.tokCounters["tok-b"]
+	rl.mu.Unlock()
+	if hasTokB {
+		t.Error("fresh token counter should be evicted after rejection, not left in map")
+	}
+}
+
+// TestRateLimiter_EvictExpiredCleansUpAllowPathEntries checks that
+// evictExpired removes counters for IPs/tokens that are no longer active
+// (all timestamps expired), preventing unbounded map growth from rotating
+// allow-path callers.
+func TestRateLimiter_EvictExpiredCleansUpAllowPathEntries(t *testing.T) {
+	clk := &mockClock{t: time.Now()}
+	rl := newTestLimiter(100, 100, time.Minute, clk)
+	defer rl.Close()
+
+	const n = 5
+	for i := 0; i < n; i++ {
+		ip := fmt.Sprintf("10.0.0.%d", i)
+		if !rl.Allow(ip, "tok-shared") {
+			t.Fatalf("request from %s should be allowed", ip)
+		}
+	}
+
+	rl.mu.Lock()
+	before := len(rl.ipCounters)
+	rl.mu.Unlock()
+	if before != n {
+		t.Fatalf("expected %d IP entries before cleanup, got %d", n, before)
+	}
+
+	// Advance past the window so all timestamps are stale.
+	clk.advance(time.Minute + time.Second)
+
+	rl.evictExpired()
+
+	rl.mu.Lock()
+	after := len(rl.ipCounters)
+	rl.mu.Unlock()
+	if after != 0 {
+		t.Errorf("expected 0 IP entries after evictExpired, got %d", after)
 	}
 }
 

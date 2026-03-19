@@ -82,10 +82,17 @@ func runStart(cmd *cobra.Command, args []string) error {
 		}
 
 		limiter := delivery.NewRateLimiter(dlvCfg)
+		defer limiter.Close()
 		handler := delivery.NewHandler(&cisternAdder{c: client}, limiter)
 		mux := http.NewServeMux()
 		mux.Handle("/droplets", handler)
-		srv := &http.Server{Addr: cfg.DeliveryAddr, Handler: mux}
+		srv := &http.Server{
+			Addr:              cfg.DeliveryAddr,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      30 * time.Second,
+		}
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				fmt.Fprintf(os.Stderr, "delivery: %v\n", err)

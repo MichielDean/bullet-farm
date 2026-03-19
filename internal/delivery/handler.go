@@ -47,6 +47,10 @@ func loopbackNets() []*net.IPNet {
 	return nets
 }
 
+// maxBodyBytes is the maximum number of bytes accepted in a request body.
+// Prevents unbounded memory consumption from large payloads.
+const maxBodyBytes = 1 << 20 // 1 MiB
+
 type addRequest struct {
 	Title       string `json:"title"`
 	Repo        string `json:"repo"`
@@ -84,6 +88,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req addRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)

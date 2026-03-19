@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -93,8 +94,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 			ReadTimeout:       10 * time.Second,
 			WriteTimeout:      30 * time.Second,
 		}
+		ln, err := net.Listen("tcp", cfg.DeliveryAddr)
+		if err != nil {
+			return fmt.Errorf("delivery: listen: %w", err)
+		}
 		go func() {
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 				fmt.Fprintf(os.Stderr, "delivery: %v\n", err)
 			}
 		}()

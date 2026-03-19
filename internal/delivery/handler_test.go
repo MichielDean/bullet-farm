@@ -302,6 +302,21 @@ func TestHandler_UntrustedProxyHeadersIgnored(t *testing.T) {
 	}
 }
 
+func TestHandler_BodyTooLarge(t *testing.T) {
+	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
+
+	// Send a body larger than maxBodyBytes (1 MiB + 1 byte).
+	large := make([]byte, maxBodyBytes+1)
+	req := httptest.NewRequest(http.MethodPost, "/droplets", strings.NewReader(string(large)))
+	req.Header.Set("Authorization", "Bearer tok-a")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized body, got %d", w.Code)
+	}
+}
+
 func TestHandler_ContentTypeJSON(t *testing.T) {
 	h := newTestHandler(t, &fakeAdder{id: "ct-abc12"}, 100, 100)
 

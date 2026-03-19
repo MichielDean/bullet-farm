@@ -20,19 +20,23 @@ Prevent abuse of the droplet ingestion endpoint. Apply per-IP and per-token limi
 
 ### From: manual
 
-Phase 2: internal/delivery/ratelimit_test.go and handler_test.go — goroutine leak in tests. NewRateLimiter() always starts go rl.cleanupLoop(); the goroutine runs until Close() is called. 10 test functions in ratelimit_test.go (AllowsWithinIPLimit, DeniesAtIPLimit, AllowsWithinTokenLimit, DeniesAtTokenLimit, DifferentIPsAreIndependent, DifferentTokensAreIndependent, ResetsAfterWindow, TokenLimitBlocksEvenIfIPIsUnder, IPLimitBlocksEvenIfTokenIsUnder, PartialIncrementIsAtomic) and all 14 test functions in handler_test.go call newTestLimiter/newTestHandler which calls NewRateLimiter but never call Close(). Each leaks a goroutine for the duration of the test binary. Three tests correctly use defer rl.Close() (DefaultConfig, RejectPathEvictsEmptyCounter, EvictExpiredCleansUpAllowPathEntries) — apply the same pattern to all remaining test functions, or refactor newTestLimiter/newTestHandler to register cleanup via t.Cleanup(rl.Close).
+Phase 2: two issues found.
+
+1. cmd/aqueduct/start.go:229 — Delivery server startup error not propagated. If srv.ListenAndServe fails immediately (port in use, permission denied), the error goes only to stderr; runStart returns nil and the scheduler continues running without the delivery endpoint. The 'listening' message (line 235) is also printed unconditionally before the goroutine runs, so it prints even on bind failure. Fix: open a net.Listener synchronously first and check the error before launching the goroutine, then call srv.Serve(ln).
+
+2. internal/delivery/handler.go:412 — No request body size limit before json.NewDecoder(r.Body).Decode. An authenticated, non-rate-limited client can send an arbitrarily large body, causing unbounded server memory consumption. ReadTimeout (10s) constrains time but not bytes; at 60 req/min per IP an attacker can still consume 60 x body_size bytes/min. Fix: wrap r.Body with http.MaxBytesReader(w, r.Body, maxBytes) before the decode call.
 
 ### From: manual
 
-Fixed goroutine leaks in ratelimit_test.go and handler_test.go: added testing.TB parameter to newTestLimiter and newTestHandler, registered t.Cleanup(rl.Close) inside each helper. Removed the two now-redundant explicit defer rl.Close() calls from tests that used newTestLimiter. All 8 packages build and tests pass (go test ./internal/delivery/... ok).
+Phase 3 fixes: (1) cmd/aqueduct/start.go: open net.Listener synchronously before goroutine; bind error now propagated and listening message only prints on success. (2) internal/delivery/handler.go: added maxBodyBytes=1MiB constant and http.MaxBytesReader wrapping r.Body before decode, preventing unbounded memory consumption. (3) Added TestHandler_BodyTooLarge covering 400 response on oversized body. All 29 tests pass.
 
 ### From: manual
 
-Fixed goroutine leaks in test helpers: added testing.TB parameter to newTestLimiter (ratelimit_test.go) and newTestHandler (handler_test.go), each now calls t.Cleanup(rl.Close) so every limiter is closed when the test finishes. Removed the two pre-existing explicit defer rl.Close() calls from TestRateLimiter_RejectPathEvictsEmptyCounter and TestRateLimiter_EvictExpiredCleansUpAllowPathEntries (which used newTestLimiter) to avoid double-close panics. All call sites updated to pass t. go test ./internal/delivery/... passes.
+Fixed both Phase 3 issues: (1) net.Listen called synchronously in start.go so bind errors propagate immediately; (2) http.MaxBytesReader(1MiB) applied before body decode in handler.go. TestHandler_BodyTooLarge added. All 29 tests pass.
 
 ### From: scheduler
 
-Implement pass rejected: HEAD has not advanced since last review (commit: 567b00b2735dc808d848557f554d031d5d444238). No new commits were found. You must commit your changes before signaling pass.
+Implement pass rejected: HEAD has not advanced since last review (commit: c002d5e3058452c7277d087718aa04c24bb9df4d). No new commits were found. You must commit your changes before signaling pass.
 
 <available_skills>
   <skill>

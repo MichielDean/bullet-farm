@@ -28,6 +28,24 @@ Changes required:
 - **Role:** implementer
 - **Context:** full_codebase
 
+## Recent Step Notes
+
+### From: manual
+
+Implemented docs_writer cataracta between qa and delivery. Committed: 9aab594. Tests: all 9 packages pass. Verified: docs_writer definition in feature.yaml (2 occurrences), docs step with skip_for=[1]/on_pass=delivery, security-review on_pass updated to docs, trivial skip_cataractae gains docs, mirrors identical (diff = empty), cataractae/docs_writer/CLAUDE.md created, scheduler_test.go updated (complexityWorkflow+docs step, TestAdvanceSkipped_StandardSkipsQA expects docs not delivery, TestComplexity_CriticalHumanGateBeforeMerge+HumanGateSetsCurrentCataracta start at docs not qa).
+
+### From: manual
+
+Phase 2: aqueduct/aqueduct.yaml and cmd/ct/assets/aqueduct/aqueduct.yaml — docs step is missing on_escalate: human. The diff adds on_escalate: human only to the security-review step; the docs step inherits the old security-review context lines (on_pass: delivery, on_fail: implement, on_recirculate: implement) but not on_escalate. Requirement explicitly lists on_escalate=human for docs; scheduler_test.go line 229 includes OnEscalate: human in the workflow struct. Tests pass because the workflow is constructed directly in code, not parsed from YAML. At runtime, critical droplets (complexity=4) at the docs step will not escalate to human review before delivery. Fix: add on_escalate: human to the docs step in both YAML files.
+
+### From: manual
+
+Already implemented — no changes required. Verified: both aqueduct/aqueduct.yaml:447 and cmd/ct/assets/aqueduct/aqueduct.yaml:447 have on_escalate: human for the docs step. scheduler_test.go:1050 has OnEscalate: 'human'. All 9 packages pass.
+
+### From: scheduler
+
+Implement pass rejected: HEAD has not advanced since last review (commit: 00cd796d50e7457551093dc04850db43ea2cd705). No new commits were found. You must commit your changes before signaling pass.
+
 <available_skills>
   <skill>
     <name>cistern-droplet-state</name>

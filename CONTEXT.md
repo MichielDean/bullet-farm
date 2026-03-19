@@ -1,14 +1,14 @@
 # Context
 
-## Item: ci-wtopd
+## Item: ci-vwi46
 
-**Title:** Add ct droplet search: filter list by title, status, and priority
+**Title:** Add rate limiting to the delivery cataracta API endpoint
 **Status:** in_progress
-**Priority:** 2
+**Priority:** 1
 
 ### Description
 
-Support --query flag with substring match on title, plus --status and --priority filters. Output respects existing color/icon format.
+Prevent abuse of the droplet ingestion endpoint. Apply per-IP and per-token limits with configurable thresholds in cistern.yaml.
 
 ## Current Step: implement
 
@@ -34,16 +34,16 @@ Support --query flag with substring match on title, plus --status and --priority
 When your work is done, signal your outcome using the `ct` CLI:
 
 **Pass (work complete, move to next step):**
-    ct droplet pass ci-wtopd
+    ct droplet pass ci-vwi46
 
 **Recirculate (needs rework — send back upstream):**
-    ct droplet recirculate ci-wtopd
-    ct droplet recirculate ci-wtopd --to implement
+    ct droplet recirculate ci-vwi46
+    ct droplet recirculate ci-vwi46 --to implement
 
 **Block (genuinely blocked, cannot proceed):**
-    ct droplet block ci-wtopd
+    ct droplet block ci-vwi46
 
 Add notes before signaling:
-    ct droplet note ci-wtopd "What you did / found"
+    ct droplet note ci-vwi46 "What you did / found"
 
 The `ct` binary is on your PATH.

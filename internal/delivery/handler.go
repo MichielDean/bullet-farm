@@ -1,0 +1,116 @@
+package delivery
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+)
+
+// DropletAdder is the interface for persisting a new droplet.
+type DropletAdder interface {
+	Add(title, repo, description string, priority, complexity int) (string, error)
+}
+
+// Handler is an http.Handler for the droplet ingestion endpoint (POST /droplets).
+// It enforces authentication via Bearer token and applies rate limiting.
+type Handler struct {
+	adder   DropletAdder
+	limiter *RateLimiter
+}
+
+// NewHandler returns a Handler that delegates droplet creation to adder and
+// enforces limits via limiter.
+func NewHandler(adder DropletAdder, limiter *RateLimiter) *Handler {
+	return &Handler{adder: adder, limiter: limiter}
+}
+
+type addRequest struct {
+	Title       string `json:"title"`
+	Repo        string `json:"repo"`
+	Description string `json:"description,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
+	Complexity  int    `json:"complexity,omitempty"`
+}
+
+type addResponse struct {
+	ID string `json:"id"`
+}
+
+// ServeHTTP handles POST /droplets. It returns:
+//   - 401 Unauthorized  — missing or non-Bearer Authorization header
+//   - 429 Too Many Requests — per-IP or per-token limit exceeded
+//   - 400 Bad Request   — malformed JSON or missing required fields
+//   - 500 Internal Server Error — storage failure
+//   - 201 Created       — droplet accepted; body contains {"id":"..."}
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	token := bearerToken(r)
+	if token == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	ip := realIP(r)
+	if !h.limiter.Allow(ip, token) {
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
+	var req addRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Title == "" {
+		http.Error(w, "title is required", http.StatusBadRequest)
+		return
+	}
+	if req.Repo == "" {
+		http.Error(w, "repo is required", http.StatusBadRequest)
+		return
+	}
+
+	id, err := h.adder.Add(req.Title, req.Repo, req.Description, req.Priority, req.Complexity)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(addResponse{ID: id}) //nolint:errcheck
+}
+
+// bearerToken extracts the token from an "Authorization: Bearer <token>" header.
+// Returns an empty string if the header is absent or uses a different scheme.
+func bearerToken(r *http.Request) string {
+	const prefix = "Bearer "
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(auth, prefix)
+}
+
+// realIP returns the client's IP address, preferring proxy headers over RemoteAddr.
+// X-Real-IP takes precedence, then the first entry in X-Forwarded-For, then RemoteAddr.
+func realIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		// X-Forwarded-For may be a comma-separated list; the leftmost is the client.
+		return strings.TrimSpace(strings.SplitN(fwd, ",", 2)[0])
+	}
+	// Strip port from RemoteAddr ("host:port" or "[::1]:port").
+	addr := r.RemoteAddr
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		addr = addr[:i]
+	}
+	return addr
+}

@@ -25,8 +25,6 @@ import (
 // *cistern.Client satisfies this interface.
 type CisternClient interface {
 	GetReady(repo string) (*cistern.Droplet, error)
-	GetReadyForAqueduct(repo, aqueductName string) (*cistern.Droplet, error)
-	SetAssignedAqueduct(id, aqueductName string) error
 	Assign(id, worker, step string) error
 
 	AddNote(id, step, content string) error
@@ -563,42 +561,28 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 	client := s.clients[repo.Name]
 	wf := s.workflows[repo.Name]
 
-	// tried tracks which workers have been polled and found no work this round.
-	// AvailableAqueductExcluding skips already-tried workers so every idle
-	// aqueduct gets a chance each tick — critical for sticky dispatch where a
-	// droplet is pinned to a specific aqueduct (e.g. sc-uvfhw → appia) and
-	// AvailableAqueduct would otherwise always return the same worker first.
-	tried := map[string]bool{}
-
 	for {
 		if s.totalBusy() >= s.config.MaxCataractae {
 			return
 		}
 
-		// Skip workers already tried (and found empty) this round.
-		worker := pool.AvailableAqueductExcluding(tried)
+		worker := pool.AvailableAqueduct()
 		if worker == nil {
-			// All idle workers tried with no work found, or no idle workers.
 			return
 		}
 
-		// Sticky dispatch: only pick up droplets that are either unassigned or
-		// already assigned to this aqueduct. This ensures a droplet never moves
-		// between aqueducts once it enters one.
-		item, err := client.GetReadyForAqueduct(repo.Name, worker.Name)
+		// Each repo has its own pool — just get the next ready droplet for this repo.
+		// No sticky aqueduct matching needed: each aqueduct has its own dedicated clone,
+		// so any aqueduct in the pool can work on any droplet in the repo.
+		item, err := client.GetReady(repo.Name)
 		if err != nil {
 			s.logger.Error("poll failed", "repo", repo.Name, "error", err)
+			pool.Release(worker)
 			return
 		}
 		if item == nil {
-			tried[worker.Name] = true // don't try this worker again this round
-			continue
-		}
-		tried = map[string]bool{} // found work — reset for next round
-
-		// Pin the aqueduct on first dispatch (no-op if already set).
-		if err := client.SetAssignedAqueduct(item.ID, worker.Name); err != nil {
-			s.logger.Error("set assigned_aqueduct failed", "droplet", item.ID, "error", err)
+			pool.Release(worker)
+			return
 		}
 
 		step := currentCataracta(item, wf)

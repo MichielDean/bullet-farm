@@ -1,22 +1,25 @@
 # Context
 
-## Item: ci-0vm8f
+## Item: ci-xilu9
 
-**Title:** Cataractae peek: read-only live observer for active aqueduct sessions
+**Title:** Bug: in-repo skills not available in non-cistern repo sandboxes
 **Status:** in_progress
 **Priority:** 2
 
 ### Description
 
-Add ability to observe any active cataractae session in real-time without interacting with it. Requirements:
-- GET /api/aqueducts/{name}/peek returns current tmux pane content as text
-- WebSocket endpoint /ws/aqueducts/{name}/peek streams live pane output (poll tmux every 500ms, send diffs)
-- Web UI: clicking an active aqueduct arch opens a peek panel/modal showing live session output
-- Read-only: no keyboard input forwarded, no interaction possible, purely observational
-- Shows last N lines of pane (configurable, default 100)
-- Auto-scrolls to bottom, toggle to pin scroll position
-- Clear label: 'Observing — read only'
-- Falls back gracefully if aqueduct is idle or tmux session not found
+When aqueducts run against ScaledTest or PortfolioWebsite sandboxes, skills defined as in-repo paths (e.g. path: skills/cistern-droplet-state/SKILL.md) fail to copy because those paths only exist in the cistern repo, not in ScaledTest or PortfolioWebsite.
+
+Root cause: internal/cataractae/runner.go resolves skill.Path relative to w.SandboxDir. For ScaledTest sandboxes, w.SandboxDir is ~/.cistern/sandboxes/ScaledTest/julia — which doesn't contain skills/cistern-droplet-state/.
+
+Fix options:
+1. Treat skills with path: as external skills if the path doesn't exist in the sandbox, falling back to ~/.cistern/skills/<name>/SKILL.md
+2. When ct repo add creates new sandboxes, copy the cistern repo's skills/ directory into each new sandbox
+3. Change aqueduct.yaml to use external skill references (no path:) for universal skills like cistern-droplet-state, and install them to ~/.cistern/skills/ during ct init
+
+Option 1 is the most robust — graceful fallback means it works regardless of how the sandbox was created.
+
+Affected: every ScaledTest and PortfolioWebsite aqueduct run logs 'warning: copy skill cistern-droplet-state' and agents run without their state management skill.
 
 ## Current Step: simplify
 
@@ -28,19 +31,46 @@ Add ability to observe any active cataractae session in real-time without intera
 
 ### From: manual
 
-Fixed readWSTextFrame case 127: 8-byte extended length now correctly combines all 8 bytes per RFC 6455 §5.2. All 9 packages pass.
+REVISED APPROACH: deterministic, no agent path reliance.
 
-### From: scheduler
+The fix should be infrastructure-level, not prompt-level:
 
-Implement pass rejected: HEAD has not advanced since last review (commit: adf8afd900b608cb93db0d1d6b0998ddde882e2d). No new commits were found. You must commit your changes before signaling pass.
+1. runner.go: when an in-repo skill (path: set) doesn't exist in the sandbox, fall back to ~/.cistern/skills/<name>/SKILL.md before giving up. This makes the copy deterministic — agent always gets the file.
+
+2. ct init: seed all built-in skills (cistern-droplet-state, github-workflow, code-simplifier) to ~/.cistern/skills/ so the fallback location is always populated.
+
+3. ct doctor: add check that every skill referenced in aqueduct.yaml exists in ~/.cistern/skills/. Flag missing skills as warnings with instructions to run ct skills install.
+
+4. ct repo add: after cloning, copy ~/.cistern/skills/ into the new sandbox's .claude/skills/ directory so it's seeded at creation time.
+
+The injected <location> in context.go should remain .claude/skills/<name>/SKILL.md — an agent-relative path that is guaranteed to exist because the runner always copies it there. No absolute paths, no agent guessing, no reliance on context.
 
 ### From: manual
 
-Fixed readWSTextFrame case 127: 8-byte extended payload length now correctly combines all 8 bytes per RFC 6455 §5.2 (was silently discarding high 32 bits ext[0]-ext[3]). All 9 packages pass. Committed bdab760.
+FINAL APPROACH: use --add-dir to give Claude access to ~/.cistern/skills, inject absolute path in CONTEXT.md.
+
+Two changes:
+
+1. internal/cataractae/session.go line 55: add --add-dir ~/.cistern/skills to the claude command:
+   claudeCmd := fmt.Sprintf('%s --dangerously-skip-permissions --add-dir ~/.cistern/skills %s-p ...', ...)
+
+2. internal/cataractae/context.go line 258: change the injected <location> from the relative sandbox path to the absolute skills store path:
+   <location>~/.cistern/skills/<name>/SKILL.md</location>
+
+3. The copy step in runner.go (lines 223-248) can be removed entirely — no files need to be copied since Claude has direct read access to the source.
+
+4. ct init: ensure ~/.cistern/skills/ is seeded with all built-in skills on first run.
+5. ct doctor: verify all aqueduct.yaml-referenced skills exist in ~/.cistern/skills/.
+
+Result: one canonical location at ~/.cistern/skills/, no copying, deterministic, always up to date. Skills managed in one place.
 
 ### From: manual
 
-Fixed readWSTextFrame case 127 RFC 6455 §5.2 compliance. All 9 packages pass.
+Implemented FINAL APPROACH: (1) session.go: add --add-dir ~/.cistern/skills to every claude invocation; (2) context.go: inject absolute skills.LocalPath(skill.Name) into CONTEXT.md <location> instead of sandbox-relative path; (3) runner.go: remove per-run copyFile loop and copyFile helper — no file copying needed; (4) doctor.go: check all skills (in-repo and external) against ~/.cistern/skills/, removing the skip for skill.Path \!= ''. Tests updated and all passing. Committed as 1317049.
+
+### From: manual
+
+Implemented: --add-dir ~/.cistern/skills in session.go, absolute path in context.go location, removed copyFile loop from runner.go, doctor.go now checks all skills. All tests pass.
 
 <available_skills>
   <skill>
@@ -60,16 +90,16 @@ Fixed readWSTextFrame case 127 RFC 6455 §5.2 compliance. All 9 packages pass.
 When your work is done, signal your outcome using the `ct` CLI:
 
 **Pass (work complete, move to next step):**
-    ct droplet pass ci-0vm8f
+    ct droplet pass ci-xilu9
 
 **Recirculate (needs rework — send back upstream):**
-    ct droplet recirculate ci-0vm8f
-    ct droplet recirculate ci-0vm8f --to implement
+    ct droplet recirculate ci-xilu9
+    ct droplet recirculate ci-xilu9 --to implement
 
 **Block (genuinely blocked, cannot proceed):**
-    ct droplet block ci-0vm8f
+    ct droplet block ci-xilu9
 
 Add notes before signaling:
-    ct droplet note ci-0vm8f "What you did / found"
+    ct droplet note ci-xilu9 "What you did / found"
 
 The `ct` binary is on your PATH.

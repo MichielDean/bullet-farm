@@ -52,7 +52,8 @@ func (s *Session) spawn() error {
 	if s.Model != "" {
 		flagsStr = "--model " + s.Model + " "
 	}
-	skillsDir := filepath.Join(func() string { h, _ := os.UserHomeDir(); return h }(), ".cistern", "skills")
+	home, _ := os.UserHomeDir()
+	skillsDir := filepath.Join(home, ".cistern", "skills")
 	claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions --add-dir %s %s-p '%s'", claudePath(), skillsDir, flagsStr, prompt)
 
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}

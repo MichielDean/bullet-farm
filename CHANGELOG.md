@@ -14,6 +14,12 @@
 - `cistern-web.service` systemd user service starts the web dashboard automatically
 - TUI dashboard (`ct dashboard` without `--web`) continues to work unchanged
 
+### Peek overlay (TUI dashboard)
+- Press `p` or `Enter` on an active aqueduct in the TUI dashboard to open a read-only live peek overlay showing the agent's tmux session output
+- Overlay is clearly labelled **Observing — read only**; no keyboard input is forwarded to the session
+- Press `q` or `Esc` to close the overlay and return to the dashboard
+- Footer hint updated to include `p peek`
+
 ### Peek panel (web dashboard)
 - Click any active aqueduct arch to open a live read-only peek panel showing the agent's tmux session output
 - Panel is clearly labelled **Observing — read only**; no keyboard input is forwarded

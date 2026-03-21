@@ -54,6 +54,17 @@ func lookupAqueductSession(dbPath, name string) (aqueductSessionInfo, bool) {
 	return aqueductSessionInfo{}, false
 }
 
+// parsePeekLines reads the optional ?lines= query parameter, falling back to
+// defaultPeekLines.
+func parsePeekLines(r *http.Request) int {
+	if v := r.URL.Query().Get("lines"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultPeekLines
+}
+
 // wsAcceptKey computes Sec-WebSocket-Accept per RFC 6455 §4.2.2.
 func wsAcceptKey(clientKey string) string {
 	const magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -194,20 +205,10 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 			return
 		}
 		name := r.PathValue("name")
-		lines := defaultPeekLines
-		if v := r.URL.Query().Get("lines"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				lines = n
-			}
-		}
+		lines := parsePeekLines(r)
 		sess, ok := lookupAqueductSession(dbPath, name)
-		if !ok {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			fmt.Fprint(w, "session not active")
-			return
-		}
 		capturer := defaultCapturer
-		if !capturer.HasSession(sess.sessionID) {
+		if !ok || !capturer.HasSession(sess.sessionID) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			fmt.Fprint(w, "session not active")
 			return
@@ -224,12 +225,7 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 	// WS /ws/aqueducts/{name}/peek — live streaming peek (poll every 500ms, send diffs).
 	mux.HandleFunc("/ws/aqueducts/{name}/peek", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
-		lines := defaultPeekLines
-		if v := r.URL.Query().Get("lines"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				lines = n
-			}
-		}
+		lines := parsePeekLines(r)
 
 		conn, brw, err := wsUpgrade(w, r)
 		if err != nil {

@@ -28,37 +28,19 @@ Add ability to observe any active cataractae session in real-time without intera
 
 ### From: manual
 
-Empty diff — nothing to review.
+Simplified: removed unused prevContent field from peekModel (dead code), renamed cap->capturer in peek HTTP/WS handlers to avoid shadowing Go builtin, replaced nested bounds checks with max()/min(). Tests: all 9 packages pass.
 
 ### From: manual
 
-QA audit complete. All 7 mandatory checks run. CRITICAL: Primary deliverables for ci-0vm8f are entirely absent from the codebase.
-
-FAILED CHECKS:
-1. TESTS: green (9 packages pass)
-2. COMMIT AUDIT: HEAD 4399196 is 'add code-simplifier cataractae' — unrelated to peek feature. Branch is feat/ci-0vm8f but no peek implementation commits exist.
-3. DELIVERABLES MISSING (all required):
-   - cmd/ct/peek_tui.go: does not exist
-   - Capturer interface: not found anywhere in codebase
-   - GET /api/aqueducts/{name}/peek endpoint: not found in dashboard_web.go or anywhere
-   - WebSocket /ws/aqueducts/{name}/peek endpoint: not found
-   - Web UI peek modal/panel: not found in dashboard_web.go HTML
-   - 12 peek TUI tests: only 3 tests in peek_test.go (TestStripANSI, TestDropletPeekNotFlowing, TestDropletPeekNoSession) — all pre-existing CLI tests
-   - Commit 2150122 (referenced in notes as completed work): does not exist in git history
-4. URLs: N/A (no URLs in changed files)
-5. CLI flags: N/A (no new peek HTTP/WS commands)
-6. MIRROR CONSISTENCY: aqueduct.yaml mirrors match (code-simplifier change) — PASS
-7. SYSTEM HEALTH: 2 warnings — claude CLI not on PATH; docs_writer CLAUDE.md corrupt (missing sentinel, run ct cataractae generate)
-
-Root cause: Prior notes claimed implementation complete at HEAD 2150122 but that SHA does not exist. The previous QA 'Empty diff — nothing to review' was accurate — the work was never committed. Full implementation required.
+Phase 2: (1) cmd/ct/peek_tui.go Init() — double polling logic bug: tea.Batch(m.fetchCmd(), peekTickCmd()) starts two independent 500ms polling loops. fetchCmd() fires immediately, peekContentMsg handler schedules peekTickCmd() (loop A); the initial peekTickCmd() in Init() fires at t=500ms, its peekTickMsg handler calls fetchCmd(), which returns peekContentMsg, which schedules another peekTickCmd() (loop B). Both loops run indefinitely, polling tmux at ~2x the intended rate (~250ms effective interval). Fix: Init() should return only peekTickCmd() or only fetchCmd(), not both. (2) cmd/ct/dashboard_web.go — new HTTP/WS behavior has zero test coverage: lookupAqueductSession, GET /api/aqueducts/{name}/peek handler, WS /ws/aqueducts/{name}/peek handler, wsUpgrade, wsSendText, and wsAcceptKey are all untested. peek_tui_test.go covers only the TUI model.
 
 ### From: manual
 
-RECIRCULATE: All peek deliverables missing. cmd/ct/peek_tui.go does not exist; Capturer interface absent; GET /api/aqueducts/{name}/peek and WebSocket /ws/aqueducts/{name}/peek endpoints not implemented; Web UI peek panel not present; 12 peek TUI tests not written. Referenced commit 2150122 does not exist in git history — prior cycle's work was never committed. Full implementation of ci-0vm8f required from scratch. System health note: docs_writer CLAUDE.md corrupt, run ct cataractae generate.
+Fixed double polling bug in peekModel.Init(): was calling tea.Batch(fetchCmd(), peekTickCmd()) which started two independent 500ms loops; changed to return only peekTickCmd() for a single tick→fetch→tick loop. Added 13 new tests in dashboard_web_test.go covering wsAcceptKey (RFC 6455 test vector), wsSendText small+medium frame encoding, lookupAqueductSession (empty/no-match/found), GET /api/aqueducts/{name}/peek (405, idle, active with mock capturer, session-gone, ?lines= param), and WS endpoint rejection (426 for non-WS, 400 for missing key). All 9 packages pass. Committed 9d4d96f.
 
 ### From: manual
 
-Implemented ci-0vm8f peek feature from scratch. Committed edd2050. All 9 packages pass. Deliverables: cmd/ct/peek_tui.go (Capturer interface, tmuxCapturer, peekModel bubbletea TUI, computeDiff); GET /api/aqueducts/{name}/peek endpoint; WebSocket /ws/aqueducts/{name}/peek streaming endpoint (poll 500ms, diffs); Web UI peek modal in dashboardHTML (CSS, HTML, JS with auto-scroll + pin toggle, 'Observing — read only' label, click active aqueduct arch to open); 12 peek TUI tests + 2 computeDiff tests all pass. Falls back gracefully when session not found.
+Fixed double polling in Init() (single peekTickCmd() loop). Added 13 tests covering wsAcceptKey, wsSendText (small+medium), lookupAqueductSession, GET peek endpoint (405/idle/active-mock/gone-session/?lines), WS rejection (426/400). All packages pass. Committed 9d4d96f.
 
 <available_skills>
   <skill>

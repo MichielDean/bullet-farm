@@ -52,7 +52,8 @@ func (s *Session) spawn() error {
 	if s.Model != "" {
 		flagsStr = "--model " + s.Model + " "
 	}
-	claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions %s-p '%s'", claudePath(), flagsStr, prompt)
+	skillsDir := filepath.Join(func() string { h, _ := os.UserHomeDir(); return h }(), ".cistern", "skills")
+	claudeCmd := fmt.Sprintf("%s --dangerously-skip-permissions --add-dir %s %s-p '%s'", claudePath(), skillsDir, flagsStr, prompt)
 
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {

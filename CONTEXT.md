@@ -18,29 +18,29 @@ Add ability to observe any active cataractae session in real-time without intera
 - Clear label: 'Observing — read only'
 - Falls back gracefully if aqueduct is idle or tmux session not found
 
-## Current Step: simplify
+## Current Step: implement
 
 - **Type:** agent
-- **Role:** simplifier
+- **Role:** implementer
 - **Context:** full_codebase
 
 ## Recent Step Notes
 
 ### From: manual
 
-Simplified: (1) extracted parsePeekLines() helper to eliminate duplicated ?lines= query parsing in GET and WS peek handlers, (2) consolidated two separate session-not-active guard clauses into one in the GET peek handler. Net -22 lines. Tests: all 9 packages pass.
+Phase 2: dashboard_web_test.go readWSTextFrame case 127 — the 8-byte extended payload length is parsed as only the lower 32 bits (ext[4]<<24 | ext[5]<<16 | ext[6]<<8 | ext[7]); ext[0]–ext[3] (the high 32 bits) are silently discarded, violating RFC 6455 §5.2. Fix: length = int(ext[0])<<56 | int(ext[1])<<48 | int(ext[2])<<40 | int(ext[3])<<32 | int(ext[4])<<24 | int(ext[5])<<16 | int(ext[6])<<8 | int(ext[7]). Dead code in current tests (all payloads <126 bytes) but wrong by spec and would silently produce a bad length for any future large-frame test. No other issues found.
 
 ### From: manual
 
-Phase 2: (1) dashboard_web.go render template — XSS via esc() in onclick context: esc() converts single-quote to &#39; but the HTML attribute parser decodes &#39; back to ' before the JS engine sees it, so an aqueduct name like a'); alert(1)// produces peekOpen('a'); alert(1)//) — stored XSS exploitable by anyone with pipeline-config write access. Fix: use a data-aqname attribute and addEventListener instead of an inline onclick string. (2) dashboard_web.go WS handler — for-range-ticker.C success path has zero test coverage: TestWsPeek_NonWebSocketRejected and TestWsPeek_MissingKeyRejected only test rejection branches (426/400); the entire streaming loop (lookupAqueductSession → HasSession → Capture → computeDiff → wsSendText) is untested for a connected client.
+Fixed readWSTextFrame case 127 in dashboard_web_test.go: 8-byte extended payload length was only using low 32 bits (ext[4]–ext[7]); corrected to include all 8 bytes per RFC 6455 §5.2. All 9 packages pass.
 
 ### From: manual
 
-Fixed XSS in dashboard_web.go: replaced inline onclick="peekOpen('...')" with data-aqname attribute + delegated addEventListener on app element. esc() encodes " as &quot; (safe in double-quoted attribute) while browsers decode &#39; back to ' before JS execution, making the old approach exploitable. Added TestWsPeek_SuccessfulStreamIdle and TestWsPeek_SuccessfulStreamActive covering the full WS success loop (wsUpgrade → ticker → lookupAqueductSession → HasSession → Capture → computeDiff → wsSendText) using httptest.NewServer + real net.Dial + manual RFC6455 frame decoding. Added readWSTextFrame helper. All 9 packages pass. Committed fde6069.
+Fixed readWSTextFrame case 127: 8-byte extended length now correctly combines all 8 bytes per RFC 6455 §5.2. All 9 packages pass.
 
-### From: manual
+### From: scheduler
 
-Fixed XSS (onclick→data-aqname+addEventListener) and added TestWsPeek_SuccessfulStreamIdle/Active covering full WS streaming loop. All 9 packages pass.
+Implement pass rejected: HEAD has not advanced since last review (commit: adf8afd900b608cb93db0d1d6b0998ddde882e2d). No new commits were found. You must commit your changes before signaling pass.
 
 <available_skills>
   <skill>
@@ -49,9 +49,9 @@ Fixed XSS (onclick→data-aqname+addEventListener) and added TestWsPeek_Successf
     <location>.claude/skills/cistern-droplet-state/SKILL.md</location>
   </skill>
   <skill>
-    <name>code-simplifier</name>
-    <description>code-simplifier</description>
-    <location>.claude/skills/code-simplifier/SKILL.md</location>
+    <name>github-workflow</name>
+    <description>---</description>
+    <location>.claude/skills/github-workflow/SKILL.md</location>
   </skill>
 </available_skills>
 

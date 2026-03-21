@@ -29,48 +29,37 @@ Affected: every ScaledTest and PortfolioWebsite aqueduct run logs 'warning: copy
 
 ## Recent Step Notes
 
-### From: manual
+### From: scheduler
 
-REVISED APPROACH: deterministic, no agent path reliance.
-
-The fix should be infrastructure-level, not prompt-level:
-
-1. runner.go: when an in-repo skill (path: set) doesn't exist in the sandbox, fall back to ~/.cistern/skills/<name>/SKILL.md before giving up. This makes the copy deterministic — agent always gets the file.
-
-2. ct init: seed all built-in skills (cistern-droplet-state, github-workflow, code-simplifier) to ~/.cistern/skills/ so the fallback location is always populated.
-
-3. ct doctor: add check that every skill referenced in aqueduct.yaml exists in ~/.cistern/skills/. Flag missing skills as warnings with instructions to run ct skills install.
-
-4. ct repo add: after cloning, copy ~/.cistern/skills/ into the new sandbox's .claude/skills/ directory so it's seeded at creation time.
-
-The injected <location> in context.go should remain .claude/skills/<name>/SKILL.md — an agent-relative path that is guaranteed to exist because the runner always copies it there. No absolute paths, no agent guessing, no reliance on context.
+Implement pass rejected: HEAD has not advanced since last review (commit: 49299a429ca39f61358609292752e65b6909b32d). No new commits were found. You must commit your changes before signaling pass.
 
 ### From: manual
 
-FINAL APPROACH: use --add-dir to give Claude access to ~/.cistern/skills, inject absolute path in CONTEXT.md.
-
-Two changes:
-
-1. internal/cataractae/session.go line 55: add --add-dir ~/.cistern/skills to the claude command:
-   claudeCmd := fmt.Sprintf('%s --dangerously-skip-permissions --add-dir ~/.cistern/skills %s-p ...', ...)
-
-2. internal/cataractae/context.go line 258: change the injected <location> from the relative sandbox path to the absolute skills store path:
-   <location>~/.cistern/skills/<name>/SKILL.md</location>
-
-3. The copy step in runner.go (lines 223-248) can be removed entirely — no files need to be copied since Claude has direct read access to the source.
-
-4. ct init: ensure ~/.cistern/skills/ is seeded with all built-in skills on first run.
-5. ct doctor: verify all aqueduct.yaml-referenced skills exist in ~/.cistern/skills/.
-
-Result: one canonical location at ~/.cistern/skills/, no copying, deterministic, always up to date. Skills managed in one place.
+Committed existing fixes (os.UserHomeDir error check, shell-quoting skillsDir, buildClaudeCmd extraction + 5 tests in session_test.go). All 9 packages pass. HEAD advanced to d1b3ca6.
 
 ### From: manual
 
-Implemented FINAL APPROACH: (1) session.go: add --add-dir ~/.cistern/skills to every claude invocation; (2) context.go: inject absolute skills.LocalPath(skill.Name) into CONTEXT.md <location> instead of sandbox-relative path; (3) runner.go: remove per-run copyFile loop and copyFile helper — no file copying needed; (4) doctor.go: check all skills (in-repo and external) against ~/.cistern/skills/, removing the skip for skill.Path \!= ''. Tests updated and all passing. Committed as 1317049.
+FINAL APPROACH: symlinks instead of copies.
+
+Replace the file copy in runner.go with symlink creation:
+
+1. internal/cataractae/runner.go — instead of copyFile(src, dest), use os.Symlink(src, dest):
+   - For in-repo skills that don't exist in the sandbox, symlink from ~/.cistern/skills/<name>/SKILL.md
+   - For external skills, symlink from ~/.cistern/skills/<name>/SKILL.md  
+   - Check if symlink/file already exists before creating (idempotent)
+   - If src doesn't exist in sandbox AND doesn't exist in ~/.cistern/skills/, log warning and skip
+
+2. Result: ~/.cistern/skills/ is the single source of truth. Sandboxes contain symlinks pointing there. No copying, always current, deterministic.
+
+3. ct init: seed ~/.cistern/skills/ with all built-in skills.
+4. ct doctor: verify all aqueduct.yaml-referenced skills exist in ~/.cistern/skills/.
+5. ct repo add: no sandbox seeding needed — symlinks are created at job start by the runner.
+
+The <location> in CONTEXT.md stays as .claude/skills/<name>/SKILL.md (relative to sandbox). Claude reads the symlink transparently.
 
 ### From: manual
 
-Implemented: --add-dir ~/.cistern/skills in session.go, absolute path in context.go location, removed copyFile loop from runner.go, doctor.go now checks all skills. All tests pass.
+All three review issues resolved and committed (d1b3ca6): (1) os.UserHomeDir() error checked — spawn returns error if HOME unset; (2) skillsDir shell-quoted via shellQuote() helper; (3) buildClaudeCmd() extracted as testable method with 5 tests in session_test.go. All 9 packages pass.
 
 <available_skills>
   <skill>

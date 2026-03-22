@@ -244,6 +244,7 @@ func defaultFindPR(ctx context.Context, _ string, dropletID, sandboxDir string) 
 	branch := "feat/" + dropletID
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
 		"--head", branch,
+		"--state", "all",
 		"--json", "url,state,mergeStateStatus",
 		"--limit", "1",
 	)

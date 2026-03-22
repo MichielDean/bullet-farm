@@ -53,10 +53,9 @@ cataractae:
     context: full_codebase
     skills:
       - name: cistern-droplet-state
-      - name: critical-code-reviewer
+      - name: cistern-reviewer
       - name: cistern-git
       - name: github-workflow
-      - name: adversarial-reviewer
     timeout_minutes: 15
     skip_for: [1] # trivial droplets skip this cataractae
     on_pass: qa

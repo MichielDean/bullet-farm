@@ -1202,15 +1202,13 @@ droplet is in_progress or delivered.`,
 		var fields cistern.EditDropletFields
 
 		if descChanged {
-			var desc string
-			if editDescription == "-" {
+			desc := editDescription
+			if desc == "-" {
 				b, err := io.ReadAll(os.Stdin)
 				if err != nil {
 					return fmt.Errorf("read stdin: %w", err)
 				}
 				desc = strings.TrimSuffix(string(b), "\n")
-			} else {
-				desc = editDescription
 			}
 			fields.Description = &desc
 		}

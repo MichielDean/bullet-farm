@@ -415,6 +415,10 @@ func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
 		return nil
 	}
 
+	if fields.Complexity != nil && (*fields.Complexity < 1 || *fields.Complexity > 4) {
+		return fmt.Errorf("cistern: complexity must be between 1 and 4, got %d", *fields.Complexity)
+	}
+
 	var setClauses []string
 	var args []any
 	if fields.Description != nil {

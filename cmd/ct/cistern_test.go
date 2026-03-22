@@ -810,9 +810,15 @@ func TestDropletEdit(t *testing.T) {
 			t.Errorf("expected 'updated' in output, got: %q", out)
 		}
 
-		c2, _ := cistern.New(db, "")
+		c2, err := cistern.New(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer c2.Close()
-		got, _ := c2.Get(item.ID)
+		got, err := c2.Get(item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if got.Description != "new description" {
 			t.Errorf("description = %q, want %q", got.Description, "new description")
 		}
@@ -826,6 +832,39 @@ func TestDropletEdit(t *testing.T) {
 		}
 	})
 
+	t.Run("description from stdin", func(t *testing.T) {
+		resetEditFlags()
+		dropletEditCmd.Flags().Set("description", "-")
+
+		// Replace os.Stdin with a pipe containing the test input.
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.WriteString("stdin description\n")
+		w.Close()
+		oldStdin := os.Stdin
+		os.Stdin = r
+		defer func() { os.Stdin = oldStdin }()
+
+		if err := dropletEditCmd.RunE(dropletEditCmd, []string{item.ID}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		c2, err := cistern.New(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c2.Close()
+		got, err := c2.Get(item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Description != "stdin description" {
+			t.Errorf("description = %q, want %q", got.Description, "stdin description")
+		}
+	})
+
 	t.Run("update complexity", func(t *testing.T) {
 		resetEditFlags()
 		dropletEditCmd.Flags().Set("complexity", "trivial")
@@ -834,9 +873,15 @@ func TestDropletEdit(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		c2, _ := cistern.New(db, "")
+		c2, err := cistern.New(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer c2.Close()
-		got, _ := c2.Get(item.ID)
+		got, err := c2.Get(item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if got.Complexity != 1 {
 			t.Errorf("complexity = %d, want 1", got.Complexity)
 		}
@@ -850,9 +895,15 @@ func TestDropletEdit(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		c2, _ := cistern.New(db, "")
+		c2, err := cistern.New(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer c2.Close()
-		got, _ := c2.Get(item.ID)
+		got, err := c2.Get(item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if got.Priority != 1 {
 			t.Errorf("priority = %d, want 1", got.Priority)
 		}
@@ -874,14 +925,20 @@ func TestDropletEdit(t *testing.T) {
 	t.Run("reject in_progress", func(t *testing.T) {
 		resetEditFlags()
 
-		c2, _ := cistern.New(db, "")
-		ip, _ := c2.Add("repo", "Flowing droplet", "", 1, 3)
+		c2, err := cistern.New(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ip, err := c2.Add("repo", "Flowing droplet", "", 1, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
 		c2.UpdateStatus(ip.ID, "in_progress")
 		c2.Close()
 
 		dropletEditCmd.Flags().Set("description", "new")
 
-		err := dropletEditCmd.RunE(dropletEditCmd, []string{ip.ID})
+		err = dropletEditCmd.RunE(dropletEditCmd, []string{ip.ID})
 		if err == nil {
 			t.Fatal("expected error for in_progress droplet")
 		}

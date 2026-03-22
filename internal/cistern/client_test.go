@@ -1092,6 +1092,27 @@ func TestEditDroplet_NoFields(t *testing.T) {
 	}
 }
 
+func TestEditDroplet_InvalidComplexity(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("repo", "Title", "desc", 2, 3)
+
+	for _, bad := range []int{0, -1, 5, 100} {
+		err := c.EditDroplet(item.ID, EditDropletFields{Complexity: ptr(bad)})
+		if err == nil {
+			t.Errorf("expected error for complexity=%d", bad)
+		} else if !strings.Contains(err.Error(), "complexity must be between 1 and 4") {
+			t.Errorf("complexity=%d: unexpected error: %v", bad, err)
+		}
+	}
+
+	// Valid boundary values should succeed.
+	for _, ok := range []int{1, 4} {
+		if err := c.EditDroplet(item.ID, EditDropletFields{Complexity: ptr(ok)}); err != nil {
+			t.Errorf("complexity=%d should be valid, got: %v", ok, err)
+		}
+	}
+}
+
 func TestEditDroplet_NotFound(t *testing.T) {
 	c := testClient(t)
 

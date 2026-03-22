@@ -162,50 +162,10 @@ func TestSpawnAutomated_SandboxDirFallback(t *testing.T) {
 	}
 }
 
-// TestSpawnAutomated_SandboxDirFallback_Path verifies the fallback path is
-// constructed from home + ".cistern/sandboxes/<repo>/<aqueduct>".
-func TestSpawnAutomated_SandboxDirFallback_Path(t *testing.T) {
-	// Override HOME so we can predict the exact fallback path.
-	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
-
-	client := testQueueClient(t)
-	a := newTestAdapter(t, "testrepo", client)
-
-	item, err := client.Add("testrepo", "Path test", "", 1, 1)
-	if err != nil {
-		t.Fatalf("Create droplet: %v", err)
-	}
-
-	req := castellarius.CataractaeRequest{
-		Item: item,
-		Step: aqueduct.WorkflowCataractae{
-			Name: "noop",
-			Type: aqueduct.CataractaeTypeAutomated,
-		},
-		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
-		AqueductName: "alice",
-		SandboxDir:   "", // empty — triggers fallback
-	}
-
-	// The fallback path is used as DropletContext.WorkDir. Since noop doesn't
-	// touch the filesystem, we only verify the function succeeds and sets outcome.
-	if err := a.spawnAutomated(context.Background(), req); err != nil {
-		t.Fatalf("spawnAutomated: %v", err)
-	}
-
-	// Verify the expected fallback path is within the fake home.
-	expectedPath := filepath.Join(fakeHome, ".cistern", "sandboxes", "testrepo", "alice")
-	// The path is not created by spawnAutomated itself — just verify it matches
-	// what os.UserHomeDir() would produce given our HOME override.
-	if !strings.HasPrefix(expectedPath, fakeHome) {
-		t.Errorf("expected fallback path under fakeHome %q, got %q", fakeHome, expectedPath)
-	}
-}
-
-// TestSpawnAutomated_MetadataParsing verifies that notes with "meta:key=value"
-// prefix are parsed into the DropletContext.Metadata map.
-func TestSpawnAutomated_MetadataParsing(t *testing.T) {
+// TestSpawnAutomated_WithMetaNotes verifies that spawnAutomated succeeds and
+// writes the outcome even when notes include "meta:key=value" prefixed entries
+// (metadata parsing is internal to spawnAutomated and not observable here).
+func TestSpawnAutomated_WithMetaNotes(t *testing.T) {
 	client := testQueueClient(t)
 	a := newTestAdapter(t, "testrepo", client)
 
@@ -317,7 +277,7 @@ func TestAdapterSpawn_AgentNoRunner(t *testing.T) {
 		Item: item,
 		Step: aqueduct.WorkflowCataractae{
 			Name: "implement",
-			Type: "agent", // not automated — goes through runner path
+			Type: aqueduct.CataractaeTypeAgent, // not automated — goes through runner path
 		},
 		RepoConfig:   aqueduct.RepoConfig{Name: "no-runner-repo"},
 		AqueductName: "alice",
@@ -360,7 +320,7 @@ func TestAdapterSpawn_AgentNoWorker(t *testing.T) {
 		Item: item,
 		Step: aqueduct.WorkflowCataractae{
 			Name: "implement",
-			Type: "agent",
+			Type: aqueduct.CataractaeTypeAgent,
 		},
 		RepoConfig:   aqueduct.RepoConfig{Name: "testrepo"},
 		AqueductName: "nonexistent-worker", // no such worker
@@ -396,7 +356,7 @@ func TestNewAdapter_NoWorkflow(t *testing.T) {
 // repo has no queue client configured.
 func TestNewAdapter_NoQueueClient(t *testing.T) {
 	wf := &aqueduct.Workflow{Name: "feature", Cataractae: []aqueduct.WorkflowCataractae{
-		{Name: "implement", Type: "agent"},
+		{Name: "implement", Type: aqueduct.CataractaeTypeAgent},
 	}}
 	repos := []aqueduct.RepoConfig{{Name: "myrepo", URL: "x", Cataractae: 1}}
 	workflows := map[string]*aqueduct.Workflow{"myrepo": wf}

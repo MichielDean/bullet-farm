@@ -41,8 +41,8 @@ func testWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
 		Cataractae: []aqueduct.WorkflowCataractae{
-			{Name: "implement", Type: "agent", Identity: "implementer", Context: aqueduct.ContextFullCodebase},
-			{Name: "review", Type: "agent", Identity: "reviewer", Context: aqueduct.ContextDiffOnly},
+			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, Identity: "implementer", Context: aqueduct.ContextFullCodebase},
+			{Name: "review", Type: aqueduct.CataractaeTypeAgent, Identity: "reviewer", Context: aqueduct.ContextDiffOnly},
 		},
 	}
 }
@@ -317,7 +317,7 @@ func TestWriteContextFile(t *testing.T) {
 func TestPrepareContext_FullCodebase(t *testing.T) {
 	dir := t.TempDir()
 	item := &cistern.Droplet{ID: "bf-1", Title: "Test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent", Context: aqueduct.ContextFullCodebase}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextFullCodebase}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextFullCodebase,
@@ -347,7 +347,7 @@ func TestPrepareContext_SpecOnly(t *testing.T) {
 		Priority:    2,
 		Description: "Build the widget",
 	}
-	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: "agent", Context: aqueduct.ContextSpecOnly}
+	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextSpecOnly}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextSpecOnly,
@@ -498,7 +498,7 @@ func TestPrepareContext_DiffOnly_Isolation(t *testing.T) {
 	mustRun(t, gitCmd(sandbox, "commit", "-m", "add smoke test comment"))
 
 	item := &cistern.Droplet{ID: "bf-smoke", Title: "Smoke", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "review", Type: "agent", Context: aqueduct.ContextDiffOnly}
+	step := &aqueduct.WorkflowCataractae{Name: "review", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextDiffOnly}
 
 	ctxDir, cleanup, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextDiffOnly,
@@ -1011,7 +1011,7 @@ func TestWriteContextFile_NotesTruncated(t *testing.T) {
 	path := filepath.Join(dir, "CONTEXT.md")
 
 	item := &cistern.Droplet{ID: "trunc-1", Title: "Truncation test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: aqueduct.CataractaeTypeAgent}
 
 	// 6 notes from "implementer" — they appear in Recent Step Notes only,
 	// not in revision cycle notes (which filters for review/qa/security names).
@@ -1067,7 +1067,7 @@ func TestWriteContextFile_AssigneeField(t *testing.T) {
 		Priority: 2,
 		Assignee: "alice",
 	}
-	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: aqueduct.CataractaeTypeAgent}
 
 	err := writeContextFile(path, ContextParams{
 		Level:      aqueduct.ContextFullCodebase,
@@ -1093,7 +1093,7 @@ func TestWriteContextFile_AssigneeField(t *testing.T) {
 // returns an error rather than silently using a default.
 func TestPrepareContext_UnknownLevel(t *testing.T) {
 	item := &cistern.Droplet{ID: "x-1", Title: "Test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: "agent"}
+	step := &aqueduct.WorkflowCataractae{Name: "plan", Type: aqueduct.CataractaeTypeAgent}
 
 	_, _, err := PrepareContext(ContextParams{
 		Level:      "nonexistent_level",
@@ -1175,7 +1175,7 @@ func TestWriteContextFile_SkillDescriptionFallback(t *testing.T) {
 // returns an error when the sandbox is not a git repository.
 func TestPrepareDiffOnly_InvalidRepo(t *testing.T) {
 	item := &cistern.Droplet{ID: "x-2", Title: "Test", Status: "open", Priority: 1}
-	step := &aqueduct.WorkflowCataractae{Name: "review", Type: "agent", Context: aqueduct.ContextDiffOnly}
+	step := &aqueduct.WorkflowCataractae{Name: "review", Type: aqueduct.CataractaeTypeAgent, Context: aqueduct.ContextDiffOnly}
 
 	_, _, err := PrepareContext(ContextParams{
 		Level:      aqueduct.ContextDiffOnly,

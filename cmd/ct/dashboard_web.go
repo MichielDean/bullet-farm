@@ -402,6 +402,7 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		defer func() {
 			cancel()
 			cmd.Process.Kill() //nolint:errcheck
+			cmd.Wait()         //nolint:errcheck // reap child to prevent zombie accumulation
 		}()
 
 		// Goroutine C: shutdown watchdog — unblocks the peer goroutine on ctx cancel.

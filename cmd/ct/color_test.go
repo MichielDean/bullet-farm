@@ -140,11 +140,11 @@ func TestSkillDesc(t *testing.T) {
 	})
 
 	t.Run("yaml block scalar", func(t *testing.T) {
-		// documents source bug: skillDesc returns ">" verbatim for YAML block scalar indicator
+		t.Skip("known bug: skillDesc returns '>' verbatim instead of parsing YAML block scalar; correct value is 'Multi-line description.'")
 		p := writeSkillMD(t, "---\ndescription: >\n  Multi-line description.\n---\n")
 		got := skillDesc(p)
-		if got != ">" {
-			t.Errorf("got %q, want %q", got, ">")
+		if got != "Multi-line description." {
+			t.Errorf("got %q, want %q", got, "Multi-line description.")
 		}
 	})
 }

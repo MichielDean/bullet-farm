@@ -40,6 +40,9 @@ const wsWriteTimeout = 10 * time.Second
 // unbounded memory allocation via a forged frame length header.
 const wsMaxClientPayload = 4096
 
+// ptyReadBufSize is the read buffer for forwarding PTY output to WebSocket.
+const ptyReadBufSize = 4096
+
 // WebSocket opcodes (RFC 6455 §5.2).
 const (
 	wsOpcodeText   = 0x1
@@ -189,10 +192,8 @@ func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byt
 	}
 
 	var mask [4]byte
-	if masked {
-		if _, err = io.ReadFull(br, mask[:]); err != nil {
-			return 0, nil, buf, err
-		}
+	if _, err = io.ReadFull(br, mask[:]); err != nil {
+		return 0, nil, buf, err
 	}
 
 	if payloadLen > len(buf) {
@@ -201,10 +202,8 @@ func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byt
 	if _, err = io.ReadFull(br, buf[:payloadLen]); err != nil {
 		return 0, nil, buf, err
 	}
-	if masked {
-		for i := range buf[:payloadLen] {
-			buf[i] ^= mask[i%4]
-		}
+	for i := range buf[:payloadLen] {
+		buf[i] ^= mask[i%4]
 	}
 	return opcode, buf[:payloadLen], buf, nil
 }
@@ -251,6 +250,10 @@ func wsUpgrade(w http.ResponseWriter, r *http.Request) (net.Conn, *bufio.ReadWri
 // Exposed for testing.
 func newDashboardMux(cfgPath, dbPath string) http.Handler {
 	mux := http.NewServeMux()
+
+	// Cache the executable path once at mux creation time rather than
+	// resolving it per-connection in /ws/tui.
+	exe, _ := os.Executable()
 
 	// Serve bundled xterm.js assets so the dashboard works in airgapped environments.
 	staticSub, err := fs.Sub(staticAssets, "assets/static")
@@ -389,8 +392,7 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		}
 		defer conn.Close()
 
-		exe, err := os.Executable()
-		if err != nil {
+		if exe == "" {
 			return
 		}
 		cmd := exec.Command(exe, "dashboard", "--db", dbPath)
@@ -473,7 +475,7 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		}()
 
 		// Goroutine A: forward PTY output → WebSocket as binary frames.
-		out := make([]byte, 4096)
+		out := make([]byte, ptyReadBufSize)
 		for {
 			n, err := ptmx.Read(out)
 			if n > 0 {

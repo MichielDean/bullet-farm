@@ -96,29 +96,18 @@ func RunDroughtHooks(p DroughtHookParams) {
 	// Binary-update detection: if the on-disk binary is newer than when we started,
 	// a restart is needed to run the new code.
 	binaryUpdated := false
-	if !p.StartupBinaryMtime.IsZero() {
-		if exe, err := os.Executable(); err == nil {
-			if info, err := os.Stat(exe); err == nil {
-				if info.ModTime().After(p.StartupBinaryMtime) {
-					binaryUpdated = true
-					needsRestart = true
-					restartReason = "binary updated on disk"
-				}
-			}
-		}
+	if exe, err := os.Executable(); err == nil && mtimeAdvanced(exe, p.StartupBinaryMtime) {
+		binaryUpdated = true
+		needsRestart = true
+		restartReason = "binary updated on disk"
 	}
 
 	// Config-update detection: if cistern.yaml is newer than when we started,
 	// a restart is needed to pick up the new config.
-	cfgUpdated := false
-	if p.CfgPath != "" && !p.StartupCfgMtime.IsZero() {
-		if info, err := os.Stat(p.CfgPath); err == nil {
-			if info.ModTime().After(p.StartupCfgMtime) {
-				cfgUpdated = true
-				needsRestart = true
-				restartReason = "cistern.yaml updated on disk"
-			}
-		}
+	cfgUpdated := mtimeAdvanced(p.CfgPath, p.StartupCfgMtime)
+	if cfgUpdated {
+		needsRestart = true
+		restartReason = "cistern.yaml updated on disk"
 	}
 
 	if !needsRestart {
@@ -150,6 +139,16 @@ func RunDroughtHooks(p DroughtHookParams) {
 			"reason", restartReason,
 			"hint", "Set CT_SUPERVISED=1 or run under systemd to enable automatic restarts")
 	}
+}
+
+// mtimeAdvanced reports whether the file at path has been modified after baseline.
+// Returns false when path is empty, baseline is zero, or the file cannot be stat'd.
+func mtimeAdvanced(path string, baseline time.Time) bool {
+	if path == "" || baseline.IsZero() {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.ModTime().After(baseline)
 }
 
 // hookGitSync fetches the latest workflow YAML and skills from origin/main for

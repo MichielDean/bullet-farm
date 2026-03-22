@@ -141,16 +141,9 @@ func WithSandboxRoot(root string) Option {
 
 // WithConfigPath records the path to cistern.yaml so the scheduler can detect
 // when the config file has been updated on disk and trigger a clean restart.
+// The mtime is captured in New() after all options are applied.
 func WithConfigPath(path string) Option {
-	return func(s *Castellarius) {
-		s.cfgPath = path
-		if info, err := os.Stat(path); err == nil {
-			s.startupCfgMtime = info.ModTime()
-		} else {
-			s.logger.Warn("WithConfigPath: cannot stat cistern.yaml — config-update detection disabled",
-				"path", path, "err", err)
-		}
-	}
+	return func(s *Castellarius) { s.cfgPath = path }
 }
 
 // New creates a Castellarius from an AqueductConfig.
@@ -186,6 +179,17 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 	}
 	for _, o := range opts {
 		o(s)
+	}
+
+	// Capture config mtime at construction time for update detection (mirrors
+	// the binary mtime capture above).
+	if s.cfgPath != "" {
+		if info, err := os.Stat(s.cfgPath); err == nil {
+			s.startupCfgMtime = info.ModTime()
+		} else {
+			s.logger.Warn("cannot stat cistern.yaml — config-update detection disabled",
+				"path", s.cfgPath, "err", err)
+		}
 	}
 
 	if s.sandboxRoot == "" {

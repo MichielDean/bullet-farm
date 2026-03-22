@@ -96,6 +96,7 @@ func wsSendBinary(w *bufio.Writer, data []byte) error {
 	return wsSendFrame(w, 0x82, data)
 }
 
+// wsSendFrame writes a single WebSocket frame and flushes.
 func wsSendFrame(w *bufio.Writer, opcode byte, payload []byte) error {
 	n := len(payload)
 	header := make([]byte, 0, 10)
@@ -139,13 +140,13 @@ func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byt
 		if _, err = io.ReadFull(br, ext); err != nil {
 			return 0, nil, buf, err
 		}
-		payloadLen = int(ext[0])<<8 | int(ext[1])
+		payloadLen = int(binary.BigEndian.Uint16(ext))
 	case 127:
 		ext := make([]byte, 8)
 		if _, err = io.ReadFull(br, ext); err != nil {
 			return 0, nil, buf, err
 		}
-		payloadLen = int(ext[4])<<24 | int(ext[5])<<16 | int(ext[6])<<8 | int(ext[7])
+		payloadLen = int(binary.BigEndian.Uint64(ext))
 	default:
 		payloadLen = rawLen
 	}
@@ -352,12 +353,11 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 		// Force true-color environment so Bubble Tea renders with full ANSI colors.
 		// The web server inherits TERM=dumb from systemd; without these overrides
 		// lipgloss strips all colors and the TUI renders black and white.
-		env := append(os.Environ(),
+		cmd.Env = append(os.Environ(),
 			"CT_CISTERN_CONFIG="+cfgPath,
 			"TERM=xterm-256color",
 			"COLORTERM=truecolor",
 		)
-		cmd.Env = env
 
 		ptmx, err := pty.Start(cmd)
 		if err != nil {

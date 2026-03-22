@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -333,7 +334,7 @@ func TestRecoverOpenPR_Behind_RebaseOK_Pass(t *testing.T) {
 		nil,
 	)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/10", "BEHIND")
 
 	if got := outcomeFor(c, item.ID); got != "pass" {
@@ -352,7 +353,7 @@ func TestRecoverOpenPR_Behind_RebaseFail_Recirculates(t *testing.T) {
 		nil,
 	)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/11", "BEHIND")
 
 	if got := outcomeFor(c, item.ID); got != "recirculate" {
@@ -372,7 +373,7 @@ func TestRecoverOpenPR_Behind_AutoMergeFail_StillPass(t *testing.T) {
 		nil,
 	)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/12", "BEHIND")
 
 	if got := outcomeFor(c, item.ID); got != "pass" {
@@ -385,7 +386,7 @@ func TestRecoverOpenPR_Blocked_Recirculates(t *testing.T) {
 	c := newStuckClient(item)
 	s := stuckScheduler(c, findPRResult{}, nil, nil, nil, nil)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/13", "BLOCKED")
 
 	if got := outcomeFor(c, item.ID); got != "recirculate" {
@@ -398,7 +399,7 @@ func TestRecoverOpenPR_Unstable_Recirculates(t *testing.T) {
 	c := newStuckClient(item)
 	s := stuckScheduler(c, findPRResult{}, nil, nil, nil, nil)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/14", "UNSTABLE")
 
 	if got := outcomeFor(c, item.ID); got != "recirculate" {
@@ -417,7 +418,7 @@ func TestRecoverOpenPR_Clean_DirectOK_Pass(t *testing.T) {
 		nil,
 	)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/15", "CLEAN")
 
 	if got := outcomeFor(c, item.ID); got != "pass" {
@@ -436,7 +437,7 @@ func TestRecoverOpenPR_Clean_DirectFail_AutoOK_Pass(t *testing.T) {
 		nil,                                           // second call (auto) succeeds
 	)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/16", "CLEAN")
 
 	if got := outcomeFor(c, item.ID); got != "pass" {
@@ -457,7 +458,7 @@ func TestRecoverOpenPR_CleanBothFail_RecirculatesWithAutoErr(t *testing.T) {
 		autoErr,   // second call also fails
 	)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/17", "CLEAN")
 
 	if got := outcomeFor(c, item.ID); got != "recirculate" {
@@ -468,7 +469,7 @@ func TestRecoverOpenPR_CleanBothFail_RecirculatesWithAutoErr(t *testing.T) {
 	defer c.mu.Unlock()
 	var found bool
 	for _, n := range c.attached {
-		if n.id == item.ID && contains(n.notes, autoErr.Error()) {
+		if n.id == item.ID && strings.Contains(n.notes, autoErr.Error()) {
 			found = true
 			break
 		}
@@ -483,7 +484,7 @@ func TestRecoverOpenPR_Dirty_Recirculates(t *testing.T) {
 	c := newStuckClient(item)
 	s := stuckScheduler(c, findPRResult{}, nil, nil, nil, nil)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/18", "DIRTY")
 
 	if got := outcomeFor(c, item.ID); got != "recirculate" {
@@ -496,7 +497,7 @@ func TestRecoverOpenPR_Unknown_Recirculates(t *testing.T) {
 	c := newStuckClient(item)
 	s := stuckScheduler(c, findPRResult{}, nil, nil, nil, nil)
 
-	s.recoverOpenPR(context.Background(), c, item, "/sandbox", "test-repo-virgo",
+	s.recoverOpenPR(context.Background(), c, item, "/sandbox",
 		"https://github.com/o/r/pull/19", "UNKNOWN")
 
 	if got := outcomeFor(c, item.ID); got != "recirculate" {
@@ -589,17 +590,4 @@ func TestDefaultRebaseAndPush_AbortsOnConflict(t *testing.T) {
 	if _, err := os.Stat(rebaseDir); err == nil {
 		t.Error("expected rebase-merge dir to be absent after abort")
 	}
-}
-
-// contains is a simple helper for substring checks.
-func contains(s, substr string) bool {
-	return len(substr) > 0 && len(s) >= len(substr) &&
-		(s == substr || (len(s) > 0 && func() bool {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-			return false
-		}()))
 }

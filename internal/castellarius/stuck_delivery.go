@@ -100,11 +100,14 @@ func (s *Castellarius) recoverStuckDelivery(ctx context.Context, repo aqueduct.R
 	sessionID := repo.Name + "-" + item.Assignee
 
 	prURL, state, mergeStateStatus, err := s.findPRFn(ctx, repo.Name, item.ID, sandboxDir)
+
+	// Kill the stuck agent session — every recovery path needs this.
+	if killErr := s.killSessionFn(sessionID); killErr != nil {
+		s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
+	}
+
 	if err != nil {
 		s.logger.Error("stuck delivery: PR lookup failed", "droplet", item.ID, "error", err)
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			fmt.Sprintf("Stuck delivery: PR lookup failed (%v). Recirculated.", err))
 		s.logSetOutcome(client, item.ID, "recirculate", "PR lookup failed")
@@ -113,9 +116,6 @@ func (s *Castellarius) recoverStuckDelivery(ctx context.Context, repo aqueduct.R
 
 	if prURL == "" {
 		s.logger.Warn("stuck delivery: no PR found", "droplet", item.ID)
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			"Stuck delivery: no PR found for branch. Recirculated.")
 		s.logSetOutcome(client, item.ID, "recirculate", "no PR found")
@@ -128,30 +128,21 @@ func (s *Castellarius) recoverStuckDelivery(ctx context.Context, repo aqueduct.R
 	switch state {
 	case "MERGED":
 		s.logger.Info("stuck delivery: PR already merged, signaling pass", "droplet", item.ID)
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			fmt.Sprintf("Stuck delivery recovered: PR %s was already merged. Signaling pass.", prURL))
 		s.logSetOutcome(client, item.ID, "pass", "PR already merged")
 
 	case "CLOSED":
 		s.logger.Warn("stuck delivery: PR closed without merge", "droplet", item.ID, "prURL", prURL)
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			fmt.Sprintf("Stuck delivery: PR %s closed without merging. Recirculated.", prURL))
 		s.logSetOutcome(client, item.ID, "recirculate", "PR closed without merge")
 
 	case "OPEN":
-		s.recoverOpenPR(ctx, client, item, sandboxDir, sessionID, prURL, mergeStateStatus)
+		s.recoverOpenPR(ctx, client, item, sandboxDir, prURL, mergeStateStatus)
 
 	default:
 		s.logger.Warn("stuck delivery: unexpected PR state", "droplet", item.ID, "state", state)
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			fmt.Sprintf("Stuck delivery: unexpected PR state %q. Recirculated.", state))
 		s.logSetOutcome(client, item.ID, "recirculate", fmt.Sprintf("unexpected PR state: %s", state))
@@ -160,13 +151,10 @@ func (s *Castellarius) recoverStuckDelivery(ctx context.Context, repo aqueduct.R
 
 // recoverOpenPR handles recovery for a stuck delivery where the PR is still OPEN.
 // Dispatches to the appropriate recovery path based on mergeStateStatus.
-func (s *Castellarius) recoverOpenPR(ctx context.Context, client CisternClient, item *cistern.Droplet, sandboxDir, sessionID, prURL, mergeStateStatus string) {
+func (s *Castellarius) recoverOpenPR(ctx context.Context, client CisternClient, item *cistern.Droplet, sandboxDir, prURL, mergeStateStatus string) {
 	switch mergeStateStatus {
 	case "BEHIND":
 		// Branch is behind main — rebase, push, then enable auto-merge and signal pass.
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		if err := s.rebaseAndPushFn(ctx, sandboxDir); err != nil {
 			s.logger.Error("stuck delivery: rebase failed", "droplet", item.ID, "error", err)
 			_ = client.AddNote(item.ID, "stuck-delivery",
@@ -186,9 +174,6 @@ func (s *Castellarius) recoverOpenPR(ctx context.Context, client CisternClient, 
 
 	case "BLOCKED", "UNSTABLE":
 		// CI checks are failing — recirculate so the agent can fix them.
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			fmt.Sprintf("Stuck delivery: PR %s has failing CI (mergeStateStatus=%s). Recirculated.", prURL, mergeStateStatus))
 		s.logSetOutcome(client, item.ID, "recirculate",
@@ -198,9 +183,6 @@ func (s *Castellarius) recoverOpenPR(ctx context.Context, client CisternClient, 
 
 	case "CLEAN":
 		// All checks pass, branch up-to-date — try direct merge, then auto-merge.
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		err := s.ghMergeFn(ctx, sandboxDir, prURL, false)
 		if err == nil {
 			_ = client.AddNote(item.ID, "stuck-delivery",
@@ -229,9 +211,6 @@ func (s *Castellarius) recoverOpenPR(ctx context.Context, client CisternClient, 
 
 	default:
 		// DIRTY, UNKNOWN, DRAFT, HAS_HOOKS, or any other unrecoverable state.
-		if killErr := s.killSessionFn(sessionID); killErr != nil {
-			s.logger.Error("stuck delivery: kill session failed", "droplet", item.ID, "error", killErr)
-		}
 		_ = client.AddNote(item.ID, "stuck-delivery",
 			fmt.Sprintf("Stuck delivery: PR %s in unrecoverable state %q. Recirculated.", prURL, mergeStateStatus))
 		s.logSetOutcome(client, item.ID, "recirculate",

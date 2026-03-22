@@ -1011,19 +1011,25 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			continue
 		}
 
-		// Check if the tmux session is still alive — this is the authoritative
-		// liveness signal. Do NOT rely on pool.IsWorkerBusy: the in-memory busy
-		// state is never cleared when a tmux server crash kills the session, so
-		// an item can stay "busy" in memory indefinitely while the agent is dead.
 		if item.Assignee != "" {
+			// Pool-first check: if the pool says idle, dispatch already
+			// released this aqueduct (or hasn't assigned it yet). Skipping
+			// here avoids racing with the window between pool.Assign and
+			// sess.Spawn where isTmuxAlive would return false prematurely.
+			if !pool.IsFlowing(item.Assignee) {
+				continue
+			}
+
+			// Pool says flowing — check whether the tmux session is alive.
+			// If alive, the agent is running normally.
 			sessionID := repo.Name + "-" + item.Assignee
 			if isTmuxAlive(sessionID) {
-				// Agent is still running; leave it alone.
 				continue
 			}
 		}
 
-		// Dead/missing session, no outcome — reset to open for re-dispatch.
+		// Either no assignee, or pool=flowing + tmux=dead (genuine stall).
+		// Reset to open for re-dispatch.
 		s.logger.Info("heartbeat: resetting stalled droplet",
 			"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
 

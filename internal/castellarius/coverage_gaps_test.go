@@ -338,6 +338,34 @@ func TestHeartbeatRepo_DeadTmuxSession_ResetsItem(t *testing.T) {
 	}
 }
 
+func TestHeartbeatRepo_PoolIdleSkipsReset(t *testing.T) {
+	// When pool says idle (aqueduct not flowing), heartbeat should skip the
+	// item even though tmux is dead. This covers the race window between
+	// pool.Assign and sess.Spawn where a premature isTmuxAlive=false would
+	// incorrectly reset the droplet.
+	client := newMockClient()
+	item := &cistern.Droplet{
+		ID:                "hb-idle-skip",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "alpha",
+		Outcome:           "",
+	}
+	client.items["hb-idle-skip"] = item
+
+	sched := testScheduler(client, newMockRunner(client))
+	// Do NOT mark the pool aqueduct as flowing — it stays idle.
+
+	sched.heartbeatRepo(context.Background(), sched.config.Repos[0])
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	// Pool=idle → heartbeat should skip, so no reset occurs.
+	if client.steps["hb-idle-skip"] != "" {
+		t.Errorf("pool-idle item should not be reset, got step=%q", client.steps["hb-idle-skip"])
+	}
+}
+
 func TestHeartbeatInProgress_CallsHeartbeatForAllRepos(t *testing.T) {
 	// Basic smoke test: heartbeatInProgress should iterate all repos without panic.
 	client := newMockClient()

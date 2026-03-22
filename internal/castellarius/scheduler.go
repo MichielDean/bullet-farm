@@ -146,6 +146,9 @@ func WithConfigPath(path string) Option {
 		s.cfgPath = path
 		if info, err := os.Stat(path); err == nil {
 			s.startupCfgMtime = info.ModTime()
+		} else {
+			s.logger.Warn("WithConfigPath: cannot stat cistern.yaml — config-update detection disabled",
+				"path", path, "err", err)
 		}
 	}
 }

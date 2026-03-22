@@ -731,6 +731,13 @@ func TestRunDroughtHooks_CfgMtimeZero_NoDetection(t *testing.T) {
 func TestRunDroughtHooks_CfgFileUpdated_Unsupervised_LogsWarnOnly(t *testing.T) {
 	// When cistern.yaml is newer than startupCfgMtime and running unsupervised,
 	// onReload must NOT be called (config is not hot-reloadable — it warns and keeps running).
+	//
+	// Note: the hot-reload branch in RunDroughtHooks guards with !cfgUpdated, so it is
+	// also blocked when both workflowChanged and cfgUpdated are true simultaneously.
+	// That combined path cannot be unit-tested here because workflowChanged is set
+	// internally by the git_sync hook (not injectable), but the guard is logically
+	// covered: cfgUpdated=true falls through to the cfgUpdated warn branch regardless
+	// of workflowChanged.
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
 	os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644)
@@ -796,30 +803,6 @@ func TestRunDroughtHooks_CfgFileMissing_NoRestart(t *testing.T) {
 	}
 }
 
-func TestRunDroughtHooks_WorkflowAndCfgBothUpdated_NoReload(t *testing.T) {
-	// When both a workflow change and cistern.yaml update occur simultaneously,
-	// the cfg update takes precedence over workflow hot-reload (neither is hot-reloadable).
-	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "cistern.yaml")
-	os.WriteFile(cfgPath, []byte("repos: []\n"), 0o644)
-
-	startupMtime := time.Now().Add(-time.Hour) // cfg is newer → cfgUpdated=true
-
-	reloadCalled := false
-	// git_sync hook that reports workflowChanged is not practical to fake here, so we
-	// drive needsRestart via the cfg mtime path and verify onReload is NOT called.
-	RunDroughtHooks(DroughtHookParams{
-		Config:          &aqueduct.AqueductConfig{},
-		SandboxRoot:     tmpDir,
-		Logger:          discardLogger(),
-		CfgPath:         cfgPath,
-		StartupCfgMtime: startupMtime,
-		OnReload:        func() { reloadCalled = true },
-	})
-	if reloadCalled {
-		t.Error("onReload should not be called when cfgUpdated is true")
-	}
-}
 
 func TestGitSync_SkipsMissingCataractaeFiles_Gracefully(t *testing.T) {
 	tmpDir := t.TempDir()

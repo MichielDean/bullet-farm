@@ -411,15 +411,6 @@ type EditDropletFields struct {
 // up. Allowed statuses: open, stagnant. Returns an error if the droplet is
 // in_progress or delivered.
 func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
-	d, err := c.Get(id)
-	if err != nil {
-		return err
-	}
-	if d.Status != "open" && d.Status != "stagnant" {
-		return fmt.Errorf("droplet %s is %s — cannot edit a droplet that has been picked up", id, d.Status)
-	}
-
-	// Nothing to do.
 	if fields.Description == nil && fields.Complexity == nil && fields.Priority == nil {
 		return nil
 	}
@@ -442,12 +433,23 @@ func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
 	args = append(args, time.Now().UTC())
 	args = append(args, id)
 
-	query := "UPDATE droplets SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
+	query := "UPDATE droplets SET " + strings.Join(setClauses, ", ") + " WHERE id = ? AND status IN ('open', 'stagnant')"
 	res, err := c.db.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("cistern: edit %s: %w", id, err)
 	}
-	return checkRowsAffected(res, id)
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("cistern: rows affected: %w", err)
+	}
+	if n == 0 {
+		d, err := c.Get(id)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("droplet %s is %s — cannot edit a droplet that has been picked up", id, d.Status)
+	}
+	return nil
 }
 
 // UpdateStatus sets the status field on a droplet.

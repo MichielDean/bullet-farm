@@ -1208,7 +1208,7 @@ droplet is in_progress or delivered.`,
 				if err != nil {
 					return fmt.Errorf("read stdin: %w", err)
 				}
-				desc = strings.TrimRight(string(b), "\n")
+				desc = strings.TrimSuffix(string(b), "\n")
 			} else {
 				desc = editDescription
 			}

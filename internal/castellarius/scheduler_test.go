@@ -459,7 +459,9 @@ func TestTick_TerminalBlocked(t *testing.T) {
 	}
 }
 
-func TestTick_GlobalCap(t *testing.T) {
+func TestTick_PerRepoCap(t *testing.T) {
+	// Cap is per-repo (pool size), not global. With 3 pool slots and 10 droplets,
+	// exactly 3 should flow — no more, no less.
 	client := newMockClient()
 	for i := range 10 {
 		client.readyItems = append(client.readyItems, &cistern.Droplet{
@@ -473,7 +475,6 @@ func TestTick_GlobalCap(t *testing.T) {
 		Repos: []aqueduct.RepoConfig{
 			{Name: "r1", Cataractae: 3, Names: []string{"w1", "w2", "w3"}, Prefix: "r1"},
 		},
-		MaxCataractae: 2,
 	}
 	wf := testWorkflow()
 	clients := map[string]CisternClient{"r1": client}
@@ -486,8 +487,8 @@ func TestTick_GlobalCap(t *testing.T) {
 	}
 
 	total := sched.totalBusy()
-	if total > 2 {
-		t.Errorf("global cap violated: %d busy workers (cap=2)", total)
+	if total > 3 {
+		t.Errorf("per-repo cap violated: %d busy workers (pool size=3)", total)
 	}
 
 	close(runner.ch)
@@ -662,7 +663,8 @@ func TestMultiRepo_ItemsGoToCorrectWorkers(t *testing.T) {
 	}
 }
 
-func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
+func TestMultiRepo_EachRepoUsesItsOwnCap(t *testing.T) {
+	// Each repo is capped by its own pool size independently — no global cap.
 	stClient := newMockClient()
 	for i := range 5 {
 		stClient.readyItems = append(stClient.readyItems, &cistern.Droplet{ID: fmt.Sprintf("st-%d", i)})
@@ -678,8 +680,7 @@ func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
 		"cistern":    bfClient,
 	}
 
-	config := multiRepoConfig()
-	config.MaxCataractae = 2 // Cap below total pool capacity (3)
+	config := multiRepoConfig() // ScaledTest: 2 slots, cistern: 1 slot → 3 total
 	wf := testWorkflow()
 	workflows := map[string]*aqueduct.Workflow{
 		"ScaledTest": wf,
@@ -687,14 +688,13 @@ func TestMultiRepo_GlobalCapAcrossRepos(t *testing.T) {
 	}
 	sched := NewFromParts(config, workflows, clients, blocker)
 
-	// Multiple ticks should never exceed global cap.
 	for range 5 {
 		sched.Tick(context.Background())
 	}
 
 	total := sched.totalBusy()
-	if total > 2 {
-		t.Errorf("global cap violated: %d busy workers across repos (cap=2)", total)
+	if total > 3 {
+		t.Errorf("per-repo cap violated: %d busy workers (total pool size=3)", total)
 	}
 
 	close(blocker.ch)

@@ -132,6 +132,8 @@ e. Verify non-trivial files changed:
    Must be > 0. If the commit only touches `.md` files: you did not commit your implementation.
    **DO NOT signal pass.** Stage the missing files and commit, then re-verify from step (a).
 
+   **Exception:** If the named deliverable in CONTEXT.md is itself a `.md` file, this check does not apply — a `.md`-only commit is correct. Proceed to check (f) and confirm the deliverable is present (>0 lines). Check (f) passing is sufficient; check (e) is satisfied by the exception.
+
 f. For any named deliverable file in CONTEXT.md:
    ```bash
    git show HEAD -- <deliverable_file> | wc -l

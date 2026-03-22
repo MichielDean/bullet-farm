@@ -14,8 +14,8 @@
 - **Worktrees are now droplet-scoped**, not aqueduct-scoped. Each droplet gets a fresh git worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/` on branch `feat/<droplet-id>` when it enters the `implement` step.
 - Aqueduct names (`virgo`, `marcia`, etc.) are now **concurrency slots only** — they limit how many droplets run in parallel per repo. They no longer correspond to persistent worktree directories.
 - **Dirty worktree gate**: before dispatching a droplet, the Castellarius runs `git status --porcelain` on the worktree and recirculates with a diagnostic note if non-`CONTEXT.md` files are uncommitted. Prevents agents from inheriting dirty state from a prior session.
-- **Worktree cleanup**: terminal routes (deliver, block, escalate) remove the per-droplet worktree. Non-terminal routes (pass to next step, recirculate) preserve it so the next cycle can resume incrementally.
-- **Stash policy**: with per-droplet worktrees, stashing between cataractae is never needed or valid. Dirty state is detected and recirculated instead.
+- **Worktree cleanup**: terminal routes (`done`/delivery complete, `block`, `escalate`, `human`) remove the per-droplet worktree. Non-terminal routes (pass to next step, recirculate) preserve it so the next cycle can resume incrementally.
+- **Stash policy**: with per-droplet worktrees, manual stashing between cataractae should no longer be needed. Dirty state in these worktrees is detected and recirculated instead; automated delivery flows may still use `git stash` internally where appropriate.
 - Fixes the ci-792v7 class of failure: the implementer's uncommitted files were left in the worktree. With per-droplet worktrees, the Castellarius now detects and reports this before dispatch rather than silently proceeding.
 - Existing in-flight droplets using aqueduct-named worktrees continue to work during migration.
 

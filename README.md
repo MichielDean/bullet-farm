@@ -143,7 +143,7 @@ repos:
       - marcia
 ```
 
-Aqueduct names are **concurrency slots** — they control how many droplets run in parallel per repo. Each active droplet gets its own isolated git worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/` on branch `feat/<droplet-id>`. Worktrees are created when a droplet enters the `implement` step and removed when it reaches a terminal state (delivered, blocked, escalated).
+Aqueduct names are **concurrency slots** — they control how many droplets run in parallel per repo. Each active droplet gets its own isolated git worktree at `~/.cistern/sandboxes/<repo>/<droplet-id>/` on branch `feat/<droplet-id>`. Worktrees are created when a droplet enters the `implement` step and removed once it reaches a terminal state (`done`, `blocked`, `escalated`, or `human`).
 
 All per-droplet worktrees share a single primary clone object store at `~/.cistern/sandboxes/<repo>/_primary/` — objects are shared, only the working tree is per-droplet, keeping disk cost low. Each tmux session is named `<repo>-<aqueduct>`. Every `tmux ls` shows the cistern in motion:
 

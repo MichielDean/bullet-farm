@@ -8,6 +8,14 @@
 - Arch geometry mirrors the existing pillar template (28 chars wide, 14 rows) but without active colour or channel rows, keeping the drought display visually coherent with the live arch style
 - `viewDroughtArch()` returns 15 lines (1 label + 14 pillar rows); existing idle row rendering is unchanged when at least one aqueduct is active
 
+### TUI dashboard: water to active step, labels above arch, black backgrounds (ci-jo3fx)
+- Channel water now fills only up to and including the active cataractae step — pillars to the right of the active step show a dry channel (empty walls, no water); idle aqueducts (no active droplet) show no water at all
+- Step labels moved above the arch: each step name is now centered above its pillar column in a label row that appears before the channel top and water rows (layout: labels → channel top → channel water → pillar rows)
+- All grey (color 8) background uses in the pillar template and surrounding rows replaced with black (color 0)
+- Waterfall position and width adjusted to exit cleanly from the right edge of the last pillar at channel-row level with the new 28-col pillar width
+- `buildChanWater` truncates `infoStr` with an ellipsis when it would exceed the available water-fill width, preventing the channel water row from overflowing the channel top and misaligning the right wall and waterfall
+- `wetInnerW` formula corrected to `(activeIdx+1)*pillarW - 1` to account for the left wall column
+
 ### TUI dashboard: replace procedural arch with durdraw pillar template (ci-a8j0v)
 - Replaced procedural arch rendering in `tuiAqueductRow` with a static durdraw pillar template (14 rows × 28 cols, fg=color3/olive, bg=black) tiled once per cataractae step
 - Removed `archCrownAtT`, `colW`, `archTopW`, `taperRows`, `pierRows`, `brickW` constants and `math` import

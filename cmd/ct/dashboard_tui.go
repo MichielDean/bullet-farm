@@ -311,8 +311,6 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 func (m dashboardTUIModel) viewDroughtArch() []string {
 	const pillarW = 28
 
-	droughtFg := lipgloss.NewStyle().Foreground(lipgloss.Color("#46465a"))
-
 	leftPad := (m.width - pillarW) / 2
 	if leftPad < 0 {
 		leftPad = 0
@@ -326,22 +324,22 @@ func (m dashboardTUIModel) viewDroughtArch() []string {
 		case 0, 1, 2, 3, 4:
 			return strings.Repeat(" ", pillarW)
 		case 5:
-			return droughtFg.Render(strings.Repeat("▒", pillarW))
+			return tuiStyleDim.Render(strings.Repeat("▒", pillarW))
 		case 6:
 			return strings.Repeat(" ", 6) +
-				droughtFg.Render("░"+strings.Repeat("▒", 16)) +
+				tuiStyleDim.Render("░"+strings.Repeat("▒", 16)) +
 				strings.Repeat(" ", 5)
 		case 7:
 			return strings.Repeat(" ", 9) +
-				droughtFg.Render("░"+strings.Repeat("▒", 9)) +
+				tuiStyleDim.Render("░"+strings.Repeat("▒", 9)) +
 				strings.Repeat(" ", 9)
 		case 8:
 			return strings.Repeat(" ", 10) +
-				droughtFg.Render("░"+strings.Repeat("▒", 7)) +
+				tuiStyleDim.Render("░"+strings.Repeat("▒", 7)) +
 				strings.Repeat(" ", 10)
 		default: // rows 9–13: pier body
 			return strings.Repeat(" ", 12) +
-				droughtFg.Render("░"+strings.Repeat("▒", 4)) +
+				tuiStyleDim.Render("░"+strings.Repeat("▒", 4)) +
 				strings.Repeat(" ", 11)
 		}
 	}

@@ -739,7 +739,7 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 			// Skipped when sandboxRoot is unset (test environments without real repos).
 			if s.sandboxRoot != "" &&
 				req.Step.Type == aqueduct.CataractaeTypeAgent &&
-				(req.Step.Context == aqueduct.ContextFullCodebase || req.Step.Context == "" || req.Step.Context == aqueduct.ContextDiffOnly) {
+				req.Step.Context != aqueduct.ContextSpecOnly {
 				primaryDir := filepath.Join(s.sandboxRoot, req.RepoConfig.Name, "_primary")
 				sandboxDir, err := prepareDropletWorktree(primaryDir, s.sandboxRoot, req.RepoConfig.Name, req.Item.ID)
 				if err != nil {

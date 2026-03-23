@@ -1825,9 +1825,8 @@ func TestDispatch_DiffOnlyStepGetsSandboxDir(t *testing.T) {
 	if len(runner.calls) != 1 {
 		t.Fatalf("expected 1 runner call, got %d", len(runner.calls))
 	}
-	wantSandboxDir := filepath.Join(sandboxRoot, "test-repo", itemID)
-	if runner.calls[0].SandboxDir != wantSandboxDir {
+	if runner.calls[0].SandboxDir != sandboxDir {
 		t.Errorf("SandboxDir = %q, want %q (diff_only step must get per-droplet worktree path)",
-			runner.calls[0].SandboxDir, wantSandboxDir)
+			runner.calls[0].SandboxDir, sandboxDir)
 	}
 }

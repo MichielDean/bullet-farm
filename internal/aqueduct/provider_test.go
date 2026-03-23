@@ -1,6 +1,7 @@
 package aqueduct
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,20 +112,10 @@ func TestResolveProvider_ArgsAreAppended(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	hasTopArg := false
-	hasRepoArg := false
-	for _, a := range preset.Args {
-		if a == "--top-arg" {
-			hasTopArg = true
-		}
-		if a == "--repo-arg" {
-			hasRepoArg = true
-		}
-	}
-	if !hasTopArg {
+	if !slices.Contains(preset.Args, "--top-arg") {
 		t.Errorf("Args %v missing --top-arg", preset.Args)
 	}
-	if !hasRepoArg {
+	if !slices.Contains(preset.Args, "--repo-arg") {
 		t.Errorf("Args %v missing --repo-arg", preset.Args)
 	}
 }
@@ -209,10 +200,8 @@ func TestResolveProvider_CustomProviderStartsEmpty(t *testing.T) {
 		t.Errorf("Command = %q, want %q", preset.Command, "my-agent")
 	}
 	// No built-in args should be inherited.
-	for _, a := range preset.Args {
-		if a == "--dangerously-skip-permissions" {
-			t.Error("custom provider inherited built-in claude args; want clean slate")
-		}
+	if slices.Contains(preset.Args, "--dangerously-skip-permissions") {
+		t.Error("custom provider inherited built-in claude args; want clean slate")
 	}
 }
 

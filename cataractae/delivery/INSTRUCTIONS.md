@@ -77,12 +77,11 @@ echo "PR: $PR_URL"
 ```bash
 CHECKS=$(gh pr checks "$PR_URL")
 GH_EXIT=$?
-if [ -z "$CHECKS" ]; then
-  if [ $GH_EXIT -ne 0 ]; then
-    echo "ERROR: gh pr checks failed (exit $GH_EXIT)"
-    ct droplet block $DROPLET_ID --notes "gh pr checks failed (exit $GH_EXIT) — cannot verify CI — $PR_URL"
-    exit 1
-  fi
+if [ $GH_EXIT -ne 0 ] && [ -z "$CHECKS" ]; then
+  echo "ERROR: gh pr checks failed (exit $GH_EXIT)"
+  ct droplet block $DROPLET_ID --notes "gh pr checks failed (exit $GH_EXIT) — cannot verify CI — $PR_URL"
+  exit 1
+elif [ -z "$CHECKS" ]; then
   echo "No CI checks configured — proceeding to merge"
 else
   echo "$CHECKS"
@@ -107,7 +106,10 @@ Wait for all checks to pass before merging. If `gh pr checks` returns no output,
 ## Step 5 — Merge
 
 ```bash
-git fetch origin && git rebase origin/$BASE && git push --force-with-lease && gh pr merge "$PR_URL" --squash --delete-branch
+git fetch origin \
+  && git rebase origin/$BASE \
+  && git push --force-with-lease \
+  && gh pr merge "$PR_URL" --squash --delete-branch
 STATE=$(gh pr view "$PR_URL" --json state --jq '.state')
 if [ "$STATE" != "MERGED" ]; then
   echo "ERROR: merge failed — state is $STATE"

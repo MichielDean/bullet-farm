@@ -76,10 +76,9 @@ func TestGenerateDiff_NonEmptyWithChanges(t *testing.T) {
 }
 
 // TestGenerateDiff_EmptyOnMain verifies that generateDiff returns an empty
-// diff when the sandbox is on the same commit as origin/main — i.e. no feature
-// changes have been committed. This is the failure mode the ci-s5eg9 fix
-// prevents: if the worker's own sandbox (on main) is passed instead of the
-// per-droplet worktree, the diff is empty.
+// diff (not an error) when the sandbox is on the same commit as origin/main.
+// This is a boundary test: no-changes produces empty bytes, not an error.
+// The actual regression guard for ci-s5eg9 is TestGenerateDiff_NonEmptyWithChanges.
 func TestGenerateDiff_EmptyOnMain(t *testing.T) {
 	dir := initTestRepo(t)
 

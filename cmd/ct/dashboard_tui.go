@@ -368,17 +368,19 @@ func (m dashboardTUIModel) viewIdleAqueductRow(ch CataractaeInfo) string {
 }
 
 // tuiAqueductRow renders a single aqueduct as a durdraw pillar diagram.
-// The aqueduct channel sits at the top; below it, a static pillar template
-// (9 rows × 28 cols, fg=color3/olive on bg=black) is tiled once per
-// cataractae step. The active step's pillar uses bright green for ▒ chars.
+// Layout (top to bottom): step labels → channel top (▀) → channel water → 9 pillar rows.
+// Total: 12 lines (1 label + 2 channel + 9 pillar).
 //
 // Pillar row layout (28 chars wide):
 //
-//	row 0:   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  (arch crown / road)
-//	row 1:         ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒       (arch opening widens)
-//	row 2:            ░▒▒▒▒▒▒▒▒▒            (arch narrowing)
-//	row 3:             ░▒▒▒▒▒▒▒             (arch narrowing)
-//	rows 4–8:            ░▒▒▒▒              (pier body)
+//	row 5:   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  (arch crown / road)
+//	row 6:         ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒       (arch opening widens)
+//	row 7:            ░▒▒▒▒▒▒▒▒▒            (arch narrowing)
+//	row 8:             ░▒▒▒▒▒▒▒             (arch narrowing)
+//	rows 9–13:           ░▒▒▒▒              (pier body)
+//
+// Water flows only to the active step — columns beyond it show a dry channel.
+// Idle aqueducts (no active droplet) show no water at all.
 func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string {
 	const (
 		pillarW = 28 // pillar width per step (9 rows × 28 cols)
@@ -407,12 +409,22 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		return step == ch.Step && ch.DropletID != ""
 	}
 
-	// Waterfall / channel-water styles — three brightness levels.
-	wfBright := lipgloss.NewStyle().Foreground(lipgloss.Color("#a8eeff"))
-	wfMid    := lipgloss.NewStyle().Foreground(lipgloss.Color("#3ec8e8"))
-	wfDim    := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7a96"))
+	// Find active step index (0-based); -1 if none.
+	activeIdx := -1
+	for i, step := range steps {
+		if isActive(step) {
+			activeIdx = i
+			break
+		}
+	}
 
-	cStyle := dim
+	// Waterfall / channel-water styles — three brightness levels, black background.
+	wfBright := lipgloss.NewStyle().Foreground(lipgloss.Color("#a8eeff")).Background(lipgloss.Color("0"))
+	wfMid    := lipgloss.NewStyle().Foreground(lipgloss.Color("#3ec8e8")).Background(lipgloss.Color("0"))
+	wfDim    := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a7a96")).Background(lipgloss.Color("0"))
+
+	// Channel wall style: dim foreground on black background.
+	cStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#46465a")).Background(lipgloss.Color("0"))
 	l1     := prefix + cStyle.Render(strings.Repeat("▀", chanW))
 
 	// Wave pattern: 6-char repeating unit animated each frame — water flows right.
@@ -435,27 +447,54 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		return wb.String()
 	}
 
-	buildChanWater := func(infoStr string, infoStyle lipgloss.Style) string {
+	// buildChanWaterN builds wave-animated water content of width w,
+	// centering infoStr within it.
+	buildChanWaterN := func(infoStr string, infoStyle lipgloss.Style, w int) string {
+		if w <= 0 {
+			return ""
+		}
 		info    := infoStyle.Render(infoStr)
 		infoViz := len([]rune(infoStr))
-		sideW   := (chanW - 2 - infoViz) / 2
+		sideW   := (w - infoViz) / 2
 		if sideW < 0 {
 			sideW = 0
 		}
-		rightW := chanW - 2 - infoViz - sideW
+		rightW := w - infoViz - sideW
 		if rightW < 0 {
 			rightW = 0
 		}
 		return renderWave(sideW) + info + renderWave(rightW)
 	}
 
+	// Pillar bg used for dry channel sections and blank pillar rows.
+	pillarBg := lipgloss.NewStyle().Background(lipgloss.Color("0"))
+
+	// Compute wet/dry widths for partial-water rendering.
+	// innerW is the channel content width (excluding the two █ walls).
+	innerW := chanW - 2
+	wetInnerW := 0
+	if activeIdx >= 0 {
+		wetInnerW = (activeIdx + 1) * pillarW
+		if wetInnerW > innerW {
+			wetInnerW = innerW
+		}
+	}
+	dryInnerW := innerW - wetInnerW
+
+	// Build water: wet wave up to the active step, dry (empty) beyond.
 	var water string
-	if ch.DropletID != "" {
+	if wetInnerW > 0 {
 		bar     := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		infoStr := fmt.Sprintf("  %s  %s  %s  ", ch.DropletID, formatElapsed(ch.Elapsed), bar)
-		water    = buildChanWater(infoStr, wfMid)
+		wetPart := buildChanWaterN(infoStr, wfMid, wetInnerW)
+		if dryInnerW > 0 {
+			water = wetPart + pillarBg.Render(strings.Repeat(" ", dryInnerW))
+		} else {
+			water = wetPart
+		}
 	} else {
-		water = buildChanWater("  — idle —  ", wfDim)
+		// No active step: fully dry channel.
+		water = pillarBg.Render(strings.Repeat(" ", innerW))
 	}
 
 	// Waterfall brightness rotates with frame so ▓ appears to fall.
@@ -491,7 +530,6 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	l2 := prefixRepo + cStyle.Render("█") + water + cStyle.Render("█") + wfExit
 
 	// Pillar styles: fg=color3/olive on bg=black; active uses bright green for ▒.
-	pillarBg     := lipgloss.NewStyle().Background(lipgloss.Color("0"))
 	pillarFg     := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Background(lipgloss.Color("0"))
 	pillarActive := lipgloss.NewStyle().Foreground(lipgloss.Color("#4bb96e")).Background(lipgloss.Color("0"))
 
@@ -543,6 +581,7 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 	}
 
 	// Label line: step names centered within pillarW, active step bold+green.
+	// Built first so it appears above the channel rows in the result.
 	var lblLine strings.Builder
 	lblLine.WriteString(indent)
 	for _, step := range steps {
@@ -558,9 +597,9 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 		}
 	}
 
-	result := []string{l1, l2}
+	// Return order: label → channel top → channel water → arch pillars.
+	result := []string{lblLine.String(), l1, l2}
 	result   = append(result, archLines...)
-	result   = append(result, lblLine.String())
 	return result
 }
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -251,14 +252,7 @@ func stepNames(wf []aqueduct.WorkflowCataractae) []string {
 func activeStepNames(wf []aqueduct.WorkflowCataractae, complexity int) []string {
 	var names []string
 	for _, step := range wf {
-		skipped := false
-		for _, cx := range step.SkipFor {
-			if cx == complexity {
-				skipped = true
-				break
-			}
-		}
-		if !skipped {
+		if !slices.Contains(step.SkipFor, complexity) {
 			names = append(names, step.Name)
 		}
 	}

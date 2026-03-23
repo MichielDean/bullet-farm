@@ -248,6 +248,40 @@ func TestResolveProvider_NoProviderBlockUsesBuiltinFields(t *testing.T) {
 	}
 }
 
+// TestResolveProvider_TopLevelModelAppliedToPreset verifies that model set at the
+// top-level provider block is surfaced as DefaultModel on the resolved preset.
+func TestResolveProvider_TopLevelModelAppliedToPreset(t *testing.T) {
+	cfg := &AqueductConfig{
+		Repos:    []RepoConfig{{Name: "r", Cataractae: 1}},
+		Provider: &ProviderConfig{Model: "claude-opus-4-6"},
+	}
+	preset, err := cfg.ResolveProvider("r")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if preset.DefaultModel != "claude-opus-4-6" {
+		t.Errorf("DefaultModel = %q, want %q", preset.DefaultModel, "claude-opus-4-6")
+	}
+}
+
+// TestResolveProvider_RepoLevelModelOverridesTopLevelModel verifies that a
+// repo-level model value takes precedence over the top-level model value.
+func TestResolveProvider_RepoLevelModelOverridesTopLevelModel(t *testing.T) {
+	cfg := &AqueductConfig{
+		Repos: []RepoConfig{
+			{Name: "r", Cataractae: 1, Provider: &ProviderConfig{Model: "claude-sonnet-4-6"}},
+		},
+		Provider: &ProviderConfig{Model: "claude-opus-4-6"},
+	}
+	preset, err := cfg.ResolveProvider("r")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if preset.DefaultModel != "claude-sonnet-4-6" {
+		t.Errorf("DefaultModel = %q, want %q (repo should override top-level)", preset.DefaultModel, "claude-sonnet-4-6")
+	}
+}
+
 // --- ValidateModelForProvider tests ---
 
 // TestValidateModelForProvider_NoModelReturnsEmptyWarning verifies that a step

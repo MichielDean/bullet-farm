@@ -90,6 +90,9 @@ func applyProviderOverrides(p *provider.ProviderPreset, cfg *ProviderConfig) {
 		}
 		maps.Copy(p.ExtraEnv, cfg.Env)
 	}
+	if cfg.Model != "" {
+		p.DefaultModel = cfg.Model
+	}
 }
 
 // ValidateModelForProvider checks whether a workflow cataractae's Model field can

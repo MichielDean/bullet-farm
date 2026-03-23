@@ -1467,3 +1467,67 @@ func TestPeekSelect_View_ShowsKeyHints(t *testing.T) {
 		t.Error("picker view should mention enter to connect")
 	}
 }
+
+// Issue 1: stale peekSelectIndex after data refresh
+
+func TestPeekSelect_DataRefresh_ClampsIndexWhenActiveDecreases(t *testing.T) {
+	// Given: picker is open with index pointing at second of two active aqueducts.
+	m := makeModelWithNActive(2)
+	m.peekSelectMode = true
+	m.peekSelectIndex = 1
+
+	// When: a data refresh arrives with only one active aqueduct.
+	oneActive := makeModelWithNActive(1)
+	updated, _ := m.Update(tuiDataMsg(oneActive.data))
+	um := updated.(dashboardTUIModel)
+
+	// Then: index is clamped to 0 (last valid index).
+	if um.peekSelectIndex != 0 {
+		t.Errorf("peekSelectIndex = %d after active decrease, want 0", um.peekSelectIndex)
+	}
+	if !um.peekSelectMode {
+		t.Error("peekSelectMode should remain true when there is still one active aqueduct")
+	}
+}
+
+func TestPeekSelect_DataRefresh_AutoClosesWhenNoActiveAqueducts(t *testing.T) {
+	// Given: picker is open.
+	m := makeModelWithNActive(2)
+	m.peekSelectMode = true
+	m.peekSelectIndex = 1
+
+	// When: a data refresh arrives with zero active aqueducts.
+	noneActive := makeModelWithNActive(0)
+	updated, _ := m.Update(tuiDataMsg(noneActive.data))
+	um := updated.(dashboardTUIModel)
+
+	// Then: picker is automatically closed.
+	if um.peekSelectMode {
+		t.Error("peekSelectMode should be cleared when no active aqueducts remain")
+	}
+}
+
+// Issue 2: missing tea.WindowSizeMsg handler in peekSelectMode
+
+func TestPeekSelect_WindowResize_UpdatesDimensions(t *testing.T) {
+	// Given: picker is open with initial dimensions.
+	m := makeModelWithNActive(2)
+	m.peekSelectMode = true
+	m.width = 80
+	m.height = 24
+
+	// When: a window resize event arrives.
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	um := updated.(dashboardTUIModel)
+
+	// Then: dimensions are updated and picker remains open.
+	if um.width != 120 {
+		t.Errorf("width = %d after resize, want 120", um.width)
+	}
+	if um.height != 40 {
+		t.Errorf("height = %d after resize, want 40", um.height)
+	}
+	if !um.peekSelectMode {
+		t.Error("peekSelectMode should remain true after resize")
+	}
+}

@@ -170,6 +170,10 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			return m, nil
 		case tuiTickMsg:
 			return m, tea.Batch(m.fetchDataCmd(), tuiTick())
 		case tuiAnimMsg:
@@ -177,6 +181,12 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tuiAnimTick()
 		case tuiDataMsg:
 			m.data = (*DashboardData)(msg)
+			active := activeAqueducts(m.data.Cataractae)
+			if len(active) == 0 {
+				m.peekSelectMode = false
+			} else if m.peekSelectIndex >= len(active) {
+				m.peekSelectIndex = len(active) - 1
+			}
 			return m, nil
 		}
 		return m, nil

@@ -195,7 +195,7 @@ _reset_scenario_state
 # Given: no ~/.cistern present (verified by _reset above).
 
 # When: run ct init to bootstrap the directory structure.
-if ! CT_NO_ASCII_LOGO=1 ct init 2>&1 >/dev/null; then
+if ! CT_NO_ASCII_LOGO=1 ct init >/dev/null; then
     fail "fresh_install_ct_init" "ct init failed"
 else
     # Install skill stubs so ct castellarius start and ct doctor pass validation.
@@ -238,7 +238,7 @@ echo "=== Scenario: Missing credentials ==="
 
 _reset_scenario_state
 
-if ! CT_NO_ASCII_LOGO=1 ct init 2>&1 >/dev/null; then
+if ! CT_NO_ASCII_LOGO=1 ct init >/dev/null; then
     fail "missing_creds_ct_init" "ct init failed"
 else
     _install_skill_stubs
@@ -297,7 +297,7 @@ echo "=== Scenario: Wrong/expired token ==="
 
 _reset_scenario_state
 
-if ! CT_NO_ASCII_LOGO=1 ct init 2>&1 >/dev/null; then
+if ! CT_NO_ASCII_LOGO=1 ct init >/dev/null; then
     fail "wrong_token_ct_init" "ct init failed"
 else
     _install_skill_stubs
@@ -395,7 +395,7 @@ echo "ANTHROPIC_API_KEY=sk-ant-test-upgrade-preserved" > "${HOME}/.cistern/env"
 # When: run ct init again (simulates upgrading cistern).
 # Since cistern.yaml already exists, writeFileIfAbsent skips it (no overwrite).
 # The aqueduct/ directory and role files are created for the first time.
-if ! CT_NO_ASCII_LOGO=1 ct init 2>&1 >/dev/null; then
+if ! CT_NO_ASCII_LOGO=1 ct init >/dev/null; then
     fail "upgrade_ct_init" "ct init failed during upgrade"
 else
     # Then: credentials must not have been overwritten.

@@ -75,6 +75,10 @@ type ProviderPreset struct {
 	// NonInteractive describes how to invoke this agent in single-shot
 	// (non-interactive) mode for filtration.
 	NonInteractive NonInteractiveConfig `json:"non_interactive,omitempty"`
+	// SupportsAddDir indicates whether this provider supports the AddDirFlag for
+	// filesystem-based context injection (e.g. SKILL.md, instructions files).
+	// When false, context must be injected as text in the prompt preamble.
+	SupportsAddDir bool `json:"supports_add_dir,omitempty"`
 }
 
 // builtins is the canonical set of provider presets shipped with Cistern.
@@ -88,6 +92,7 @@ var builtins = []ProviderPreset{
 		AddDirFlag:       "--add-dir",
 		PromptFlag:       "-p",
 		InstructionsFile: "CLAUDE.md",
+		SupportsAddDir:   true,
 		NonInteractive:   NonInteractiveConfig{PrintFlag: "--print", PromptFlag: "-p"},
 	},
 	{

@@ -35,6 +35,11 @@ type Session struct {
 	// Preset is the provider preset that controls how the agent is launched.
 	// When Name is empty, spawn falls back to the legacy claude hard-coded path.
 	Preset provider.ProviderPreset
+
+	// Skills is the list of skill names to inject into the prompt for providers
+	// that do not support AddDirFlag. Skills are read from ~/.cistern/skills/<name>/SKILL.md.
+	// Providers with SupportsAddDir=true receive skill files automatically via --add-dir.
+	Skills []string
 }
 
 // Spawn creates a new tmux session running the agent and returns immediately.
@@ -205,33 +210,108 @@ func (s *Session) buildPrompt() string {
 	// Layer 1: Constitutional base (immutable — hardcoded in binary)
 	prompt := baseCataractaePrompt
 
-	// Layer 2: Persona (from CLAUDE.md / cataractae_definitions YAML)
+	// Layer 2: Persona (from instructions file / cataractae_definitions YAML)
 	if s.Identity != "" {
-		identityPath := s.resolveIdentityPath()
-		if content, err := os.ReadFile(identityPath); err == nil {
-			prompt += "\n## Your Role\n\n" + string(content)
+		if !s.Preset.SupportsAddDir {
+			// Provider cannot inject context via filesystem (no AddDirFlag).
+			// Build context preamble by reading the instructions file directly.
+			identityDir := s.resolveIdentityDir()
+			preamble := buildContextPreamble(identityDir, s.Preset)
+			if preamble != "" {
+				prompt += "\n## Your Role\n\n" + preamble
+			} else {
+				// Fallback: point agent to the file location.
+				prompt += "\nRead " + s.resolveIdentityPath() + " for your role instructions. "
+			}
 		} else {
-			// File missing/unreadable — fall back to pointer so agent can try to find it
-			prompt += "\nRead " + identityPath + " for your role instructions. "
+			// Provider has AddDirFlag (e.g. claude): instructions file is available via
+			// filesystem injection (--add-dir). Also embed it in the prompt for reliability.
+			identityPath := s.resolveIdentityPath()
+			if content, err := os.ReadFile(identityPath); err == nil {
+				prompt += "\n## Your Role\n\n" + string(content)
+			} else {
+				// File missing/unreadable — fall back to pointer so agent can try to find it.
+				prompt += "\nRead " + identityPath + " for your role instructions. "
+			}
 		}
 	}
 
-	// Layer 3: Skills are injected via CONTEXT.md available_skills block (see context.go)
+	// Layer 3: Skills — injected as text for providers without AddDirFlag support.
+	// Providers with SupportsAddDir receive skill files automatically via --add-dir.
+	if !s.Preset.SupportsAddDir && len(s.Skills) > 0 {
+		home, _ := os.UserHomeDir()
+		skillsDir := filepath.Join(home, ".cistern", "skills")
+		var sb strings.Builder
+		for _, name := range s.Skills {
+			skillPath := filepath.Join(skillsDir, name, "SKILL.md")
+			if data, err := os.ReadFile(skillPath); err == nil {
+				sb.WriteString("\n## Skill: " + name + "\n\n")
+				sb.WriteString(string(data))
+			}
+		}
+		if sb.Len() > 0 {
+			prompt += "\n## Skills\n" + sb.String()
+		}
+	}
 
 	return prompt
 }
 
-// resolveIdentityPath returns the path to the cataractae identity's CLAUDE.md file.
-// Checks ~/.cistern/cataractae/<identity>/CLAUDE.md first, then cataractae/<identity>/CLAUDE.md in the sandbox.
+// buildContextPreamble returns the combined role context text for the given identity
+// directory. It is called for providers that lack AddDirFlag support — they cannot
+// inject context via the filesystem, so the content is embedded directly in the prompt.
+//
+// Resolution order:
+//  1. Read <identityDir>/<preset.InstructionsFile> (the generated combined file).
+//  2. If not found, concatenate PERSONA.md + INSTRUCTIONS.md from identityDir.
+func buildContextPreamble(identityDir string, preset provider.ProviderPreset) string {
+	instrFile := "CLAUDE.md"
+	if preset.InstructionsFile != "" {
+		instrFile = preset.InstructionsFile
+	}
+	if data, err := os.ReadFile(filepath.Join(identityDir, instrFile)); err == nil {
+		return string(data)
+	}
+	// Fallback: concatenate source files directly.
+	var parts []string
+	if data, err := os.ReadFile(filepath.Join(identityDir, "PERSONA.md")); err == nil {
+		parts = append(parts, string(data))
+	}
+	if data, err := os.ReadFile(filepath.Join(identityDir, "INSTRUCTIONS.md")); err == nil {
+		parts = append(parts, string(data))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// resolveIdentityPath returns the path to the cataractae identity's instructions file.
+// Uses preset.InstructionsFile (defaults to "CLAUDE.md" when empty).
+// Checks ~/.cistern/cataractae/<identity>/<file> first, then the sandbox-relative path.
 func (s *Session) resolveIdentityPath() string {
+	instrFile := "CLAUDE.md"
+	if s.Preset.InstructionsFile != "" {
+		instrFile = s.Preset.InstructionsFile
+	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		cisternPath := filepath.Join(home, ".cistern", "cataractae", s.Identity, "CLAUDE.md")
+		cisternPath := filepath.Join(home, ".cistern", "cataractae", s.Identity, instrFile)
 		if _, err := os.Stat(cisternPath); err == nil {
 			return cisternPath
 		}
 	}
-	return "cataractae/" + s.Identity + "/CLAUDE.md"
+	return "cataractae/" + s.Identity + "/" + instrFile
+}
+
+// resolveIdentityDir returns the directory containing the cataractae identity files.
+// Checks ~/.cistern/cataractae/<identity>/ first, then the sandbox-relative path.
+func (s *Session) resolveIdentityDir() string {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		cisternDir := filepath.Join(home, ".cistern", "cataractae", s.Identity)
+		if _, err := os.Stat(cisternDir); err == nil {
+			return cisternDir
+		}
+	}
+	return filepath.Join("cataractae", s.Identity)
 }
 
 // kill terminates the tmux session if it exists.

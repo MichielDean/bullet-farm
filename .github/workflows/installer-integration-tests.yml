@@ -46,11 +46,15 @@ jobs:
 
       - name: Run installer integration tests
         run: |
-          # --cgroupns=host is required for systemd to manage cgroups on
-          # cgroupv2 hosts (Linux 5.10+); without it systemd exits immediately.
+          # --privileged + --cgroupns=host: systemd needs host cgroup namespace
+          # on cgroupv2 systems.  --tmpfs /run and /run/lock: systemd writes its
+          # runtime state here; without tmpfs mounts the container filesystem
+          # blocks the writes and systemd exits immediately.
           docker run \
             --privileged \
             --cgroupns=host \
+            --tmpfs /run \
+            --tmpfs /run/lock \
             -d \
             --name "${CONTAINER_NAME}" \
             "${IMAGE_TAG}"
@@ -64,7 +68,9 @@ jobs:
             if [ "${_status}" = "running" ]; then
               break
             elif [ "${_status}" = "exited" ] || [ "${_status}" = "gone" ]; then
-              echo "::error::container exited before tests ran (status: ${_status})"
+              _exit_code=$(docker inspect "${CONTAINER_NAME}" \
+                             --format '{{.State.ExitCode}}' 2>/dev/null || echo unknown)
+              echo "::error::container exited before tests ran (status=${_status}, exit_code=${_exit_code})"
               docker logs "${CONTAINER_NAME}" 2>&1 || true
               exit 1
             fi

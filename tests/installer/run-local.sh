@@ -29,6 +29,8 @@ echo "=== Starting test container ==="
 docker run \
     --privileged \
     --cgroupns=host \
+    --tmpfs /run \
+    --tmpfs /run/lock \
     -d \
     --name "${CONTAINER_NAME}" \
     "${IMAGE_TAG}"

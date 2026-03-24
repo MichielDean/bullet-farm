@@ -53,7 +53,8 @@ func IsExpiredOrNear(creds *Credentials, window time.Duration) bool {
 	if creds == nil || creds.ExpiresAt == 0 {
 		return false
 	}
-	return !time.Now().Before(time.UnixMilli(creds.ExpiresAt).Add(-window))
+	deadline := time.UnixMilli(creds.ExpiresAt).Add(-window)
+	return !time.Now().Before(deadline)
 }
 
 // RefreshResult holds the new token returned by the refresh endpoint.

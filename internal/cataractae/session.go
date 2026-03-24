@@ -75,7 +75,6 @@ func (s *Session) Spawn() error {
 // context accumulated across prior cataractae cycles.
 func (s *Session) spawn() error {
 	// Kill any stale tmux session with the same name before creating a new one.
-	slog.Default().Info("session: killing stale session before spawn", "session", s.ID)
 	s.kill()
 
 	// Reset the done channel and killOnce for this spawn so the quick-exit
@@ -152,11 +151,6 @@ func (s *Session) spawn() error {
 		return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, err, out)
 	}
 
-	slog.Default().Info("session: spawned",
-		"session", s.ID,
-		"context_type", contextType,
-	)
-
 	// Quick-exit detection: warn if the session dies within quickExitWindow of
 	// spawning — a possible auth failure, missing binary, or prompt error.
 	// The goroutine can be cancelled via the done channel (closed by kill()) to
@@ -200,11 +194,6 @@ func priorSessionCount(home, workDir string) int {
 		return 0
 	}
 	return len(entries)
-}
-
-// hasPriorSession reports whether the agent has prior session state for workDir.
-func hasPriorSession(home, workDir string) bool {
-	return priorSessionCount(home, workDir) > 0
 }
 
 // isSessionAlive returns true if a tmux session with the given ID is running.

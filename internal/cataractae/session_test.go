@@ -1322,40 +1322,6 @@ func TestPriorSessionCount_ReturnsCount_WhenFilesExist(t *testing.T) {
 	}
 }
 
-// TestHasPriorSession_ReturnsFalse_WhenEmpty verifies that hasPriorSession returns
-// false when the projects dir has no files.
-func TestHasPriorSession_ReturnsFalse_WhenEmpty(t *testing.T) {
-	home := t.TempDir()
-	workDir := "/my/work"
-	escaped := strings.ReplaceAll(workDir, "/", "-")
-	projectDir := filepath.Join(home, ".claude", "projects", escaped)
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Empty dir — no session files.
-	if hasPriorSession(home, workDir) {
-		t.Error("hasPriorSession = true, want false for empty dir")
-	}
-}
-
-// TestHasPriorSession_ReturnsTrue_WhenFilesExist verifies that hasPriorSession
-// returns true when the projects dir contains at least one file.
-func TestHasPriorSession_ReturnsTrue_WhenFilesExist(t *testing.T) {
-	home := t.TempDir()
-	workDir := "/my/work"
-	escaped := strings.ReplaceAll(workDir, "/", "-")
-	projectDir := filepath.Join(home, ".claude", "projects", escaped)
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(projectDir, "session.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if !hasPriorSession(home, workDir) {
-		t.Error("hasPriorSession = false, want true when file exists")
-	}
-}
-
 // --- spawn logging tests ---
 
 // TestSpawn_LogsFreshSession_WhenNoTmux verifies that spawn emits a structured
@@ -1410,7 +1376,7 @@ func TestSpawn_LogsResumeContext_WhenPriorSessionExists(t *testing.T) {
 
 	workDir := t.TempDir()
 
-	// Create a prior session so hasPriorSession returns true.
+	// Create a prior session so priorSessionCount > 0.
 	escaped := strings.ReplaceAll(workDir, "/", "-")
 	projectDir := filepath.Join(home, ".claude", "projects", escaped)
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {

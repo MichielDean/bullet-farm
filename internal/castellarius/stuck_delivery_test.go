@@ -680,3 +680,40 @@ func TestRecoverStuckDelivery_AddNoteError_LogsWarn(t *testing.T) {
 		t.Error("expected WARN log for AddNote failure, got none")
 	}
 }
+
+// TestRecoverStuckDelivery_UsesDropletIDForSandboxDir verifies that
+// recoverStuckDelivery constructs the sandboxDir from item.ID, not item.Assignee.
+// Per-droplet worktrees live at <sandboxRoot>/<repo>/<dropletID>; using
+// item.Assignee (the aqueduct slot name) would target a non-existent directory.
+func TestRecoverStuckDelivery_UsesDropletIDForSandboxDir(t *testing.T) {
+	item := &cistern.Droplet{
+		ID:                "sd-id-dir-check",
+		Repo:              "test-repo",
+		Status:            "in_progress",
+		CurrentCataractae: "delivery",
+		Assignee:          "virgo", // Assignee differs from ID
+		UpdatedAt:         time.Now().Add(-2 * time.Hour),
+	}
+	c := newStuckClient(item)
+
+	var capturedSandboxDir string
+	s := stuckScheduler(c,
+		findPRResult{prURL: "https://github.com/o/r/pull/1", state: "MERGED"},
+		nil, nil, nil, nil,
+	)
+	s.sandboxRoot = "/sandbox"
+	s.findPRFn = func(_ context.Context, _, _, dir string) (string, string, string, error) {
+		capturedSandboxDir = dir
+		return "https://github.com/o/r/pull/1", "MERGED", "", nil
+	}
+
+	s.recoverStuckDelivery(context.Background(), s.config.Repos[0], c, item)
+
+	// sandboxDir must contain the droplet ID, not the assignee slot name.
+	if !strings.Contains(capturedSandboxDir, item.ID) {
+		t.Errorf("sandboxDir %q does not contain droplet ID %q", capturedSandboxDir, item.ID)
+	}
+	if strings.Contains(capturedSandboxDir, item.Assignee) {
+		t.Errorf("sandboxDir %q must not contain assignee %q — worktrees are keyed by droplet ID", capturedSandboxDir, item.Assignee)
+	}
+}

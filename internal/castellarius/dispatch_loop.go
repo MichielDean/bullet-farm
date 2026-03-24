@@ -161,10 +161,14 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 		if _, err := prepareDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID); err != nil {
 			s.logger.Error("dispatch-loop recovery: recreate worktree failed",
 				"droplet", item.ID, "error", err)
+			_ = client.AddNote(item.ID, "dispatch-loop",
+				fmt.Sprintf("dispatch-loop recovery: %s — worktree recreate failed (attempt %s): %v",
+					item.ID, attempt, err))
+		} else {
+			_ = client.AddNote(item.ID, "dispatch-loop",
+				fmt.Sprintf("dispatch-loop recovery: %s — worktree recreated (attempt %s)",
+					item.ID, attempt))
 		}
-		_ = client.AddNote(item.ID, "dispatch-loop",
-			fmt.Sprintf("dispatch-loop recovery: %s — worktree recreated (attempt %s)",
-				item.ID, attempt))
 		return
 	}
 

@@ -235,3 +235,53 @@ func TestRecoverDispatchLoop_ResetFails_DoesNotWriteSuccessNote(t *testing.T) {
 		}
 	}
 }
+
+// TestRecoverDispatchLoop_WorktreeRecreateFails_DoesNotWriteSuccessNote verifies
+// that when prepareDropletWorktree fails during Recovery 2, the success note
+// "worktree recreated" is NOT emitted, and a failure note IS written instead.
+func TestRecoverDispatchLoop_WorktreeRecreateFails_DoesNotWriteSuccessNote(t *testing.T) {
+	sandboxRoot := t.TempDir()
+
+	const itemID = "dl-recreate-fail-1"
+	// primaryDir exists but is not a git repo — git commands will fail.
+	primaryDir := filepath.Join(sandboxRoot, "test-repo", "_primary")
+	if err := os.MkdirAll(primaryDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// worktreePath does not exist → worktreeRegistered returns false → triggers Recovery 2.
+	// (os.Stat on worktreePath also fails → Recovery 1 is skipped.)
+
+	client := newMockClient()
+	item := &cistern.Droplet{ID: itemID, CurrentCataractae: "implement", Status: "in_progress"}
+	client.items[itemID] = item
+
+	config := testConfig()
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner, WithSandboxRoot(sandboxRoot))
+
+	sched.recoverDispatchLoop(client, item, config.Repos[0])
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// Success note must NOT have been written.
+	for _, n := range client.attached {
+		if n.id == itemID && strings.Contains(n.notes, "worktree recreated") {
+			t.Errorf("must not write 'worktree recreated' success note when recreation failed; got: %q", n.notes)
+		}
+	}
+
+	// A failure note must have been written.
+	var hasFailureNote bool
+	for _, n := range client.attached {
+		if n.id == itemID && strings.Contains(n.notes, "worktree recreate failed") {
+			hasFailureNote = true
+			break
+		}
+	}
+	if !hasFailureNote {
+		t.Error("expected a failure note for worktree recreation failure, got none")
+	}
+}

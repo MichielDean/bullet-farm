@@ -37,13 +37,10 @@ docker run \
   --name cistern-installer-test \
   cistern/installer-test:latest
 
-# 3. Wait for systemd to reach multi-user.target (~2 s)
-sleep 2
-
-# 4. Run the test suite inside the container
+# 3. Run the test suite (run-tests.sh waits for systemd internally)
 docker exec cistern-installer-test /usr/local/bin/run-tests.sh
 
-# 5. Stop and remove the container
+# 4. Stop and remove the container
 docker stop cistern-installer-test
 ```
 
@@ -74,7 +71,6 @@ as a GitHub Actions step:
 - name: Run installer smoke tests
   run: |
     docker run --privileged --rm -d --name cistern-test cistern/installer-test:latest
-    sleep 2
     docker exec cistern-test /usr/local/bin/run-tests.sh
     docker stop cistern-test
 ```

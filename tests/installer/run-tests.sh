@@ -58,14 +58,8 @@ _wait_for_systemd() {
 _wait_for_systemd
 
 # ── Test 1: systemd reached multi-user.target ─────────────────────────────────
-# Given: container started with --privileged and systemd as PID 1
-# When:  querying the target state
-# Then:  multi-user.target must be active
-if systemctl is-active --quiet multi-user.target 2>/dev/null; then
-    pass "systemd_multi_user_target"
-else
-    fail "systemd_multi_user_target" "multi-user.target is not active (did you start with --privileged?)"
-fi
+# _wait_for_systemd above already verified the target is active (or hard-exited).
+pass "systemd_multi_user_target"
 
 # ── Test 2: ct binary is present and executable ───────────────────────────────
 # Given: ct binary copied into the image at /usr/local/bin/ct

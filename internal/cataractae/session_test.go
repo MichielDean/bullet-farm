@@ -184,9 +184,12 @@ func TestClaudePath_LookPath(t *testing.T) {
 //
 // This test must stay green before ci-sc2wl merges.
 func TestClaudePresetBackwardCompat(t *testing.T) {
-	// Normalise claudePath() to "claude" so both code paths agree on the
-	// executable name regardless of what is installed on this machine.
+	// Normalise claudePath() and resolveCommandFn to "claude" so both code paths
+	// agree on the executable name regardless of what is installed on this machine.
 	t.Setenv("CLAUDE_PATH", "claude")
+	orig := resolveCommandFn
+	resolveCommandFn = func(cmd string) string { return cmd }
+	t.Cleanup(func() { resolveCommandFn = orig })
 
 	var claudePreset provider.ProviderPreset
 	for _, p := range provider.Builtins() {
@@ -277,8 +280,12 @@ func TestClaudePresetBackwardCompat(t *testing.T) {
 // produced by buildPresetCmd must match buildClaudeCmd() output
 // character-for-character.
 func TestClaudeDefaultFallback(t *testing.T) {
-	// Normalise claudePathFn so both code paths agree on the binary name.
+	// Normalise claudePathFn and resolveCommandFn so both code paths agree on
+	// the binary name regardless of what's installed on the test machine.
 	t.Setenv("CLAUDE_PATH", "claude")
+	orig := resolveCommandFn
+	resolveCommandFn = func(cmd string) string { return cmd }
+	t.Cleanup(func() { resolveCommandFn = orig })
 
 	// Resolve preset: empty provider name must return the "claude" built-in.
 	preset := provider.ResolvePreset("")

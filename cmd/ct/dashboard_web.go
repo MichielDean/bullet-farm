@@ -319,11 +319,10 @@ type DashboardTUI struct {
 	// Override in tests to inject a controllable in-process connection.
 	spawnFn func() (rwc io.ReadWriteCloser, resizeFn func(cols, rows uint16), waitFn func(), err error)
 
-	mu         sync.Mutex
-	rwc        io.ReadWriteCloser      // current PTY/pipe master (protected by mu)
-	resizeFn   func(cols, rows uint16) // current resize callback (protected by mu)
-	spawnCount int                     // total spawns; accessible for testing (protected by mu)
-	clients    map[*tuiClient]struct{} // active WS consumers (protected by mu)
+	mu       sync.Mutex
+	rwc      io.ReadWriteCloser      // current PTY/pipe master (protected by mu)
+	resizeFn func(cols, rows uint16) // current resize callback (protected by mu)
+	clients  map[*tuiClient]struct{} // active WS consumers (protected by mu)
 	ring       [][]byte               // ring buffer of recent PTY chunks (protected by mu)
 	ringHead   int                    // index of oldest valid entry (protected by mu)
 	ringLen    int                    // number of valid entries (protected by mu)
@@ -354,14 +353,6 @@ func (d *DashboardTUI) Start() {
 func (d *DashboardTUI) Stop() {
 	close(d.stopCh)
 	<-d.doneCh
-}
-
-// SpawnCount returns the total number of times the child process has been spawned.
-// Intended for use in tests.
-func (d *DashboardTUI) SpawnCount() int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.spawnCount
 }
 
 // run is the main lifecycle loop: spawn → read → restart.
@@ -397,7 +388,6 @@ func (d *DashboardTUI) runOnce() {
 	d.mu.Lock()
 	d.rwc = rwc
 	d.resizeFn = resizeFn
-	d.spawnCount++
 	d.mu.Unlock()
 
 	// onceDone is closed when runOnce returns; the watchdog goroutine uses it to
@@ -770,9 +760,7 @@ func newDashboardMuxInternal(cfgPath, dbPath string, tui *DashboardTUI) http.Han
 				conn.SetReadDeadline(time.Now().Add(wsTuiReadTimeout)) //nolint:errcheck
 				switch opcode {
 				case wsOpcodeText:
-					handleTuiTextFrame(payload, tui, func(cols, rows uint16) {
-						tui.resize(cols, rows)
-					})
+					handleTuiTextFrame(payload, tui, tui.resize)
 				case wsOpcodeClose:
 					return
 				}

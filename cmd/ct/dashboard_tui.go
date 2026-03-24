@@ -201,9 +201,7 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if m.peekSelectIndex < len(active) {
-					var cmd tea.Cmd
-					m, cmd = m.openPeekOn(active[m.peekSelectIndex])
-					return m, cmd
+					return m.openPeekOn(active[m.peekSelectIndex])
 				}
 			}
 			return m, nil
@@ -259,9 +257,7 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				active := activeAqueducts(m.data.Cataractae)
 				switch {
 				case len(active) == 1:
-					var cmd tea.Cmd
-					m, cmd = m.openPeekOn(active[0])
-					return m, cmd
+					return m.openPeekOn(active[0])
 				case len(active) > 1:
 					m.peekSelectMode = true
 					m.peekSelectIndex = 0

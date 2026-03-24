@@ -362,11 +362,11 @@ func newDashboardMux(cfgPath, dbPath string) http.Handler {
 				// Adaptive backoff: slow down when Castellarius is idle.
 				idle := newHash == lastHash && data.FlowingCount == 0
 				lastHash = newHash
+				next := refreshInterval
 				if idle {
-					ticker.Reset(idleRefreshInterval)
-				} else {
-					ticker.Reset(refreshInterval)
+					next = idleRefreshInterval
 				}
+				ticker.Reset(next)
 			}
 		}
 	})

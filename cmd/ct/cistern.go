@@ -1179,6 +1179,9 @@ var dropletPeekCmd = &cobra.Command{
 		// Default: live attach — takes over the terminal read-only.
 		// --snapshot retains capture-pane polling for non-interactive use.
 		if !peekSnapshot {
+			if peekFollow {
+				return fmt.Errorf("--follow requires --snapshot; re-run with: ct droplet peek --snapshot --follow %s", id)
+			}
 			if !tmuxHasSession(session) {
 				notesHint()
 				return nil

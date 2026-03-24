@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -70,6 +71,67 @@ func TestDashboard_PeekKey_InTmux_SpawnsNewWindow(t *testing.T) {
 	wantSession := "myrepo-virgo"
 	if gotSession != wantSession {
 		t.Errorf("tmuxNewWindowFunc session = %q, want %q", gotSession, wantSession)
+	}
+}
+
+// TestDashboard_PeekKey_InTmux_NewWindowError_FallsBackToInline verifies that
+// when tmuxNewWindowFunc returns an error, the dashboard falls back to the
+// inline capture-pane overlay and sets peekActive.
+//
+// Given: a dashboard model with one active aqueduct and insideTmux() = true
+// When:  the 'p' key is pressed and tmuxNewWindowFunc returns an error
+// Then:  the returned tea.Cmd yields a tuiPeekNewWindowErrMsg which, when
+//
+//	processed, causes peekActive to be true (inline overlay opened)
+func TestDashboard_PeekKey_InTmux_NewWindowError_FallsBackToInline(t *testing.T) {
+	origInsideTmux := insideTmux
+	insideTmux = func() bool { return true }
+	defer func() { insideTmux = origInsideTmux }()
+
+	simulatedErr := errors.New("tmux: no server running")
+	origNewWindow := tmuxNewWindowFunc
+	tmuxNewWindowFunc = func(_, _ string) error { return simulatedErr }
+	defer func() { tmuxNewWindowFunc = origNewWindow }()
+
+	m := newDashboardTUIModel("", "")
+	m.data = &DashboardData{
+		Cataractae: []CataractaeInfo{
+			{
+				Name:      "virgo",
+				RepoName:  "myrepo",
+				DropletID: "ci-test01",
+				Step:      "implement",
+				Steps:     []string{"implement", "review"},
+			},
+		},
+	}
+
+	// Press 'p': returns a cmd that will call tmuxNewWindowFunc.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if cmd == nil {
+		t.Fatal("expected a tea.Cmd, got nil")
+	}
+
+	// Execute the cmd; it should return a tuiPeekNewWindowErrMsg.
+	msg := cmd()
+	errMsg, ok := msg.(tuiPeekNewWindowErrMsg)
+	if !ok {
+		t.Fatalf("cmd returned %T, want tuiPeekNewWindowErrMsg", msg)
+	}
+	if errMsg.err != simulatedErr {
+		t.Errorf("errMsg.err = %v, want %v", errMsg.err, simulatedErr)
+	}
+
+	// Process the error message; the model should activate the inline overlay.
+	updatedModel, _ := m.Update(errMsg)
+	um := updatedModel.(dashboardTUIModel)
+	if !um.peekActive {
+		t.Error("peekActive should be true after new-window error fallback to inline overlay")
+	}
+
+	// The peek header should mention the failure.
+	if !strings.Contains(um.peek.header, "tmux new-window failed") {
+		t.Errorf("peek header should mention failure, got: %q", um.peek.header)
 	}
 }
 

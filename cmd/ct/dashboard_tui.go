@@ -22,8 +22,7 @@ var insideTmux = func() bool {
 // tmuxNewWindowFunc opens a new tmux window attaching read-only to the named session.
 // Replaced in tests to capture the call without running tmux.
 var tmuxNewWindowFunc = func(dropletID, session string) error {
-	attachCmd := "tmux attach-session -t " + session + " -r"
-	return exec.Command("tmux", "new-window", "-n", "peek:"+dropletID, attachCmd).Run()
+	return exec.Command("tmux", "new-window", "-n", "peek:"+dropletID, "--", "tmux", "attach-session", "-t", session, "-r").Run()
 }
 
 // --- Lip Gloss styles ---
@@ -42,6 +41,13 @@ var (
 type tuiTickMsg  time.Time
 type tuiAnimMsg  time.Time
 type tuiDataMsg  *DashboardData
+
+// tuiPeekNewWindowErrMsg is sent when tmuxNewWindowFunc fails, triggering a
+// fallback to the inline capture-pane overlay.
+type tuiPeekNewWindowErrMsg struct {
+	ch  CataractaeInfo
+	err error
+}
 
 const animInterval = 150 * time.Millisecond // water animation speed
 
@@ -114,16 +120,32 @@ func (m dashboardTUIModel) openPeekOn(ch CataractaeInfo) (dashboardTUIModel, tea
 
 	if insideTmux() {
 		// Spawn a new tmux window for live read-only attach; dashboard stays open.
+		peekCh := ch
 		dropletID := ch.DropletID
 		return m, func() tea.Msg {
-			_ = tmuxNewWindowFunc(dropletID, session)
+			if err := tmuxNewWindowFunc(dropletID, session); err != nil {
+				return tuiPeekNewWindowErrMsg{ch: peekCh, err: err}
+			}
 			return nil
 		}
 	}
 
 	// Not inside tmux: fall back to inline capture-pane peek overlay.
-	header := fmt.Sprintf("[%s] %s — flowing %s\nnot inside tmux — for live view: tmux attach-session -t %s -r",
-		ch.DropletID, ch.Step, formatElapsed(ch.Elapsed), session)
+	return m.openInlinePeek(ch, nil)
+}
+
+// openInlinePeek sets up the inline capture-pane overlay for the given aqueduct.
+// If err is non-nil, the header notes the tmux failure instead of the "not inside tmux" hint.
+func (m dashboardTUIModel) openInlinePeek(ch CataractaeInfo, err error) (dashboardTUIModel, tea.Cmd) {
+	session := ch.RepoName + "-" + ch.Name
+	var header string
+	if err != nil {
+		header = fmt.Sprintf("[%s] %s — flowing %s\ntmux new-window failed (%v) — showing capture-pane snapshot",
+			ch.DropletID, ch.Step, formatElapsed(ch.Elapsed), err)
+	} else {
+		header = fmt.Sprintf("[%s] %s — flowing %s\nnot inside tmux — for live view: tmux attach-session -t %s -r",
+			ch.DropletID, ch.Step, formatElapsed(ch.Elapsed), session)
+	}
 	pk := newPeekModel(defaultCapturer, session, header, 0)
 	pk.width = m.width
 	pk.height = m.height
@@ -223,6 +245,9 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.peekSelectIndex = len(active) - 1
 			}
 			return m, nil
+		case tuiPeekNewWindowErrMsg:
+			m.peekSelectMode = false
+			return m.openInlinePeek(msg.ch, msg.err)
 		}
 		return m, nil
 	}
@@ -243,6 +268,9 @@ func (m dashboardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tuiDataMsg:
 		m.data = (*DashboardData)(msg)
 		return m, nil
+
+	case tuiPeekNewWindowErrMsg:
+		return m.openInlinePeek(msg.ch, msg.err)
 
 	case tea.KeyMsg:
 		switch msg.String() {

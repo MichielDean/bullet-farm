@@ -197,3 +197,46 @@ func TestDropletPeekNoSession(t *testing.T) {
 		t.Errorf("expected elapsed time header with 'flowing', got: %q", out)
 	}
 }
+
+// TestDropletPeek_FollowWithoutSnapshot_ReturnsError verifies that running
+// 'ct droplet peek --follow' without --snapshot returns an error explaining
+// that --follow requires --snapshot.
+//
+// Given: a droplet in progress with a live tmux session
+// When:  peek is run with --follow but without --snapshot
+// Then:  an error is returned containing guidance to use --snapshot
+func TestDropletPeek_FollowWithoutSnapshot_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Add("myrepo", "Test item", "", 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	item, err := c.GetReady("myrepo")
+	if err != nil || item == nil {
+		t.Fatalf("GetReady failed: %v", err)
+	}
+	if err := c.Assign(item.ID, "test-worker", "implement"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	peekLines = 50
+	peekRaw = false
+	peekFollow = true
+	peekSnapshot = false
+
+	err = dropletPeekCmd.RunE(dropletPeekCmd, []string{item.ID})
+
+	if err == nil {
+		t.Fatal("expected error when --follow used without --snapshot, got nil")
+	}
+	if !strings.Contains(err.Error(), "--snapshot") {
+		t.Errorf("error should mention --snapshot, got: %q", err.Error())
+	}
+}

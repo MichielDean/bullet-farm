@@ -13,6 +13,7 @@ import (
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/oauth"
 )
 
 // --- TestDoctorCmd_FixFlagRegistered ---
@@ -1356,7 +1357,7 @@ func TestFixOAuthToken_Success_WritesNewToken(t *testing.T) {
 	}
 
 	// Verify credentials file was updated.
-	creds := readClaudeCredentials(home)
+	creds := oauth.Read(home)
 	if creds == nil {
 		t.Fatal("expected non-nil credentials after fix")
 	}

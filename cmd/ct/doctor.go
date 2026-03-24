@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -706,37 +705,6 @@ func checkStalledDroplets(dbPath string) {
 	}
 }
 
-// claudeCredentials holds the fields we need from ~/.claude/.credentials.json.
-type claudeCredentials struct {
-	ExpiresAt    int64
-	AccessToken  string
-	RefreshToken string
-}
-
-// readClaudeCredentials reads and parses ~/.claude/.credentials.json.
-// Returns nil if the file is absent, unreadable, or malformed.
-func readClaudeCredentials(home string) *claudeCredentials {
-	data, err := os.ReadFile(filepath.Join(home, ".claude", ".credentials.json"))
-	if err != nil {
-		return nil
-	}
-	var raw struct {
-		ClaudeAiOauth struct {
-			ExpiresAt    int64  `json:"expiresAt"`
-			AccessToken  string `json:"accessToken"`
-			RefreshToken string `json:"refreshToken"`
-		} `json:"claudeAiOauth"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil
-	}
-	return &claudeCredentials{
-		ExpiresAt:    raw.ClaudeAiOauth.ExpiresAt,
-		AccessToken:  raw.ClaudeAiOauth.AccessToken,
-		RefreshToken: raw.ClaudeAiOauth.RefreshToken,
-	}
-}
-
 // doctorOAuthHTTPDo is the HTTP transport used by fixOAuthToken.
 // Replaced in tests with a test server client.
 var doctorOAuthHTTPDo func(*http.Request) (*http.Response, error) = http.DefaultClient.Do
@@ -752,7 +720,7 @@ var execCommandFn = exec.Command
 // token and writes the new access token to ~/.claude/.credentials.json and the
 // service env.conf. It then reloads the systemd service so the new token takes effect.
 func fixOAuthToken(home string) error {
-	creds := readClaudeCredentials(home)
+	creds := oauth.Read(home)
 	if creds == nil {
 		return fmt.Errorf("cannot read credentials — run 'claude' interactively to authenticate")
 	}
@@ -791,7 +759,7 @@ func fixOAuthToken(home string) error {
 // expiring within 24h (warning), or expired (fail).
 // Skipped silently when the credentials file is absent or has no expiry.
 func checkOAuthTokenExpiry(home string) bool {
-	creds := readClaudeCredentials(home)
+	creds := oauth.Read(home)
 	if creds == nil || creds.ExpiresAt == 0 {
 		return true
 	}
@@ -838,7 +806,7 @@ func checkServiceTokenFreshness(home string) bool {
 		return true
 	}
 
-	creds := readClaudeCredentials(home)
+	creds := oauth.Read(home)
 	if creds == nil || creds.AccessToken == "" {
 		return true
 	}

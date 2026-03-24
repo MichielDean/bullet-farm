@@ -2,7 +2,7 @@ package cataractae
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,6 +15,11 @@ import (
 	"github.com/MichielDean/cistern/internal/oauth"
 	"github.com/MichielDean/cistern/internal/provider"
 )
+
+// quickExitWindow is the duration after a spawn within which, if the session
+// dies, a warning is logged as a possible auth failure or binary-not-found.
+// Exposed as a variable so tests can shorten it without waiting 30 seconds.
+var quickExitWindow = 30 * time.Second
 
 // Session manages an agent execution inside a tmux session.
 type Session struct {
@@ -59,6 +64,7 @@ func (s *Session) Spawn() error {
 // context accumulated across prior cataractae cycles.
 func (s *Session) spawn() error {
 	// Kill any stale tmux session with the same name before creating a new one.
+	slog.Default().Info("session: killing stale session before spawn", "session", s.ID)
 	s.kill()
 
 	home, err := os.UserHomeDir()
@@ -76,7 +82,18 @@ func (s *Session) spawn() error {
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}
 
 	// Decide whether to continue a prior session or start fresh.
-	resume := s.Preset.ContinueFlag != "" && hasPriorSession(home, s.WorkDir)
+	sessionCount := priorSessionCount(home, s.WorkDir)
+	resume := s.Preset.ContinueFlag != "" && sessionCount > 0
+
+	if resume {
+		escaped := strings.ReplaceAll(s.WorkDir, "/", "-")
+		projectDir := filepath.Join(home, ".claude", "projects", escaped)
+		slog.Default().Info("session: resuming prior context",
+			"session", s.ID,
+			"project_dir", projectDir,
+			"prior_session_count", sessionCount,
+		)
+	}
 
 	var agentCmd string
 	if s.Preset.Name != "" {
@@ -93,6 +110,25 @@ func (s *Session) spawn() error {
 		agentCmd = s.buildClaudeCmd(skillsDir)
 	}
 
+	// Resolve the command path for the spawn log.
+	cmdPath := claudePathFn()
+	if s.Preset.Name != "" {
+		cmdPath = resolveCommandFn(s.Preset.Command)
+	}
+
+	contextType := "fresh"
+	if resume {
+		contextType = "resume"
+	}
+	slog.Default().Info("session: spawning",
+		"session", s.ID,
+		"work_dir", s.WorkDir,
+		"command", cmdPath,
+		"model", s.Model,
+		"preset", s.Preset.Name,
+		"context_type", contextType,
+	)
+
 	args = append(args, s.collectEnvArgs()...)
 	args = append(args, agentCmd)
 	cmd := exec.Command("tmux", args...)
@@ -100,23 +136,53 @@ func (s *Session) spawn() error {
 		return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, err, out)
 	}
 
-	if resume {
-		log.Printf("session %s: resumed in %s", s.ID, s.WorkDir)
-	} else {
-		log.Printf("session %s: spawned in %s", s.ID, s.WorkDir)
-	}
+	slog.Default().Info("session: spawned",
+		"session", s.ID,
+		"context_type", contextType,
+	)
+
+	// Quick-exit detection: warn if the session dies within quickExitWindow of
+	// spawning — a possible auth failure, missing binary, or prompt error.
+	spawnedAt := time.Now()
+	sessionID := s.ID
+	go func() {
+		time.Sleep(quickExitWindow)
+		if !isSessionAlive(sessionID) {
+			elapsed := time.Since(spawnedAt).Round(time.Second)
+			slog.Default().Warn("session exited quickly — possible auth failure or binary not found",
+				"session", sessionID,
+				"elapsed", elapsed.String(),
+			)
+		}
+	}()
+
 	return nil
 }
 
-// hasPriorSession reports whether the agent has prior session state for workDir.
-// Claude stores sessions under ~/.claude/projects/<escaped-path>/.
-// We consider a prior session to exist if that directory is non-empty.
-func hasPriorSession(home, workDir string) bool {
+// priorSessionCount returns the number of prior session files Claude has stored
+// for workDir. Claude stores sessions under ~/.claude/projects/<escaped-path>/.
+// Returns 0 when the directory does not exist or cannot be read.
+func priorSessionCount(home, workDir string) int {
 	// Claude encodes the absolute path by replacing '/' with '-'.
 	escaped := strings.ReplaceAll(workDir, "/", "-")
 	projectDir := filepath.Join(home, ".claude", "projects", escaped)
 	entries, err := os.ReadDir(projectDir)
-	return err == nil && len(entries) > 0
+	if err != nil {
+		return 0
+	}
+	return len(entries)
+}
+
+// hasPriorSession reports whether the agent has prior session state for workDir.
+func hasPriorSession(home, workDir string) bool {
+	return priorSessionCount(home, workDir) > 0
+}
+
+// isSessionAlive returns true if a tmux session with the given ID is running.
+// Extracted as a package-level function so the quick-exit goroutine can call
+// it without holding a *Session reference.
+func isSessionAlive(sessionID string) bool {
+	return exec.Command("tmux", "has-session", "-t", sessionID).Run() == nil
 }
 
 // collectEnvArgs builds the tmux -e env argument pairs for the session.
@@ -463,7 +529,7 @@ func ensureClaudeOAuthFresh(home string) error {
 	}
 
 	if err := oauth.WriteAccessToken(home, result.AccessToken, result.ExpiresAt); err != nil {
-		log.Printf("session: warning: could not write refreshed OAuth token: %v", err)
+		slog.Default().Warn("session: could not write refreshed OAuth token", "error", err)
 	}
 
 	// Update env.conf for persistence across service restarts (best-effort).
@@ -471,14 +537,14 @@ func ensureClaudeOAuthFresh(home string) error {
 		"cistern-castellarius.service.d", "env.conf")
 	if _, statErr := os.Stat(envConfPath); statErr == nil {
 		if err := oauth.UpdateEnvConf(envConfPath, result.AccessToken); err != nil {
-			log.Printf("session: warning: could not update env.conf with refreshed token: %v", err)
+			slog.Default().Warn("session: could not update env.conf with refreshed token", "error", err)
 		}
 	}
 
 	// Inject into current process so collectEnvArgs picks up the new token.
 	os.Setenv("ANTHROPIC_API_KEY", result.AccessToken) //nolint:errcheck
 
-	log.Printf("session: Claude OAuth token refreshed successfully")
+	slog.Default().Info("session: Claude OAuth token refreshed successfully")
 	return nil
 }
 

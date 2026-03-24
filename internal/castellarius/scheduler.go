@@ -327,6 +327,10 @@ func (s *Castellarius) Run(ctx context.Context) error {
 		"supervisor", supervisorStatus,
 	)
 
+	// Startup credential check: log which env vars are set (names only, never values)
+	// and whether gh is authenticated. Helps diagnose auth failures without leaking secrets.
+	s.logStartupCredentials()
+
 	// Integrity check: regenerate any missing or corrupt CLAUDE.md files before
 	// accepting work. A corrupted CLAUDE.md (e.g. "test\n\nold instructions") means
 	// the agent runs with no role instructions — silent and catastrophic.
@@ -415,6 +419,46 @@ func (s *Castellarius) Run(ctx context.Context) error {
 		case <-ticker.C:
 			s.tick(ctx)
 		}
+	}
+}
+
+// logStartupCredentials logs which credential-related environment variables are
+// set (names only — values are never logged) and whether gh is authenticated.
+// Called once at Castellarius startup to surface auth problems early.
+func (s *Castellarius) logStartupCredentials() {
+	// Collect the names of set env vars across all repo presets. Values are
+	// intentionally never logged to prevent credential leakage.
+	seenVars := map[string]bool{}
+	setVars := []string{}
+	for _, repo := range s.config.Repos {
+		preset, err := s.config.ResolveProvider(repo.Name)
+		if err != nil {
+			continue
+		}
+		for _, envVar := range preset.EnvPassthrough {
+			if seenVars[envVar] {
+				continue
+			}
+			seenVars[envVar] = true
+			if os.Getenv(envVar) != "" {
+				setVars = append(setVars, envVar)
+			} else {
+				s.logger.Warn("startup credentials: required env var not set",
+					"var", envVar, "repo", repo.Name)
+			}
+		}
+	}
+	if len(setVars) > 0 {
+		s.logger.Info("startup credentials: env vars set", "vars", setVars)
+	}
+
+	// Check gh authentication status. Log success or warn on failure.
+	// gh auth status output is NOT logged (may contain token fragments).
+	ghAuthOk := exec.Command("gh", "auth", "status").Run() == nil
+	if ghAuthOk {
+		s.logger.Info("startup credentials: gh authenticated")
+	} else {
+		s.logger.Warn("startup credentials: gh auth status failed — sessions may fail on GitHub operations")
 	}
 }
 
@@ -724,7 +768,14 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 		go func() {
 			// Dispatch-loop detection: if this droplet has been failing repeatedly
 			// without ever spawning an agent, attempt ordered recovery before retrying.
-			if s.dispatchLoop.recentFailureCount(req.Item.ID) >= dispatchLoopThreshold {
+			failCount := s.dispatchLoop.recentFailureCount(req.Item.ID)
+			if failCount >= dispatchLoopThreshold {
+				s.logger.Warn("dispatch-loop threshold reached — triggering recovery",
+					"droplet", req.Item.ID,
+					"failures", failCount,
+					"threshold", dispatchLoopThreshold,
+					"window", dispatchLoopWindow.String(),
+				)
 				s.recoverDispatchLoop(client, req.Item, req.RepoConfig)
 				if err2 := client.Assign(req.Item.ID, "", req.Step.Name); err2 != nil {
 					s.logger.Error("dispatch-loop recovery: reset failed",
@@ -1023,6 +1074,7 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			continue
 		}
 
+		var stallReason string
 		if item.Assignee != "" {
 			// Pool alone is not a reliable crash signal — tmux crash never
 			// clears the flowing bit. Use both signals:
@@ -1035,12 +1087,21 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			if isTmuxAlive(repo.Name + "-" + item.Assignee) {
 				continue
 			}
+			stallReason = "tmux_dead"
+		} else {
+			stallReason = "no_assignee"
 		}
 
 		// No assignee, pool=flowing + tmux=dead, or unknown aqueduct +
 		// tmux=dead. Reset to open for re-dispatch.
+		sessionDuration := time.Since(item.UpdatedAt).Round(time.Second)
 		s.logger.Info("heartbeat: resetting stalled droplet",
-			"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
+			"repo", repo.Name,
+			"droplet", item.ID,
+			"cataractae", item.CurrentCataractae,
+			"reason", stallReason,
+			"session_duration", sessionDuration.String(),
+		)
 
 		if item.Assignee != "" {
 			if w := pool.FindByName(item.Assignee); w != nil {
@@ -1141,8 +1202,15 @@ func prepareBranchInSandbox(dir, itemID string) error {
 // without resetting — preserving all prior agent commits.
 // If new, it is created via `git worktree add -b feat/<id> <path> origin/main`.
 func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string) (string, error) {
+	return prepareDropletWorktreeWithLogger(slog.Default(), primaryDir, sandboxRoot, repoName, dropletID)
+}
+
+// prepareDropletWorktreeWithLogger is the logger-parameterized implementation
+// of prepareDropletWorktree, used directly in tests.
+func prepareDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRoot, repoName, dropletID string) (string, error) {
 	worktreePath := filepath.Join(sandboxRoot, repoName, dropletID)
 	branch := "feat/" + dropletID
+	t0 := time.Now()
 
 	if _, err := os.Stat(worktreePath); err == nil {
 		// Worktree exists — resume by checking out the branch, then hard-reset
@@ -1159,6 +1227,8 @@ func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string)
 		abortMerge.Dir = worktreePath
 		_ = abortMerge.Run()
 
+		logger.Info("git checkout",
+			"op", "checkout", "path", worktreePath, "branch", branch)
 		checkout := exec.Command("git", "checkout", branch)
 		checkout.Dir = worktreePath
 		if out, err := checkout.CombinedOutput(); err != nil {
@@ -1166,14 +1236,21 @@ func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string)
 		}
 		reset := exec.Command("git", "reset", "--hard", "HEAD")
 		reset.Dir = worktreePath
-		_ = reset.Run()
+		if out, err := reset.CombinedOutput(); err != nil {
+			logger.Warn("git reset --hard HEAD failed", "path", worktreePath, "error", err, "output", string(out))
+		}
 		clean := exec.Command("git", "clean", "-fd")
 		clean.Dir = worktreePath
 		_ = clean.Run()
+
+		logger.Info("worktree resumed",
+			"droplet", dropletID, "path", worktreePath,
+			"duration", time.Since(t0).Round(time.Millisecond).String())
 		return worktreePath, nil
 	}
 
 	// Fetch latest before creating.
+	logger.Info("git fetch", "op", "fetch", "dir", primaryDir)
 	fetch := exec.Command("git", "fetch", "origin")
 	fetch.Dir = primaryDir
 	if out, err := fetch.CombinedOutput(); err != nil {
@@ -1219,6 +1296,9 @@ func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string)
 	clean.Dir = worktreePath
 	_ = clean.Run()
 
+	logger.Info("worktree created",
+		"droplet", dropletID, "path", worktreePath,
+		"duration", time.Since(t0).Round(time.Millisecond).String())
 	return worktreePath, nil
 }
 
@@ -1226,6 +1306,12 @@ func prepareDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string)
 // unregisters it from git, and deletes the feature branch from the primary
 // clone. Errors are ignored — best-effort cleanup.
 func removeDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string) {
+	removeDropletWorktreeWithLogger(slog.Default(), primaryDir, sandboxRoot, repoName, dropletID)
+}
+
+// removeDropletWorktreeWithLogger is the logger-parameterized implementation
+// of removeDropletWorktree, used directly in tests.
+func removeDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRoot, repoName, dropletID string) {
 	worktreePath := filepath.Join(sandboxRoot, repoName, dropletID)
 	rm := exec.Command("git", "worktree", "remove", "--force", worktreePath)
 	rm.Dir = primaryDir
@@ -1234,6 +1320,8 @@ func removeDropletWorktree(primaryDir, sandboxRoot, repoName, dropletID string) 
 	del := exec.Command("git", "branch", "-D", "feat/"+dropletID)
 	del.Dir = primaryDir
 	_ = del.Run()
+
+	logger.Info("worktree deleted", "droplet", dropletID, "path", worktreePath)
 }
 
 // dirtyNonContextFiles returns uncommitted non-CONTEXT.md files in dir.

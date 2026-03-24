@@ -1,8 +1,10 @@
 package cataractae
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +19,19 @@ import (
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/provider"
 )
+
+// captureDefaultSlog temporarily replaces slog.Default() with a buffer-backed
+// text logger for the duration of the test, then restores the original.
+// Returns the buffer whose String() can be inspected for log output.
+func captureDefaultSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	prev := slog.Default()
+	var buf bytes.Buffer
+	l := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(l)
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
 
 func TestBuildClaudeCmd_ContainsAddDir(t *testing.T) {
 	s := &Session{ID: "test", WorkDir: "/tmp"}
@@ -1251,5 +1266,208 @@ func TestBuildContinueCmd_ArgsWithSpaces_AreShellQuoted(t *testing.T) {
 	want := "'--flag with spaces'"
 	if !strings.Contains(cmd, want) {
 		t.Errorf("buildContinueCmd missing shell-quoted arg\nwant substring: %s\ngot: %s", want, cmd)
+	}
+}
+
+// --- priorSessionCount tests ---
+
+// TestPriorSessionCount_ReturnsZero_WhenNoDirExists verifies that priorSessionCount
+// returns 0 when the Claude projects directory does not exist.
+func TestPriorSessionCount_ReturnsZero_WhenNoDirExists(t *testing.T) {
+	dir := t.TempDir()
+	// No .claude/projects directory created.
+	if got := priorSessionCount(dir, "/some/workdir"); got != 0 {
+		t.Errorf("priorSessionCount = %d, want 0 when dir absent", got)
+	}
+}
+
+// TestPriorSessionCount_ReturnsCount_WhenFilesExist verifies that priorSessionCount
+// returns the number of entries in the Claude projects directory.
+func TestPriorSessionCount_ReturnsCount_WhenFilesExist(t *testing.T) {
+	home := t.TempDir()
+	workDir := "/my/project/dir"
+	escaped := strings.ReplaceAll(workDir, "/", "-")
+	projectDir := filepath.Join(home, ".claude", "projects", escaped)
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create 3 session files.
+	for i := range 3 {
+		if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("session-%d.json", i)), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := priorSessionCount(home, workDir); got != 3 {
+		t.Errorf("priorSessionCount = %d, want 3", got)
+	}
+}
+
+// TestHasPriorSession_ReturnsFalse_WhenEmpty verifies that hasPriorSession returns
+// false when the projects dir has no files.
+func TestHasPriorSession_ReturnsFalse_WhenEmpty(t *testing.T) {
+	home := t.TempDir()
+	workDir := "/my/work"
+	escaped := strings.ReplaceAll(workDir, "/", "-")
+	projectDir := filepath.Join(home, ".claude", "projects", escaped)
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Empty dir — no session files.
+	if hasPriorSession(home, workDir) {
+		t.Error("hasPriorSession = true, want false for empty dir")
+	}
+}
+
+// TestHasPriorSession_ReturnsTrue_WhenFilesExist verifies that hasPriorSession
+// returns true when the projects dir contains at least one file.
+func TestHasPriorSession_ReturnsTrue_WhenFilesExist(t *testing.T) {
+	home := t.TempDir()
+	workDir := "/my/work"
+	escaped := strings.ReplaceAll(workDir, "/", "-")
+	projectDir := filepath.Join(home, ".claude", "projects", escaped)
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "session.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !hasPriorSession(home, workDir) {
+		t.Error("hasPriorSession = false, want true when file exists")
+	}
+}
+
+// --- spawn logging tests ---
+
+// TestSpawn_LogsFreshSession_WhenNoTmux verifies that spawn emits a structured
+// slog entry with session, context_type=fresh, and model fields. The test uses
+// a fake tmux that always succeeds so the log is emitted without real tmux.
+func TestSpawn_LogsFreshSession_WhenNoTmux(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "echo") // fake agent: 'echo' exits quickly
+
+	workDir := t.TempDir()
+	s := &Session{
+		ID:      "test-fresh-session",
+		WorkDir: workDir,
+		Model:   "haiku",
+	}
+	// Spawn may fail (fake agent) — we only care about log output.
+	_ = s.spawn()
+	defer s.kill()
+
+	out := buf.String()
+	if !strings.Contains(out, "session=test-fresh-session") {
+		t.Errorf("log missing session field; got: %s", out)
+	}
+	if !strings.Contains(out, "context_type=fresh") {
+		t.Errorf("log missing context_type=fresh; got: %s", out)
+	}
+	if !strings.Contains(out, "model=haiku") {
+		t.Errorf("log missing model=haiku; got: %s", out)
+	}
+}
+
+// TestSpawn_LogsResumeContext_WhenPriorSessionExists verifies that spawn emits a
+// slog entry with context_type=resume and prior_session_count when a prior session
+// exists for the working directory.
+func TestSpawn_LogsResumeContext_WhenPriorSessionExists(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "echo") // fake agent
+
+	workDir := t.TempDir()
+
+	// Create a prior session so hasPriorSession returns true.
+	escaped := strings.ReplaceAll(workDir, "/", "-")
+	projectDir := filepath.Join(home, ".claude", "projects", escaped)
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "session.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Session{
+		ID:      "test-resume-session",
+		WorkDir: workDir,
+		Preset: provider.ProviderPreset{
+			Name:         "claude",
+			Command:      "echo",
+			ContinueFlag: "--continue",
+		},
+	}
+	_ = s.spawn()
+	defer s.kill()
+
+	out := buf.String()
+	if !strings.Contains(out, "context_type=resume") {
+		t.Errorf("log missing context_type=resume; got: %s", out)
+	}
+	if !strings.Contains(out, "prior_session_count=1") {
+		t.Errorf("log missing prior_session_count=1; got: %s", out)
+	}
+	if !strings.Contains(out, "project_dir=") {
+		t.Errorf("log missing project_dir field; got: %s", out)
+	}
+}
+
+// TestSpawn_LogsQuickExit_WhenSessionDiesImmediately verifies that the quick-exit
+// goroutine emits a Warn-level log when the session dies within the quick-exit window.
+// This test uses a very short window so it does not have to wait 30 seconds.
+func TestSpawn_LogsQuickExit_WhenSessionDiesImmediately(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+
+	buf := captureDefaultSlog(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true") // 'true' exits 0 immediately
+
+	workDir := t.TempDir()
+	s := &Session{
+		ID:      "quick-exit-test",
+		WorkDir: workDir,
+	}
+
+	// Override quick-exit window for this test.
+	orig := quickExitWindow
+	quickExitWindow = 200 * time.Millisecond
+	t.Cleanup(func() { quickExitWindow = orig })
+
+	if err := s.spawn(); err != nil {
+		t.Skip("spawn failed (tmux environment issue):", err)
+	}
+	defer s.kill()
+
+	// Wait longer than the quick-exit window for the goroutine to fire.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(buf.String(), "exited quickly") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "exited quickly") {
+		t.Errorf("expected quick-exit warning in log; got: %s", out)
+	}
+	if !strings.Contains(out, "session=quick-exit-test") {
+		t.Errorf("quick-exit log missing session field; got: %s", out)
 	}
 }

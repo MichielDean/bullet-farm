@@ -48,31 +48,41 @@ jobs:
         run: |
           # --privileged + --cgroupns=host: systemd needs host cgroup namespace
           # on cgroupv2 systems.  --tmpfs /run and /run/lock: systemd writes its
-          # runtime state here; without tmpfs mounts the container filesystem
-          # blocks the writes and systemd exits immediately.
+          # runtime state here.  --security-opt apparmor=unconfined: prevents
+          # the Docker AppArmor profile from blocking systemd's namespace and
+          # capability operations (--privileged does not disable AppArmor).
           docker run \
             --privileged \
             --cgroupns=host \
             --tmpfs /run \
             --tmpfs /run/lock \
+            --security-opt apparmor=unconfined \
             -d \
             --name "${CONTAINER_NAME}" \
             "${IMAGE_TAG}"
 
-          # Wait up to 10 s for the container to stabilise after startup.
-          # If it exits before we can exec (e.g. systemd crash), capture logs
-          # and surface them as an actionable ::error:: annotation.
-          for _i in $(seq 1 10); do
+          # Wait up to 15 s for the container to stabilise and verify it stays
+          # running for 2 consecutive seconds (systemd init can take a moment).
+          # If it exits early, capture logs and surface them as ::error::.
+          _stable=0
+          for _i in $(seq 1 15); do
             _status=$(docker inspect "${CONTAINER_NAME}" \
                         --format '{{.State.Status}}' 2>/dev/null || echo gone)
             if [ "${_status}" = "running" ]; then
-              break
-            elif [ "${_status}" = "exited" ] || [ "${_status}" = "gone" ]; then
-              _exit_code=$(docker inspect "${CONTAINER_NAME}" \
-                             --format '{{.State.ExitCode}}' 2>/dev/null || echo unknown)
-              echo "::error::container exited before tests ran (status=${_status}, exit_code=${_exit_code})"
-              docker logs "${CONTAINER_NAME}" 2>&1 || true
-              exit 1
+              _stable=$((_stable + 1))
+              if [ "${_stable}" -ge 2 ]; then
+                break
+              fi
+            else
+              _stable=0
+              if [ "${_status}" = "exited" ] || [ "${_status}" = "gone" ]; then
+                _exit_code=$(docker inspect "${CONTAINER_NAME}" \
+                               --format '{{.State.ExitCode}}' 2>/dev/null || echo unknown)
+                echo "::error::container exited before tests ran (exit_code=${_exit_code})"
+                echo "=== container logs ==="
+                docker logs "${CONTAINER_NAME}" 2>&1 || true
+                exit 1
+              fi
             fi
             sleep 1
           done
@@ -88,14 +98,24 @@ jobs:
 
           docker stop "${CONTAINER_NAME}" || true
 
+          # If the test runner exit code indicates the container crashed (not a
+          # test failure), emit container logs to surface the systemd error.
+          if [ "${TEST_EXIT_CODE}" -gt 1 ]; then
+            echo "::error::docker exec failed (exit_code=${TEST_EXIT_CODE}) — container may have crashed"
+            echo "=== container logs ==="
+            docker logs "${CONTAINER_NAME}" 2>&1 || true
+          fi
+
           # Emit ::error:: annotations for each [FAIL] line so GitHub renders
           # them as visible errors in the Actions log and PR checks UI.
-          while IFS= read -r line; do
-            if [[ "${line}" == "[FAIL]"* ]]; then
-              detail="${line#\[FAIL\] }"
-              echo "::error::${detail}"
-            fi
-          done < "${OUTPUT_FILE}"
+          if [ -f "${OUTPUT_FILE}" ]; then
+            while IFS= read -r line; do
+              if [[ "${line}" == "[FAIL]"* ]]; then
+                detail="${line#\[FAIL\] }"
+                echo "::error::${detail}"
+              fi
+            done < "${OUTPUT_FILE}"
+          fi
 
           exit ${TEST_EXIT_CODE}
 

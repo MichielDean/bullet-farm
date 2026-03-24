@@ -30,7 +30,7 @@ source "${SCRIPT_DIR}/test/installer/helpers.sh"
 # units failed — still functional for installer tests).
 test_systemd_boots() {
     local status
-    status=$(docker exec "${CONTAINER_NAME}" \
+    status=$(exec_in_container \
         systemctl is-system-running 2>/dev/null || echo "error")
     case "${status}" in
         running|degraded) return 0 ;;
@@ -94,10 +94,7 @@ run_test() {
 
 # ─── Cleanup ──────────────────────────────────────────────────────────────────
 
-cleanup() {
-    teardown_container
-}
-trap cleanup EXIT
+trap teardown_container EXIT
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 

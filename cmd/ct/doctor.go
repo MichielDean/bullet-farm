@@ -302,7 +302,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 	checkCastellariusProcess()
 
 	// Check 10: Systemd service health (only on systemd systems).
-	checkSystemdService()
+	checkSystemdService(cfg)
 
 	// Check 11: Repo sandbox health — one check per configured repo.
 	checkRepoSandboxes(cfg)
@@ -373,7 +373,7 @@ func checkCastellariusProcess() {
 // checkSystemdService verifies the Castellarius systemd user service is installed,
 // enabled, active, and that linger is on. Informational — does not affect ok.
 // With --fix it installs/enables/starts the service and enables linger.
-func checkSystemdService() {
+func checkSystemdService(cfg *aqueduct.AqueductConfig) {
 	// Skip entirely on non-systemd systems.
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return
@@ -452,6 +452,79 @@ func checkSystemdService() {
 	}
 
 	_ = active // suppress unused warning when fix path is taken
+
+	// If active, also validate the service environment:
+	// 1. Agent binary is reachable from the service PATH.
+	// 2. ANTHROPIC_API_KEY (or other required env vars) are set in the service env.
+	if active {
+		checkSystemdServiceEnv(serviceName, cfg)
+	}
+}
+
+// checkSystemdServiceEnv validates that the running service has the agent binary
+// on its PATH and required env vars set. Catches the common misconfiguration where
+// ~/.local/bin (or similar) is missing from the systemd service PATH.
+func checkSystemdServiceEnv(serviceName string, cfg *aqueduct.AqueductConfig) {
+	// Read the service's effective environment from systemd.
+	out, err := exec.Command("systemctl", "--user", "show", serviceName, "--property=Environment").Output()
+	if err != nil {
+		return // can't read env — skip silently
+	}
+	serviceEnv := string(out)
+
+	// Extract PATH from service env.
+	servicePATH := ""
+	for _, line := range strings.Split(serviceEnv, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Environment=") {
+			for _, kv := range strings.Fields(strings.TrimPrefix(line, "Environment=")) {
+				if strings.HasPrefix(kv, "PATH=") {
+					servicePATH = strings.TrimPrefix(kv, "PATH=")
+				}
+			}
+		}
+	}
+
+	if servicePATH != "" && cfg != nil {
+		// Check that each configured agent binary is findable on the service PATH.
+		seenCmds := map[string]bool{}
+		for _, repo := range cfg.Repos {
+			preset, pErr := cfg.ResolveProvider(repo.Name)
+			if pErr != nil || seenCmds[preset.Command] {
+				continue
+			}
+			seenCmds[preset.Command] = true
+			found := false
+			for _, dir := range filepath.SplitList(servicePATH) {
+				candidate := filepath.Join(dir, preset.Command)
+				if _, statErr := os.Stat(candidate); statErr == nil {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Find where the binary actually lives so we can give a helpful hint.
+				actualPath, _ := exec.LookPath(preset.Command)
+				if actualPath == "" {
+					actualPath = "(not found in current shell PATH either)"
+				}
+				fmt.Printf("✗ service PATH missing %s — binary is at %s but service PATH=%s\n"+
+					"  Fix: add its directory to Environment=PATH in the service drop-in\n",
+					preset.Command, actualPath, servicePATH)
+			} else {
+				fmt.Printf("✓ service PATH: %s reachable\n", preset.Command)
+			}
+		}
+	}
+
+	// Check ANTHROPIC_API_KEY is set in service env (not just the current shell).
+	if !strings.Contains(serviceEnv, "ANTHROPIC_API_KEY=") {
+		fmt.Printf("✗ service env: ANTHROPIC_API_KEY not set in service environment\n" +
+			"  Fix: add Environment=ANTHROPIC_API_KEY=<key> to the service drop-in at\n" +
+			"  ~/.config/systemd/user/cistern-castellarius.service.d/env.conf\n")
+	} else {
+		fmt.Printf("✓ service env: ANTHROPIC_API_KEY set\n")
+	}
 }
 
 // installSystemdService writes the cistern-castellarius.service file and enables it.

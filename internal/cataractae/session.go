@@ -50,8 +50,11 @@ func (s *Session) Spawn() error {
 }
 
 // spawn creates a new tmux session running the agent.
+// If the preset defines a ContinueFlag and a prior session exists in WorkDir,
+// the agent is resumed rather than started fresh — preserving conversation
+// context accumulated across prior cataractae cycles.
 func (s *Session) spawn() error {
-	// Kill any stale session with the same name.
+	// Kill any stale tmux session with the same name before creating a new one.
 	s.kill()
 
 	home, err := os.UserHomeDir()
@@ -62,9 +65,16 @@ func (s *Session) spawn() error {
 
 	args := []string{"new-session", "-d", "-s", s.ID, "-c", s.WorkDir}
 
+	// Decide whether to continue a prior session or start fresh.
+	resume := s.Preset.ContinueFlag != "" && hasPriorSession(home, s.WorkDir)
+
 	var agentCmd string
 	if s.Preset.Name != "" {
-		agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
+		if resume {
+			agentCmd, err = s.buildContinueCmd(s.Preset, skillsDir)
+		} else {
+			agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
+		}
 		if err != nil {
 			return fmt.Errorf("spawn: %w", err)
 		}
@@ -80,8 +90,23 @@ func (s *Session) spawn() error {
 		return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, err, out)
 	}
 
-	log.Printf("session %s: spawned in %s", s.ID, s.WorkDir)
+	if resume {
+		log.Printf("session %s: resumed in %s", s.ID, s.WorkDir)
+	} else {
+		log.Printf("session %s: spawned in %s", s.ID, s.WorkDir)
+	}
 	return nil
+}
+
+// hasPriorSession reports whether the agent has prior session state for workDir.
+// Claude stores sessions under ~/.claude/projects/<escaped-path>/.
+// We consider a prior session to exist if that directory is non-empty.
+func hasPriorSession(home, workDir string) bool {
+	// Claude encodes the absolute path by replacing '/' with '-'.
+	escaped := strings.ReplaceAll(workDir, "/", "-")
+	projectDir := filepath.Join(home, ".claude", "projects", escaped)
+	entries, err := os.ReadDir(projectDir)
+	return err == nil && len(entries) > 0
 }
 
 // collectEnvArgs builds the tmux -e env argument pairs for the session.
@@ -143,16 +168,31 @@ func (s *Session) buildClaudeCmd(skillsDir string) string {
 		claudePathFn(), shellQuote(skillsDir), flagsStr, prompt)
 }
 
+// resolveCommandFn resolves a preset command name to an absolute path. It is a
+// variable so tests can substitute a deterministic resolver without requiring the
+// real agent binaries to be installed on the test machine.
+var resolveCommandFn = resolveCommand
+
+// resolveCommand resolves preset.Command to an absolute path using exec.LookPath,
+// falling back to the raw value if lookup fails. This ensures the agent binary is
+// found even when the tmux session's PATH differs from the Castellarius process PATH.
+func resolveCommand(command string) string {
+	if p, err := exec.LookPath(command); err == nil {
+		return p
+	}
+	return command
+}
+
 // buildPresetCmd constructs the shell command string for a ProviderPreset.
 // Returns an error if preset.Command is empty.
-// The output is byte-for-byte identical to buildClaudeCmd when called with the
-// built-in "claude" preset and CLAUDE_PATH set to "claude".
+// The command is resolved to an absolute path via exec.LookPath so the tmux
+// session can find the binary regardless of its inherited PATH.
 func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir string) (string, error) {
 	if preset.Command == "" {
 		return "", fmt.Errorf("preset %q has no command configured", preset.Name)
 	}
 
-	parts := append([]string{preset.Command}, preset.Args...)
+	parts := append([]string{resolveCommandFn(preset.Command)}, preset.Args...)
 
 	if preset.AddDirFlag != "" {
 		parts = append(parts, preset.AddDirFlag, shellQuote(skillsDir))
@@ -166,6 +206,33 @@ func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir strin
 		prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
 		parts = append(parts, preset.PromptFlag, "'"+prompt+"'")
 	}
+
+	return strings.Join(parts, " "), nil
+}
+
+// buildContinueCmd constructs the shell command string to resume the most recent
+// prior session in the working directory. It uses preset.ContinueFlag (e.g.
+// "--continue") in place of the prompt flag so the agent picks up where it left off.
+// --add-dir is still injected so skill context is available in the resumed session.
+func (s *Session) buildContinueCmd(preset provider.ProviderPreset, skillsDir string) (string, error) {
+	if preset.Command == "" {
+		return "", fmt.Errorf("preset %q has no command configured", preset.Name)
+	}
+	if preset.ContinueFlag == "" {
+		return "", fmt.Errorf("preset %q has no ContinueFlag configured", preset.Name)
+	}
+
+	parts := append([]string{resolveCommandFn(preset.Command)}, preset.Args...)
+
+	if preset.AddDirFlag != "" {
+		parts = append(parts, preset.AddDirFlag, shellQuote(skillsDir))
+	}
+
+	if s.Model != "" && preset.ModelFlag != "" {
+		parts = append(parts, preset.ModelFlag, s.Model)
+	}
+
+	parts = append(parts, preset.ContinueFlag)
 
 	return strings.Join(parts, " "), nil
 }

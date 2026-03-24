@@ -210,10 +210,7 @@ func runDoctorExtendedChecks(cfg *aqueduct.AqueductConfig, cfgPath, home, dbPath
 		}
 
 		// Determine the active InstructionsFile for this repo's provider.
-		instrFile := preset.InstructionsFile
-		if presErr != nil || instrFile == "" {
-			instrFile = "CLAUDE.md"
-		}
+		instrFile := preset.InstrFile()
 
 		// Check 6: InstructionsFile integrity (deduplicated by identity across all repos).
 		for _, step := range wf.Cataractae {

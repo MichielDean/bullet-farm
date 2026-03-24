@@ -81,6 +81,14 @@ type ProviderPreset struct {
 	SupportsAddDir bool `json:"supports_add_dir,omitempty"`
 }
 
+// InstrFile returns InstructionsFile, defaulting to "CLAUDE.md" when empty.
+func (p ProviderPreset) InstrFile() string {
+	if p.InstructionsFile != "" {
+		return p.InstructionsFile
+	}
+	return "CLAUDE.md"
+}
+
 // builtins is the canonical set of provider presets shipped with Cistern.
 var builtins = []ProviderPreset{
 	{

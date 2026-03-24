@@ -25,10 +25,10 @@ func resolveInstructionsFile() string {
 		return "CLAUDE.md"
 	}
 	preset, err := cfg.ResolveProvider(cfg.Repos[0].Name)
-	if err != nil || preset.InstructionsFile == "" {
+	if err != nil {
 		return "CLAUDE.md"
 	}
-	return preset.InstructionsFile
+	return preset.InstrFile()
 }
 
 var cataractaeCmd = &cobra.Command{

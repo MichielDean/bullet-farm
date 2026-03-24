@@ -265,11 +265,7 @@ func (s *Session) buildPrompt() string {
 //  1. Read <identityDir>/<preset.InstructionsFile> (the generated combined file).
 //  2. If not found, concatenate PERSONA.md + INSTRUCTIONS.md from identityDir.
 func buildContextPreamble(identityDir string, preset provider.ProviderPreset) string {
-	instrFile := "CLAUDE.md"
-	if preset.InstructionsFile != "" {
-		instrFile = preset.InstructionsFile
-	}
-	if data, err := os.ReadFile(filepath.Join(identityDir, instrFile)); err == nil {
+	if data, err := os.ReadFile(filepath.Join(identityDir, preset.InstrFile())); err == nil {
 		return string(data)
 	}
 	// Fallback: concatenate source files directly.
@@ -287,10 +283,7 @@ func buildContextPreamble(identityDir string, preset provider.ProviderPreset) st
 // Uses preset.InstructionsFile (defaults to "CLAUDE.md" when empty).
 // Checks ~/.cistern/cataractae/<identity>/<file> first, then the sandbox-relative path.
 func (s *Session) resolveIdentityPath() string {
-	instrFile := "CLAUDE.md"
-	if s.Preset.InstructionsFile != "" {
-		instrFile = s.Preset.InstructionsFile
-	}
+	instrFile := s.Preset.InstrFile()
 	home, err := os.UserHomeDir()
 	if err == nil {
 		cisternPath := filepath.Join(home, ".cistern", "cataractae", s.Identity, instrFile)

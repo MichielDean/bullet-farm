@@ -381,11 +381,7 @@ func hookCataractaeGenerate(cfg *aqueduct.AqueductConfig, logger *slog.Logger) e
 				continue
 			}
 			preset, _ := cfg.ResolveProvider(repo.Name)
-			instrFile := preset.InstructionsFile
-			if instrFile == "" {
-				instrFile = "CLAUDE.md"
-			}
-			written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir, instrFile)
+			written, err := aqueduct.GenerateCataractaeFiles(w, cataractaeDir, preset.InstrFile())
 			if err != nil {
 				return fmt.Errorf("generate role files: %w", err)
 			}

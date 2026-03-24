@@ -284,8 +284,8 @@ func TestValidateWorkflowSkills_ErrorMentionsInstallCommand(t *testing.T) {
 
 // --- checkStartupCredentials tests ---
 
-// writeExpiredCredentials writes a credentials file with an expired OAuth token.
-func writeExpiredCredentials(t *testing.T, home string, expiresAt int64) {
+// writeOAuthCredentials writes a credentials file with the given OAuth expiry.
+func writeOAuthCredentials(t *testing.T, home string, expiresAt int64) {
 	t.Helper()
 	claudeDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -333,7 +333,7 @@ func TestCheckStartupCredentials_KeyPresent_FreshOAuth_ReturnsNil(t *testing.T) 
 	home := t.TempDir()
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
 	futureExpiry := time.Now().Add(24 * time.Hour).UnixMilli()
-	writeExpiredCredentials(t, home, futureExpiry)
+	writeOAuthCredentials(t, home, futureExpiry)
 
 	if err := checkStartupCredentials(home); err != nil {
 		t.Errorf("expected nil for fresh OAuth token, got: %v", err)
@@ -343,7 +343,7 @@ func TestCheckStartupCredentials_KeyPresent_FreshOAuth_ReturnsNil(t *testing.T) 
 func TestCheckStartupCredentials_KeyPresent_ExpiredOAuth_ReturnsError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
-	writeExpiredCredentials(t, home, 1000) // expires 1970-01-01 — definitely expired
+	writeOAuthCredentials(t, home, 1000) // expires 1970-01-01 — definitely expired
 
 	err := checkStartupCredentials(home)
 	if err == nil {
@@ -360,7 +360,7 @@ func TestCheckStartupCredentials_KeyPresent_ExpiredOAuth_ReturnsError(t *testing
 func TestCheckStartupCredentials_KeyPresent_ZeroExpiry_ReturnsNil(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
-	writeExpiredCredentials(t, home, 0) // zero ExpiresAt = no expiry info → skip silently
+	writeOAuthCredentials(t, home, 0) // zero ExpiresAt = no expiry info → skip silently
 
 	if err := checkStartupCredentials(home); err != nil {
 		t.Errorf("expected nil when ExpiresAt is zero (no expiry info), got: %v", err)

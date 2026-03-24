@@ -510,10 +510,8 @@ func resolveConfigPath() string {
 	return filepath.Join(home, ".cistern", "cistern.yaml")
 }
 
-// checkStartupCredentials validates that ANTHROPIC_API_KEY is set in the current
-// environment and that the Claude OAuth token (if present) is not expired.
-// Returns an actionable error if either check fails so the caller can log it
-// and exit — preventing a silent start with broken credentials.
+// checkStartupCredentials returns an actionable error if ANTHROPIC_API_KEY is
+// unset or the Claude OAuth token is expired, preventing silent startup failures.
 func checkStartupCredentials(home string) error {
 	if os.Getenv("ANTHROPIC_API_KEY") == "" {
 		return fmt.Errorf("ANTHROPIC_API_KEY not set — add it to ~/.cistern/env and source it before starting")

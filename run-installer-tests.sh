@@ -44,7 +44,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/start-castellarius.sh
+ExecStart=${HOME_DIR}/.cistern/start-castellarius.sh
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10
@@ -368,7 +368,7 @@ test_wrong_credentials() {
     # when started with the expired OAuth token in place.
     local service_out
     service_out=$(exec_in_container bash -c "
-        source '${home_dir}/.cistern/env' 2>/dev/null || true
+        set -a; source '${home_dir}/.cistern/env' 2>/dev/null || true; set +a
         env HOME='${home_dir}' CT_NO_ASCII_LOGO=1 \
             timeout 5 ct castellarius start 2>&1
     " || true)

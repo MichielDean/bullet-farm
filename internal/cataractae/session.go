@@ -58,7 +58,35 @@ func (s *Session) spawn() error {
 
 	var agentCmd string
 	if s.Preset.Name != "" {
-		agentCmd = s.buildPresetCmd(s.Preset, skillsDir)
+		agentCmd, err = s.buildPresetCmd(s.Preset, skillsDir)
+		if err != nil {
+			return fmt.Errorf("spawn: %w", err)
+		}
+	} else {
+		// Legacy fallback: no preset configured — use the hardcoded claude path.
+		agentCmd = s.buildClaudeCmd(skillsDir)
+	}
+
+	args = append(args, s.collectEnvArgs()...)
+	args = append(args, agentCmd)
+	cmd := exec.Command("tmux", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, err, out)
+	}
+
+	log.Printf("session %s: spawned in %s", s.ID, s.WorkDir)
+	return nil
+}
+
+// collectEnvArgs builds the tmux -e env argument pairs for the session.
+// The preset path forwards EnvPassthrough vars and ExtraEnv static values.
+// The legacy path forwards ANTHROPIC_API_KEY.
+// Platform-level vars (PATH, GH_TOKEN, CT_CATARACTA_NAME, CT_DB) are always
+// forwarded regardless of provider.
+func (s *Session) collectEnvArgs() []string {
+	var args []string
+
+	if s.Preset.Name != "" {
 		// Preset-driven env passthrough: forward each listed var if set.
 		for _, envVar := range s.Preset.EnvPassthrough {
 			if val := os.Getenv(envVar); val != "" {
@@ -70,13 +98,9 @@ func (s *Session) spawn() error {
 			args = append(args, "-e", k+"="+v)
 		}
 	} else {
-		// Legacy fallback: no preset configured — use the hardcoded claude path.
-		agentCmd = s.buildClaudeCmd(skillsDir)
+		// Legacy fallback: forward the claude API key.
 		if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 			args = append(args, "-e", "ANTHROPIC_API_KEY="+key)
-		}
-		if tok := os.Getenv("GH_TOKEN"); tok != "" {
-			args = append(args, "-e", "GH_TOKEN="+tok)
 		}
 	}
 
@@ -90,15 +114,11 @@ func (s *Session) spawn() error {
 	if db := os.Getenv("CT_DB"); db != "" {
 		args = append(args, "-e", "CT_DB="+db)
 	}
-
-	args = append(args, agentCmd)
-	cmd := exec.Command("tmux", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, err, out)
+	if tok := os.Getenv("GH_TOKEN"); tok != "" {
+		args = append(args, "-e", "GH_TOKEN="+tok)
 	}
 
-	log.Printf("session %s: spawned in %s", s.ID, s.WorkDir)
-	return nil
+	return args
 }
 
 // buildClaudeCmd constructs the shell command string passed to tmux new-session.
@@ -118,9 +138,14 @@ func (s *Session) buildClaudeCmd(skillsDir string) string {
 }
 
 // buildPresetCmd constructs the shell command string for a ProviderPreset.
+// Returns an error if preset.Command is empty.
 // The output is byte-for-byte identical to buildClaudeCmd when called with the
 // built-in "claude" preset and CLAUDE_PATH set to "claude".
-func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir string) string {
+func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir string) (string, error) {
+	if preset.Command == "" {
+		return "", fmt.Errorf("preset %q has no command configured", preset.Name)
+	}
+
 	prompt := strings.ReplaceAll(s.buildPrompt(), "'", `'\''`)
 
 	parts := append([]string{preset.Command}, preset.Args...)
@@ -133,9 +158,11 @@ func (s *Session) buildPresetCmd(preset provider.ProviderPreset, skillsDir strin
 		parts = append(parts, preset.ModelFlag, s.Model)
 	}
 
-	parts = append(parts, "-p", "'"+prompt+"'")
+	if preset.PromptFlag != "" {
+		parts = append(parts, preset.PromptFlag, "'"+prompt+"'")
+	}
 
-	return strings.Join(parts, " ")
+	return strings.Join(parts, " "), nil
 }
 
 // shellQuote wraps s in single quotes, escaping any single quotes within s,

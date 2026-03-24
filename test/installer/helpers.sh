@@ -53,15 +53,13 @@ require_docker() {
     fi
 }
 
-# build_image builds the systemd base image and then the installer-test image.
+# build_image builds the installer-test image from the self-contained
+# tests/installer/Dockerfile.systemd (golang:1.26 builder + systemd-ubuntu runtime).
 build_image() {
     local repo_root="$1"
     docker build \
-        --tag  "cistern-systemd-test" \
-        "${repo_root}/test/docker/systemd" || return 1
-    docker build \
         --tag  "${IMAGE_NAME}" \
-        --file "${repo_root}/test/docker/installer-test/Dockerfile" \
+        --file "${repo_root}/tests/installer/Dockerfile.systemd" \
         "${repo_root}"
 }
 

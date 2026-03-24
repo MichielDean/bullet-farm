@@ -120,11 +120,9 @@ func (m dashboardTUIModel) openPeekOn(ch CataractaeInfo) (dashboardTUIModel, tea
 
 	if insideTmux() {
 		// Spawn a new tmux window for live read-only attach; dashboard stays open.
-		peekCh := ch
-		dropletID := ch.DropletID
 		return m, func() tea.Msg {
-			if err := tmuxNewWindowFunc(dropletID, session); err != nil {
-				return tuiPeekNewWindowErrMsg{ch: peekCh, err: err}
+			if err := tmuxNewWindowFunc(ch.DropletID, session); err != nil {
+				return tuiPeekNewWindowErrMsg{ch: ch, err: err}
 			}
 			return nil
 		}

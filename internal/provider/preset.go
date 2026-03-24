@@ -66,6 +66,11 @@ type ProviderPreset struct {
 	ResumeFlag string `json:"resume_flag,omitempty"`
 	// ResumeStyle controls whether resuming uses a flag or a positional subcommand.
 	ResumeStyle ResumeStyle `json:"resume_style,omitempty"`
+	// ContinueFlag is the CLI flag used to continue the most recent session in the
+	// working directory (e.g. "--continue" for claude). When set, Cistern uses this
+	// flag instead of re-injecting the full prompt when resuming a previously-started
+	// session. The agent already has full context from the prior run.
+	ContinueFlag string `json:"continue_flag,omitempty"`
 	// ExtraEnv maps additional environment variable names to values injected into
 	// the agent process. These are set in addition to (and may override) EnvPassthrough.
 	ExtraEnv map[string]string `json:"extra_env,omitempty"`
@@ -99,6 +104,7 @@ var builtins = []ProviderPreset{
 		ModelFlag:        "--model",
 		AddDirFlag:       "--add-dir",
 		PromptFlag:       "-p",
+		ContinueFlag:     "--continue",
 		InstructionsFile: "CLAUDE.md",
 		SupportsAddDir:   true,
 		NonInteractive:   NonInteractiveConfig{PrintFlag: "--print", PromptFlag: "-p"},

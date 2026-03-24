@@ -19,6 +19,11 @@ import (
 func TestProviderCommandStrings(t *testing.T) {
 	// Normalise claudePathFn so the claude preset produces a deterministic binary name.
 	t.Setenv("CLAUDE_PATH", "claude")
+	// Normalise resolveCommandFn so presets produce deterministic binary names regardless
+	// of which agent binaries are installed on the test machine.
+	orig := resolveCommandFn
+	resolveCommandFn = func(cmd string) string { return cmd }
+	t.Cleanup(func() { resolveCommandFn = orig })
 
 	skillsDir := "/home/user/.cistern/skills"
 

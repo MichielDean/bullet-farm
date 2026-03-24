@@ -125,8 +125,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		// present in the env file. Falls back to ANTHROPIC_API_KEY when no
 		// config exists yet (new-install path).
 		requiredEnvVars, _ := startupRequiredEnvVars(cfgPath)
-		for _, k := range requiredEnvVars {
-			key := k
+		for _, key := range requiredEnvVars {
 			var envKeyFix func() error
 			if doctorFix {
 				envKeyFix = func() error { return fixCisternEnvAddKey(envPath, key) }

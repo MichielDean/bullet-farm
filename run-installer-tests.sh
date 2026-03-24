@@ -281,11 +281,7 @@ test_missing_credentials() {
     sleep 2
 
     # Then: service must NOT be active.
-    local status
-    status=$(service_status "cistern-castellarius")
-    if [[ "${status}" == "active" ]]; then
-        return 1
-    fi
+    [[ "$(service_status "cistern-castellarius")" != "active" ]] || return 1
 
     # Then: journal contains the actionable error from start-castellarius.sh.
     local logs
@@ -331,11 +327,7 @@ test_wrong_token() {
     sleep 2
 
     # Then: service must NOT be active.
-    local status
-    status=$(service_status "cistern-castellarius")
-    if [[ "${status}" == "active" ]]; then
-        return 1
-    fi
+    [[ "$(service_status "cistern-castellarius")" != "active" ]] || return 1
 
     # Then: journal contains the actionable error from start-castellarius.sh.
     local logs

@@ -528,6 +528,25 @@ func (c *Client) Escalate(id, reason string) error {
 	return nil
 }
 
+// Cancel marks a droplet as cancelled. Cancelled droplets are excluded from the
+// dispatch queue and from default list views. They can still be retrieved with
+// List(repo, "cancelled"). If reason is non-empty it is recorded as a note.
+func (c *Client) Cancel(id, reason string) error {
+	if reason != "" {
+		if err := c.AddNote(id, "cancel", reason); err != nil {
+			return err
+		}
+	}
+	res, err := c.db.Exec(
+		`UPDATE droplets SET status = 'cancelled', updated_at = ? WHERE id = ?`,
+		time.Now().UTC(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("cistern: cancel %s: %w", id, err)
+	}
+	return checkRowsAffected(res, id)
+}
+
 // CloseItem marks a droplet as delivered.
 func (c *Client) CloseItem(id string) error {
 	res, err := c.db.Exec(
@@ -594,6 +613,7 @@ func (c *Client) Get(id string) (*Droplet, error) {
 }
 
 // List returns droplets filtered by repo and/or status. Empty strings mean no filter.
+// Cancelled droplets are always excluded unless status is explicitly "cancelled".
 func (c *Client) List(repo, status string) ([]*Droplet, error) {
 	query := `SELECT id, repo, title, description, priority, complexity, status, assignee, current_cataractae, outcome, assigned_aqueduct, last_reviewed_commit, created_at, updated_at
 		 FROM droplets WHERE 1=1`
@@ -605,6 +625,10 @@ func (c *Client) List(repo, status string) ([]*Droplet, error) {
 	if status != "" {
 		query += ` AND status = ?`
 		args = append(args, status)
+	} else {
+		// Exclude cancelled from default views; they are only shown when explicitly
+		// requested with status="cancelled".
+		query += ` AND status != 'cancelled'`
 	}
 	query += ` ORDER BY priority ASC, created_at ASC`
 

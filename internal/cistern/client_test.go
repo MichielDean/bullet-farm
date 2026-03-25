@@ -1121,3 +1121,126 @@ func TestEditDroplet_NotFound(t *testing.T) {
 		t.Fatal("expected error for unknown droplet")
 	}
 }
+
+func TestCancel_SetsStatusCancelled(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Superseded feature", "", 1, 3)
+
+	if err := c.Cancel(item.ID, "superseded by newer approach"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "cancelled" {
+		t.Errorf("status = %q, want %q", got.Status, "cancelled")
+	}
+}
+
+func TestCancel_RecordsReasonAsNote(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Old feature", "", 1, 3)
+
+	reason := "filed in error"
+	if err := c.Cancel(item.ID, reason); err != nil {
+		t.Fatal(err)
+	}
+
+	notes, err := c.GetNotes(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) == 0 {
+		t.Fatal("expected at least one note after cancel with reason")
+	}
+	found := false
+	for _, n := range notes {
+		if strings.Contains(n.Content, reason) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("cancel reason %q not found in notes: %v", reason, notes)
+	}
+}
+
+func TestCancel_EmptyReason_NoNote(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Old feature", "", 1, 3)
+
+	if err := c.Cancel(item.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	notes, err := c.GetNotes(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Errorf("expected no notes for cancel with empty reason, got %d", len(notes))
+	}
+}
+
+func TestCancel_NotFound(t *testing.T) {
+	c := testClient(t)
+	if err := c.Cancel("nonexistent", "reason"); err == nil {
+		t.Error("expected error for missing droplet")
+	}
+}
+
+func TestCancel_ExcludedFromGetReady(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Old feature", "", 1, 3)
+
+	if err := c.Cancel(item.ID, "won't do"); err != nil {
+		t.Fatal(err)
+	}
+
+	// GetReady must not return a cancelled droplet.
+	got, err := c.GetReady("myrepo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Errorf("GetReady returned cancelled droplet %s — cancelled droplets must never be dispatched", got.ID)
+	}
+}
+
+func TestList_ExcludesCancelledByDefault(t *testing.T) {
+	c := testClient(t)
+	c.Add("myrepo", "Active", "", 1, 3)
+	cancelled, _ := c.Add("myrepo", "Cancelled", "", 1, 3)
+	c.Cancel(cancelled.ID, "not needed")
+
+	// List with no status filter must not include cancelled items.
+	items, err := c.List("myrepo", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == cancelled.ID {
+			t.Errorf("List returned cancelled droplet %s — cancelled droplets must be hidden by default", cancelled.ID)
+		}
+	}
+}
+
+func TestList_CancelledStatus_ReturnsOnlyCancelled(t *testing.T) {
+	c := testClient(t)
+	c.Add("myrepo", "Active", "", 1, 3)
+	cancelled, _ := c.Add("myrepo", "Cancelled", "", 1, 3)
+	c.Cancel(cancelled.ID, "not needed")
+
+	items, err := c.List("myrepo", "cancelled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("List(cancelled) returned %d items, want 1", len(items))
+	}
+	if items[0].ID != cancelled.ID {
+		t.Errorf("returned item %s, want %s", items[0].ID, cancelled.ID)
+	}
+}

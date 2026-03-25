@@ -738,7 +738,7 @@ func scanDroplet(row *sql.Row) (*Droplet, error) {
 	return &droplet, nil
 }
 
-// Purge deletes delivered/stagnant droplets older than olderThan, cascading to
+// Purge deletes delivered/stagnant/cancelled droplets older than olderThan, cascading to
 // cataractae_notes and events. Returns the count of droplets deleted (or that would be
 // deleted in dry-run mode).
 func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {

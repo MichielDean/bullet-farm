@@ -77,6 +77,45 @@ func TestGracefulShutdown_ListError_TreatAsInFlight(t *testing.T) {
 	}
 }
 
+// TestGracefulShutdown_TimeoutWithListError_LogsUnknownCount verifies that when
+// client.List returns an error during the drain timeout path, the timeout log
+// reports sessions as unknown rather than zero — preventing operators from being
+// misled into thinking no sessions were running.
+func TestGracefulShutdown_TimeoutWithListError_LogsUnknownCount(t *testing.T) {
+	client := newMockClient()
+	client.listErr = errors.New("DB unreachable")
+	runner := newMockRunner(client)
+	var buf bytes.Buffer
+	sched := newDrainScheduler(client, runner, 60*time.Millisecond, &buf)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sched.Run(ctx) }()
+
+	time.Sleep(15 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out — drain did not exit after timeout with persistent list error")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "drain timeout") {
+		t.Errorf("expected drain timeout log, got: %q", output)
+	}
+	if !strings.Contains(output, "unknown (query error)") {
+		t.Errorf("expected 'unknown (query error)' in drain timeout log, got: %q", output)
+	}
+	if strings.Contains(output, "sessions=0") {
+		t.Errorf("drain timeout log must not report sessions=0 when query failed, got: %q", output)
+	}
+}
+
 // TestGracefulShutdown_ZeroInFlight_ExitsImmediately verifies that when there
 // are no in-progress droplets at shutdown time, the Castellarius exits without
 // logging a drain message.

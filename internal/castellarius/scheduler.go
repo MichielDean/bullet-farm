@@ -484,17 +484,14 @@ func (s *Castellarius) drainInFlight() error {
 		select {
 		case <-deadline.C:
 			stuck, err := s.stuckSessionIDs()
+			var sessions, ids any = len(stuck), stuck
 			if err != nil {
-				s.logger.Warn("drain timeout — forcing exit with sessions still running",
-					"sessions", "unknown (query error)",
-					"ids", "unavailable",
-				)
-			} else {
-				s.logger.Warn("drain timeout — forcing exit with sessions still running",
-					"sessions", len(stuck),
-					"ids", stuck,
-				)
+				sessions, ids = "unknown (query error)", "unavailable"
 			}
+			s.logger.Warn("drain timeout — forcing exit with sessions still running",
+				"sessions", sessions,
+				"ids", ids,
+			)
 			return context.Canceled
 		case <-ticker.C:
 			for _, repo := range s.config.Repos {

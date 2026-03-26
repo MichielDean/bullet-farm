@@ -1435,6 +1435,125 @@ func TestSpawn_TmuxError_NonServer_NoRecovery(t *testing.T) {
 	}
 }
 
+// TestSpawn_TmuxError_ArgsInErrorMessage_InitialFailure verifies that when the
+// initial execTmuxNewSession call fails with a non-dead-server error, the returned
+// error message includes the tmux args so operators can reproduce the failure.
+func TestSpawn_TmuxError_ArgsInErrorMessage_InitialFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	t.Cleanup(func() { execTmuxNewSession = origSpawn })
+
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		return []byte("invalid option: -Z"), fmt.Errorf("exit status 1")
+	}
+
+	workDir := t.TempDir()
+	s := &Session{ID: "spawn-args-test", WorkDir: workDir}
+
+	err := s.spawn()
+
+	if err == nil {
+		t.Fatal("spawn should have returned an error")
+	}
+	// The session ID appears inside the [args: ...] portion since it is one of
+	// the args passed to tmux new-session.
+	if !strings.Contains(err.Error(), "[args:") {
+		t.Errorf("error should contain [args: ...]; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), s.ID) {
+		t.Errorf("error should contain session ID %q in args; got: %v", s.ID, err)
+	}
+}
+
+// TestSpawn_TmuxServerDead_ArgsInErrorMessage_RecoveryFails verifies that when
+// all three spawn attempts fail (initial + double-check + post-kill retry), the
+// returned error message includes the tmux args for diagnostics.
+func TestSpawn_TmuxServerDead_ArgsInErrorMessage_RecoveryFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		return []byte("no server running on /tmp/tmux-1000/default"), fmt.Errorf("exit status 1")
+	}
+	execTmuxKillServer = func() {}
+
+	workDir := t.TempDir()
+	s := &Session{ID: "spawn-args-recovery-fail", WorkDir: workDir}
+
+	err := s.spawn()
+
+	if err == nil {
+		t.Fatal("spawn should have returned an error")
+	}
+	if !strings.Contains(err.Error(), "[args:") {
+		t.Errorf("error should contain [args: ...]; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), s.ID) {
+		t.Errorf("error should contain session ID %q in args; got: %v", s.ID, err)
+	}
+	if !strings.Contains(err.Error(), "server dead, recovery failed") {
+		t.Errorf("error should describe recovery failure; got: %v", err)
+	}
+}
+
+// TestSpawn_TmuxServerDead_ArgsInErrorMessage_DoubleCheckNonServerError verifies
+// that when the double-check retry (inside the recovery mutex) fails with a
+// non-dead-server error, the returned error includes the tmux args.
+func TestSpawn_TmuxServerDead_ArgsInErrorMessage_DoubleCheckNonServerError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PATH", "true")
+
+	origSpawn := execTmuxNewSession
+	origKill := execTmuxKillServer
+	t.Cleanup(func() {
+		execTmuxNewSession = origSpawn
+		execTmuxKillServer = origKill
+	})
+
+	callCount := 0
+	killCalled := false
+	execTmuxNewSession = func(_ []string) ([]byte, error) {
+		callCount++
+		if callCount == 1 {
+			// First call: dead-server error to trigger recovery path.
+			return []byte("no server running on /tmp/tmux-1000/default"), fmt.Errorf("exit status 1")
+		}
+		// Double-check retry: non-dead-server error.
+		return []byte("invalid option: -Z"), fmt.Errorf("exit status 1")
+	}
+	execTmuxKillServer = func() { killCalled = true }
+
+	workDir := t.TempDir()
+	s := &Session{ID: "spawn-args-doublecheck", WorkDir: workDir}
+
+	err := s.spawn()
+
+	if err == nil {
+		t.Fatal("spawn should have returned an error")
+	}
+	if killCalled {
+		t.Error("execTmuxKillServer should not be called when double-check returns a non-server error")
+	}
+	if !strings.Contains(err.Error(), "[args:") {
+		t.Errorf("error should contain [args: ...]; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), s.ID) {
+		t.Errorf("error should contain session ID %q in args; got: %v", s.ID, err)
+	}
+}
+
 // TestSpawn_TmuxServerDead_ConcurrentRecoveryIsSerializedByMutex verifies that
 // when two goroutines simultaneously detect a dead tmux server, their recovery
 // blocks are serialized — execTmuxKillServer is never called concurrently.

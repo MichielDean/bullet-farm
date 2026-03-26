@@ -174,7 +174,7 @@ func (s *Session) spawn() error {
 	out, spawnErr := execTmuxNewSession(args)
 	if spawnErr != nil {
 		if !isTmuxServerDeadError(out) {
-			return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, spawnErr, out)
+			return fmt.Errorf("tmux new-session %s [args: %v]: %w: %s", s.ID, args, spawnErr, out)
 		}
 		// The tmux server is dead — attempt recovery with double-checked locking.
 		// Serialize recovery so concurrent spawns do not interleave: one goroutine
@@ -186,7 +186,7 @@ func (s *Session) spawn() error {
 		defer tmuxRecoveryMu.Unlock()
 		if out, spawnErr = execTmuxNewSession(args); spawnErr != nil {
 			if !isTmuxServerDeadError(out) {
-				return fmt.Errorf("tmux new-session %s: %w: %s", s.ID, spawnErr, out)
+				return fmt.Errorf("tmux new-session %s [args: %v]: %w: %s", s.ID, args, spawnErr, out)
 			}
 			// Server is still dead — kill stale state and retry.
 			slog.Default().Info("session: dead tmux server detected — attempting restart",
@@ -195,7 +195,7 @@ func (s *Session) spawn() error {
 			if out, spawnErr = execTmuxNewSession(args); spawnErr != nil {
 				slog.Default().Error("session: tmux server recovery failed — spawn aborted",
 					"session", s.ID, "error", spawnErr)
-				return fmt.Errorf("tmux new-session %s: server dead, recovery failed: %w: %s", s.ID, spawnErr, out)
+				return fmt.Errorf("tmux new-session %s [args: %v]: server dead, recovery failed: %w: %s", s.ID, args, spawnErr, out)
 			}
 			slog.Default().Info("session: recovered from dead tmux server — retried spawn successfully",
 				"session", s.ID)

@@ -761,25 +761,43 @@ func TestFormatElapsed_MinutesAndSeconds(t *testing.T) {
 // --- TestTuiAqueductRow — pillar template ---
 
 // stripANSITest removes ANSI escape sequences from s, returning plain text.
-// Handles all CSI sequences (not just SGR/m-terminated ones), so sequences
-// like \x1b[?25l (hide cursor) and \x1b[?25h (show cursor) are also stripped.
+// Uses a two-state FSM to correctly handle CSI sequences:
+//   - After \x1b, if next char is '[' enter CSI-param state (not a terminator)
+//   - In CSI-param state, consume until final byte (0x40–0x7E)
+//
+// This distinguishes 'after ESC' from 'inside CSI params', fixing the bug
+// where '[' (0x5B) would be treated as a CSI terminator, leaking params.
 func stripANSITest(s string) string {
+	const (
+		stateNormal   = 0
+		stateAfterESC = 1
+		stateInCSI    = 2
+	)
 	var out strings.Builder
-	inEsc := false
+	state := stateNormal
 	for _, r := range s {
-		if r == '\x1b' {
-			inEsc = true
-			continue
-		}
-		if inEsc {
-			// CSI final byte range: 0x40–0x7E (@–~). This covers all control
-			// sequence terminators including m (SGR), h/l (mode), A-H (cursor), etc.
-			if r >= 0x40 && r <= 0x7E {
-				inEsc = false
+		switch state {
+		case stateNormal:
+			if r == '\x1b' {
+				state = stateAfterESC
+			} else {
+				out.WriteRune(r)
 			}
-			continue
+		case stateAfterESC:
+			if r == '[' {
+				// CSI introducer — enter param-consuming state
+				state = stateInCSI
+			} else if r >= 0x40 && r <= 0x7E {
+				// Two-character escape sequence (e.g. \x1bm) — final byte consumed
+				state = stateNormal
+			}
+			// else: intermediate byte, stay in stateAfterESC
+		case stateInCSI:
+			// Consume until CSI final byte (0x40–0x7E)
+			if r >= 0x40 && r <= 0x7E {
+				state = stateNormal
+			}
 		}
-		out.WriteRune(r)
 	}
 	return out.String()
 }

@@ -68,10 +68,10 @@ func main() {
 	hasPrint := false
 	hasOutputFormat := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--print" {
+		switch arg {
+		case "--print":
 			hasPrint = true
-		}
-		if arg == "--output-format" {
+		case "--output-format":
 			hasOutputFormat = true
 		}
 	}

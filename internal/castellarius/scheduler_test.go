@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -125,6 +126,15 @@ func (m *mockClient) AddNote(id, fromStep, notes string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.attached = append(m.attached, attachedNote{id, fromStep, notes})
+	if m.addNoteErr == nil {
+		// Mirror production: successful writes appear in GetNotes on the next tick.
+		m.notes[id] = append(m.notes[id], cistern.CataractaeNote{
+			DropletID:      id,
+			CataractaeName: fromStep,
+			Content:        notes,
+			CreatedAt:      time.Now(),
+		})
+	}
 	return m.addNoteErr
 }
 
@@ -2245,6 +2255,124 @@ func TestHeartbeatRepo_StallThreshold_DefaultsTo45Minutes(t *testing.T) {
 	// 2 min < 45 min → not stalled → no note written.
 	if len(client.attached) != 0 {
 		t.Errorf("expected 0 stall notes with default 45-min threshold and 2-min-old signals, got %d", len(client.attached))
+	}
+}
+
+// TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce verifies that
+// when AddNote fails, the debounce entry is NOT set, so the next tick can
+// attempt to write the stall note again.
+func TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce(t *testing.T) {
+	client := newMockClient()
+	client.addNoteErr = errors.New("db error")
+
+	item := &cistern.Droplet{
+		ID:                "stall-addnote-fail",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	// First tick: stalled but AddNote fails → debounce must NOT be armed.
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+	if _, armed := sched.lastStallNoted[item.ID]; armed {
+		t.Error("expected debounce not armed after AddNote failure, but it was set")
+	}
+
+	// Second tick: AddNote now succeeds → stall note must be written.
+	client.addNoteErr = nil
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+	// attached[0] is from the failed first call; attached[1] is the successful second call.
+	successNotes := 0
+	for _, n := range client.attached {
+		if n.fromStep == "scheduler" && strings.Contains(n.notes, "stalled") {
+			successNotes++
+		}
+	}
+	if successNotes < 1 {
+		t.Errorf("expected at least 1 successful stall note after AddNote failure recovery, got %d", successNotes)
+	}
+	if _, armed := sched.lastStallNoted[item.ID]; !armed {
+		t.Error("expected debounce armed after successful AddNote, but it was not set")
+	}
+}
+
+// TestHeartbeatRepo_Debounce_SchedulerNote_DoesNotResetDebounce verifies that
+// a scheduler-generated note returned by GetNotes does not clear the debounce
+// entry, preventing the periodic re-triggering feedback loop.
+func TestHeartbeatRepo_Debounce_SchedulerNote_DoesNotResetDebounce(t *testing.T) {
+	client := newMockClient()
+
+	item := &cistern.Droplet{
+		ID:                "stall-scheduler-feedback",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	// Pre-arm debounce 10 minutes ago.
+	debounceTime := time.Now().Add(-10 * time.Minute)
+	sched.lastStallNoted[item.ID] = debounceTime
+
+	// Inject a scheduler-generated note whose timestamp is newer than the
+	// debounce entry but still older than the threshold (simulates the stall
+	// note written on the previous tick being fed back through GetNotes).
+	schedulerNoteTime := debounceTime.Add(3 * time.Minute) // 7 min ago — stalled, > debounce
+	client.notes[item.ID] = []cistern.CataractaeNote{
+		{CataractaeName: "scheduler", CreatedAt: schedulerNoteTime},
+	}
+
+	// heartbeatRepo must filter out the scheduler note, leave debounce intact,
+	// and write no new stall note.
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+	if len(client.attached) != 0 {
+		t.Errorf("expected no new stall note (scheduler note must be filtered from signal), got %d", len(client.attached))
+	}
+}
+
+// TestHeartbeatRepo_StaleDebounce_PrunedWhenDropletNoLongerInProgress verifies
+// that lastStallNoted entries are removed when the corresponding droplet is no
+// longer in the in_progress list, preventing unbounded map growth.
+func TestHeartbeatRepo_StaleDebounce_PrunedWhenDropletNoLongerInProgress(t *testing.T) {
+	client := newMockClient()
+	// No in_progress items — simulates all droplets having completed.
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	runner := newMockRunner(client)
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	// Pre-populate stale entries for two completed droplets.
+	sched.lastStallNoted["completed-1"] = time.Now().Add(-5 * time.Minute)
+	sched.lastStallNoted["completed-2"] = time.Now().Add(-3 * time.Minute)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if _, ok := sched.lastStallNoted["completed-1"]; ok {
+		t.Error("expected stale lastStallNoted entry for completed-1 to be pruned")
+	}
+	if _, ok := sched.lastStallNoted["completed-2"]; ok {
+		t.Error("expected stale lastStallNoted entry for completed-2 to be pruned")
 	}
 }
 

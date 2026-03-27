@@ -1220,6 +1220,17 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 	threshold := stallThresholdDuration(s.config)
 	logDir := s.resolveSessionLogRoot()
 
+	// Prune lastStallNoted entries for droplets that are no longer in_progress.
+	activeIDs := make(map[string]struct{}, len(items))
+	for _, it := range items {
+		activeIDs[it.ID] = struct{}{}
+	}
+	for id := range s.lastStallNoted {
+		if _, ok := activeIDs[id]; !ok {
+			delete(s.lastStallNoted, id)
+		}
+	}
+
 	for _, item := range items {
 		// Items with outcomes are handled by the observe phase — skip them.
 		if item.Outcome != "" {
@@ -1255,7 +1266,10 @@ func (s *Castellarius) heartbeatRepo(_ context.Context, repo aqueduct.RepoConfig
 			threshold,
 			noteLabel, worktreeLabel, logLabel,
 		)
-		s.addNote(client, item.ID, "scheduler", note)
+		if err := client.AddNote(item.ID, "scheduler", note); err != nil {
+			s.logger.Warn("heartbeat: AddNote failed", "droplet", item.ID, "error", err)
+			continue // do not arm debounce — note was never written
+		}
 		s.logger.Warn("heartbeat: stall detected",
 			"repo", repo.Name,
 			"droplet", item.ID,
@@ -1285,6 +1299,9 @@ func latestNoteSignal(client CisternClient, dropletID string) (time.Time, string
 	}
 	var latest time.Time
 	for _, n := range notes {
+		if n.CataractaeName == "scheduler" {
+			continue // exclude scheduler-generated notes to prevent self-clearing debounce loop
+		}
 		if n.CreatedAt.After(latest) {
 			latest = n.CreatedAt
 		}

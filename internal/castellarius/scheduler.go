@@ -1323,6 +1323,67 @@ func (s *Castellarius) heartbeatRepo(ctx context.Context, repo aqueduct.RepoConf
 			"threshold", threshold.String(),
 		)
 		s.lastStallNoted[item.ID] = maxSig
+
+		// Re-spawn the stalled session if an assignee is present.
+		// session.Spawn() detects prior Claude session files and uses --continue
+		// when they exist, or spawns fresh when priorSessionCount == 0.
+		// Status and assignee are intentionally left unchanged.
+		if item.Assignee != "" {
+			s.respawnStalledDroplet(ctx, client, repo, item)
+		}
+	}
+}
+
+// respawnStalledDroplet calls runner.Spawn for a stalled in-progress droplet
+// whose session has gone quiet. It reuses the existing worktree and assignee;
+// session.Spawn() selects --continue or a fresh spawn based on prior session
+// files under ~/.claude/projects/<worktree>/.
+func (s *Castellarius) respawnStalledDroplet(ctx context.Context, client CisternClient, repo aqueduct.RepoConfig, item *cistern.Droplet) {
+	wf, ok := s.workflows[repo.Name]
+	if !ok {
+		s.logger.Warn("heartbeat: no workflow for repo — cannot respawn stalled session",
+			"repo", repo.Name, "droplet", item.ID)
+		return
+	}
+
+	step := currentCataracta(item, wf)
+	if step == nil {
+		s.logger.Warn("heartbeat: no step found — cannot respawn stalled session",
+			"repo", repo.Name, "droplet", item.ID, "cataractae", item.CurrentCataractae)
+		return
+	}
+
+	notes, err := client.GetNotes(item.ID)
+	if err != nil {
+		notes = nil // non-fatal; spawn without context notes
+	}
+
+	req := CataractaeRequest{
+		Item:         item,
+		Step:         *step,
+		Workflow:     wf,
+		RepoConfig:   repo,
+		AqueductName: item.Assignee,
+		Notes:        notes,
+	}
+
+	// Use the existing worktree — it was created by the original dispatch.
+	if s.sandboxRoot != "" &&
+		step.Type == aqueduct.CataractaeTypeAgent &&
+		step.Context != aqueduct.ContextSpecOnly {
+		req.SandboxDir = filepath.Join(s.sandboxRoot, repo.Name, item.ID)
+	}
+
+	s.logger.Info("heartbeat: respawning stalled session",
+		"repo", repo.Name,
+		"droplet", item.ID,
+		"assignee", item.Assignee,
+		"cataractae", item.CurrentCataractae,
+	)
+
+	if err := s.runner.Spawn(ctx, req); err != nil {
+		s.logger.Error("heartbeat: respawn failed",
+			"repo", repo.Name, "droplet", item.ID, "error", err)
 	}
 }
 

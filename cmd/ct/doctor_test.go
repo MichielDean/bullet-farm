@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
@@ -242,6 +243,171 @@ func TestCheckCastellariusProcess_NoCrash(t *testing.T) {
 	// Just verify the function doesn't panic. The Castellarius is not running
 	// in the test environment.
 	checkCastellariusProcess()
+}
+
+// --- TestCheckCastellariusHealth ---
+
+func TestCheckCastellariusHealth_FileMissing_WarnsMissing(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if !strings.Contains(out, "castellarius health file missing") {
+		t.Errorf("expected missing-file warning, got: %q", out)
+	}
+	if !strings.Contains(out, "is castellarius running?") {
+		t.Errorf("expected 'is castellarius running?' in output, got: %q", out)
+	}
+}
+
+func TestCheckCastellariusHealth_FreshFile_Silent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	pollSec := 10
+	// Write a health file with lastTickAt = now (well within threshold).
+	hPath := filepath.Join(dir, "castellarius.health")
+	content := fmt.Sprintf(`{"lastTickAt":%q,"pollIntervalSec":%d,"droughtRunning":false,"droughtStartedAt":null}`,
+		time.Now().UTC().Format(time.RFC3339Nano), pollSec)
+	if err := os.WriteFile(hPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if out != "" {
+		t.Errorf("expected no output for healthy file, got: %q", out)
+	}
+}
+
+func TestCheckCastellariusHealth_StaleTick_WarnsHung(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	pollSec := 10
+	// lastTickAt is 5 minutes ago — well beyond 3×10s = 30s threshold.
+	staleTime := time.Now().UTC().Add(-5 * time.Minute)
+	hPath := filepath.Join(dir, "castellarius.health")
+	content := fmt.Sprintf(`{"lastTickAt":%q,"pollIntervalSec":%d,"droughtRunning":false,"droughtStartedAt":null}`,
+		staleTime.Format(time.RFC3339Nano), pollSec)
+	if err := os.WriteFile(hPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if !strings.Contains(out, "scheduler may be hung") {
+		t.Errorf("expected stale-tick warning, got: %q", out)
+	}
+	// Verify the expected threshold (3 × pollIntervalSec) appears in the output.
+	expected := fmt.Sprintf("<%ds", pollSec*3)
+	if !strings.Contains(out, expected) {
+		t.Errorf("expected threshold %q in output, got: %q", expected, out)
+	}
+}
+
+func TestCheckCastellariusHealth_DroughtTooLong_WarnsDroughtHang(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	pollSec := 10
+	// Recent tick — passes tick check. Drought running for 15 minutes — exceeds 10m threshold.
+	droughtStart := time.Now().UTC().Add(-15 * time.Minute)
+	hPath := filepath.Join(dir, "castellarius.health")
+	content := fmt.Sprintf(`{"lastTickAt":%q,"pollIntervalSec":%d,"droughtRunning":true,"droughtStartedAt":%q}`,
+		time.Now().UTC().Format(time.RFC3339Nano), pollSec, droughtStart.Format(time.RFC3339Nano))
+	if err := os.WriteFile(hPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if !strings.Contains(out, "drought goroutine has been running") {
+		t.Errorf("expected drought warning, got: %q", out)
+	}
+	if !strings.Contains(out, "possible hang") {
+		t.Errorf("expected 'possible hang' in output, got: %q", out)
+	}
+}
+
+func TestCheckCastellariusHealth_DroughtRecent_Silent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	pollSec := 10
+	// Drought running for only 2 minutes — below 10m threshold.
+	droughtStart := time.Now().UTC().Add(-2 * time.Minute)
+	hPath := filepath.Join(dir, "castellarius.health")
+	content := fmt.Sprintf(`{"lastTickAt":%q,"pollIntervalSec":%d,"droughtRunning":true,"droughtStartedAt":%q}`,
+		time.Now().UTC().Format(time.RFC3339Nano), pollSec, droughtStart.Format(time.RFC3339Nano))
+	if err := os.WriteFile(hPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if out != "" {
+		t.Errorf("expected no output for recent drought, got: %q", out)
+	}
+}
+
+func TestCheckCastellariusHealth_CorruptFile_WarnsUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	hPath := filepath.Join(dir, "castellarius.health")
+	// Write invalid JSON to simulate a corrupted health file.
+	if err := os.WriteFile(hPath, []byte("{not valid json"), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if !strings.Contains(out, "castellarius health file unreadable") {
+		t.Errorf("expected unreadable warning for corrupt file, got: %q", out)
+	}
+}
+
+func TestCheckCastellariusHealth_ZeroPollIntervalSec_NoFalsePositive(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	hPath := filepath.Join(dir, "castellarius.health")
+	// pollIntervalSec=0 (missing/corrupted field) with a recent tick —
+	// must not produce a spurious "scheduler may be hung" warning.
+	content := fmt.Sprintf(`{"lastTickAt":%q,"pollIntervalSec":0,"droughtRunning":false,"droughtStartedAt":null}`,
+		time.Now().UTC().Format(time.RFC3339Nano))
+	if err := os.WriteFile(hPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if strings.Contains(out, "scheduler may be hung") {
+		t.Errorf("expected no hung warning for zero pollIntervalSec, got: %q", out)
+	}
+}
+
+func TestCheckCastellariusHealth_NearThresholdStaleTick_ShowsSeconds(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cistern.db")
+	pollSec := 10
+	// lastTickAt is 31 seconds ago — just beyond 3×10s = 30s threshold.
+	staleTime := time.Now().UTC().Add(-31 * time.Second)
+	hPath := filepath.Join(dir, "castellarius.health")
+	content := fmt.Sprintf(`{"lastTickAt":%q,"pollIntervalSec":%d,"droughtRunning":false,"droughtStartedAt":null}`,
+		staleTime.Format(time.RFC3339Nano), pollSec)
+	if err := os.WriteFile(hPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write health file: %v", err)
+	}
+
+	out := captureStdout(t, func() { checkCastellariusHealth(dbPath) })
+
+	if !strings.Contains(out, "scheduler may be hung") {
+		t.Errorf("expected stale-tick warning, got: %q", out)
+	}
+	// Near-threshold staleness must show seconds, not the misleading "0m ago".
+	if strings.Contains(out, "0m ago") {
+		t.Errorf("output must not contain '0m ago' for sub-minute staleness, got: %q", out)
+	}
+	if !strings.Contains(out, "s ago") {
+		t.Errorf("expected seconds unit ('s ago') in stale-tick output, got: %q", out)
+	}
 }
 
 // --- TestCheckStalledDroplets ---

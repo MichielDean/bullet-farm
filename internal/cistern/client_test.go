@@ -374,33 +374,33 @@ func TestAdd_WithComplexity(t *testing.T) {
 
 func TestAdd_ComplexityDefault(t *testing.T) {
 	c := testClient(t)
-	// Out-of-range complexity should default to 3.
+	// Out-of-range complexity should default to 2 (full).
 	item, err := c.Add("myrepo", "Bad cx", "", 2, 99)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Complexity != 3 {
-		t.Errorf("complexity = %d, want 3 (default)", item.Complexity)
+	if item.Complexity != 2 {
+		t.Errorf("complexity = %d, want 2 (default)", item.Complexity)
 	}
 }
 
 func TestGetReady_ReturnsComplexity(t *testing.T) {
 	c := testClient(t)
-	c.Add("myrepo", "Critical task", "", 1, 4)
+	c.Add("myrepo", "Critical task", "", 1, 3)
 
 	item, err := c.GetReady("myrepo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Complexity != 4 {
-		t.Errorf("complexity = %d, want 4", item.Complexity)
+	if item.Complexity != 3 {
+		t.Errorf("complexity = %d, want 3", item.Complexity)
 	}
 }
 
 func TestList_ReturnsComplexity(t *testing.T) {
 	c := testClient(t)
-	c.Add("myrepo", "Trivial", "", 1, 1)
-	c.Add("myrepo", "Critical", "", 1, 4)
+	c.Add("myrepo", "Standard", "", 1, 1)
+	c.Add("myrepo", "Critical", "", 1, 3)
 
 	items, err := c.List("myrepo", "")
 	if err != nil {
@@ -412,8 +412,8 @@ func TestList_ReturnsComplexity(t *testing.T) {
 	if items[0].Complexity != 1 {
 		t.Errorf("items[0].Complexity = %d, want 1", items[0].Complexity)
 	}
-	if items[1].Complexity != 4 {
-		t.Errorf("items[1].Complexity = %d, want 4", items[1].Complexity)
+	if items[1].Complexity != 3 {
+		t.Errorf("items[1].Complexity = %d, want 3", items[1].Complexity)
 	}
 }
 
@@ -1096,17 +1096,17 @@ func TestEditDroplet_InvalidComplexity(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("repo", "Title", "desc", 2, 3)
 
-	for _, bad := range []int{0, -1, 5, 100} {
+	for _, bad := range []int{0, -1, 4, 5, 100} {
 		err := c.EditDroplet(item.ID, EditDropletFields{Complexity: ptr(bad)})
 		if err == nil {
 			t.Errorf("expected error for complexity=%d", bad)
-		} else if !strings.Contains(err.Error(), "complexity must be between 1 and 4") {
+		} else if !strings.Contains(err.Error(), "complexity must be between 1 and 3") {
 			t.Errorf("complexity=%d: unexpected error: %v", bad, err)
 		}
 	}
 
 	// Valid boundary values should succeed.
-	for _, ok := range []int{1, 4} {
+	for _, ok := range []int{1, 3} {
 		if err := c.EditDroplet(item.ID, EditDropletFields{Complexity: ptr(ok)}); err != nil {
 			t.Errorf("complexity=%d should be valid, got: %v", ok, err)
 		}

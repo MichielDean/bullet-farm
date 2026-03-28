@@ -69,16 +69,20 @@ Use --output-format json for scriptable output (session_id + proposals).`,
 				if filterRepo == "" {
 					return fmt.Errorf("--repo is required with --file")
 				}
+				repo, err := resolveCanonicalRepo(filterRepo)
+				if err != nil {
+					return err
+				}
 				result, err := invokeFilterResume(preset, filterResume, filterFinalizePrompt)
 				if err != nil {
 					return err
 				}
-				c, err := cistern.New(resolveDBPath(), inferPrefix(filterRepo))
+				c, err := cistern.New(resolveDBPath(), inferPrefix(repo))
 				if err != nil {
 					return err
 				}
 				defer c.Close()
-				return addProposals(c, result.Proposals, filterRepo, 2)
+				return addProposals(c, result.Proposals, repo, 2)
 			}
 
 			// --resume without --file: feedback refinement pass.

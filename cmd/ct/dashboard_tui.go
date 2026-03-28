@@ -501,14 +501,13 @@ func (m dashboardTUIModel) viewAqueductArches() []string {
 	}
 
 	// Render every aqueduct as a block. Idle ones get an "idle" label appended.
-	type archBlock []string
-	blocks := make([]archBlock, len(m.data.Cataractae))
+	blocks := make([][]string, len(m.data.Cataractae))
 	for i, ch := range m.data.Cataractae {
 		rows := m.tuiAqueductRow(ch, m.frame)
 		if ch.DropletID == "" {
 			rows = append(rows, tuiStyleDim.Render(padOrTruncCenter("idle", archPillarW)))
 		}
-		blocks[i] = archBlock(rows)
+		blocks[i] = rows
 	}
 
 	// Group blocks into horizontal rows and join each group side by side.
@@ -579,20 +578,6 @@ func (m dashboardTUIModel) viewDroughtArch() []string {
 	return lines
 }
 
-// viewIdleAqueductRow renders a single idle aqueduct as a compact text line:
-//
-//	  virgo      cistern       ·  idle
-func (m dashboardTUIModel) viewIdleAqueductRow(ch CataractaeInfo) string {
-	const nameW = 12
-	const repoW = 18
-	name := padRight(ch.Name, nameW)
-	repo := padRight(ch.RepoName, repoW)
-	return fmt.Sprintf("  %s  %s  %s",
-		tuiStyleDim.Render(name),
-		tuiStyleDim.Render(repo),
-		tuiStyleDim.Render("·  idle"),
-	)
-}
 
 // viewPeekSelectOverlay renders a centered picker overlay listing every active aqueduct.
 // The user navigates with Up/Down, confirms with Enter, and cancels with Esc or q.
@@ -646,26 +631,22 @@ func (m dashboardTUIModel) viewPeekSelectOverlay() string {
 func animateTroughLine(line string, frame, width int) string {
 	stripped := []rune(stripANSI(line))
 
-	wfBright := archRoleWaterBright
-	wfMid := archRoleWaterMid
-	wfDim := archRoleWaterDim
-
 	type waveCell struct {
 		ch  string
 		sty lipgloss.Style
 	}
-	waveCells := [6]waveCell{
-		{"░", wfDim}, {"▒", wfMid}, {"▓", wfBright},
-		{"≈", wfMid}, {"▒", wfMid}, {"░", wfDim},
-	}
 	const waveViz = 6
+	waveCells := [waveViz]waveCell{
+		{"░", archRoleWaterDim}, {"▒", archRoleWaterMid}, {"▓", archRoleWaterBright},
+		{"≈", archRoleWaterMid}, {"▒", archRoleWaterMid}, {"░", archRoleWaterDim},
+	}
 
 	var sb strings.Builder
 	for col, r := range stripped {
 		if r == ' ' {
 			sb.WriteRune(' ')
 		} else {
-			cell := waveCells[(col-frame%waveViz+waveViz*1000)%waveViz]
+			cell := waveCells[((col-frame)%waveViz+waveViz)%waveViz]
 			sb.WriteString(cell.sty.Render(cell.ch))
 		}
 	}
@@ -725,14 +706,10 @@ func (m dashboardTUIModel) tuiAqueductRow(ch CataractaeInfo, frame int) []string
 			infoLine = indent + g.Render(infoBase)
 		}
 	}
-	isActive := func(step string) bool {
-		return step == ch.Step && ch.DropletID != ""
-	}
-
 	// Find active step index (0-based); -1 if none.
 	activeIdx := -1
 	for i, step := range steps {
-		if isActive(step) {
+		if step == ch.Step && ch.DropletID != "" {
 			activeIdx = i
 			break
 		}

@@ -86,6 +86,17 @@ func New(dbPath, prefix string) (*Client, error) {
 	db.Exec(`ALTER TABLE events RENAME COLUMN drop_id TO droplet_id`)
 	db.Exec(`ALTER TABLE droplets RENAME COLUMN current_step TO current_cataractae`)
 	db.Exec(`ALTER TABLE droplets ADD COLUMN complexity INTEGER DEFAULT 2`)
+	// Idempotent one-time migration: remap old 4-level complexity scheme
+	// (1=trivial, 2=standard, 3=full, 4=critical) to new 3-level scheme
+	// (1=standard, 2=full, 3=critical). Tracked in _schema_migrations so it
+	// runs exactly once per database.
+	db.Exec(`CREATE TABLE IF NOT EXISTS _schema_migrations (id TEXT PRIMARY KEY)`)
+	var migrationDone int
+	db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE id = 'complexity_renumber'`).Scan(&migrationDone)
+	if migrationDone == 0 {
+		db.Exec(`UPDATE droplets SET complexity = complexity - 1 WHERE complexity >= 2`)
+		db.Exec(`INSERT OR IGNORE INTO _schema_migrations (id) VALUES ('complexity_renumber')`)
+	}
 	db.Exec(`ALTER TABLE droplets ADD COLUMN outcome TEXT DEFAULT NULL`)
 	// Vocabulary migrations: update legacy status values to canonical vocabulary.
 	db.Exec(`UPDATE droplets SET status = 'stagnant' WHERE status = 'escalated'`)

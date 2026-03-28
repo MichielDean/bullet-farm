@@ -105,10 +105,12 @@ func main() {
 	flag.String("resume", "", "")
 	flag.Parse()
 
+	mode := os.Getenv("FAKEAGENT_MODE")
+
 	// Interactive mode: optionally dump environment variables for env-hygiene integration tests.
 	// When FAKEAGENT_MODE=env_dump the agent prints all env vars to stdout (which is tee'd to
 	// the session log), then proceeds normally so the droplet still gets delivered.
-	if os.Getenv("FAKEAGENT_MODE") == "env_dump" {
+	if mode == "env_dump" {
 		fmt.Println("=== FAKEAGENT ENV DUMP ===")
 		for _, e := range os.Environ() {
 			fmt.Println(e)
@@ -132,7 +134,7 @@ func main() {
 	dropletID := string(m[1])
 
 	// no_signal mode: exit without signaling — used for dead-session recovery tests.
-	if os.Getenv("FAKEAGENT_MODE") == "no_signal" {
+	if mode == "no_signal" {
 		os.Exit(0)
 	}
 

@@ -60,11 +60,9 @@ func RunDroughtHooks(p DroughtHookParams) {
 	if p.OnDroughtStart != nil {
 		p.OnDroughtStart(startedAt)
 	}
-	defer func() {
-		if p.OnDroughtEnd != nil {
-			p.OnDroughtEnd()
-		}
-	}()
+	if p.OnDroughtEnd != nil {
+		defer p.OnDroughtEnd()
+	}
 
 	logger := p.Logger
 	needsRestart := false

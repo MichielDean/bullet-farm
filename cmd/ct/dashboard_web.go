@@ -640,8 +640,12 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	// This is the supported update path: edit cistern.yaml, restart the server.
 	fontFamily := dashboardDefaultFontFamily
 	if cfg, err := aqueduct.ParseAqueductConfig(cfgPath); err == nil && cfg.DashboardFontFamily != "" {
-		// Escape backslash and double-quote to keep the injected JS string valid.
-		fontFamily = strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(cfg.DashboardFontFamily)
+		// Use json.Marshal to produce a fully JS-safe escaped string (handles
+		// backslash, double-quote, newlines, </script> sequences, and Unicode
+		// line/paragraph separators). Trim the surrounding JSON quotes since the
+		// template already wraps the value in double-quotes.
+		b, _ := json.Marshal(cfg.DashboardFontFamily)
+		fontFamily = string(b[1 : len(b)-1])
 	}
 	html := strings.Replace(dashboardHTML, "__DASHBOARD_FONT_FAMILY__", fontFamily, 1)
 

@@ -12,6 +12,31 @@ import (
 
 // --- callFilterAgent tests ---
 
+// TestFilterCmd_NewSession_UnknownRepo_ReturnsError verifies that ct filter --title "..."
+// --repo nonexistent returns an error before any LLM call, even without --file.
+// This tests that resolveCanonicalRepo is called before resolveFilterPreset so that
+// wrong-case repo names in non-file paths also produce errors, not silent fallbacks.
+// Given config with "PortfolioWebsite",
+// When filter --title "idea" --repo nonexistent is called,
+// Then an error mentioning "unknown repo nonexistent" is returned.
+func TestFilterCmd_NewSession_UnknownRepo_ReturnsError(t *testing.T) {
+	cfgPath := writeTestConfig(t, "PortfolioWebsite")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Cleanup(func() {
+		filterTitle = ""
+		filterRepo = ""
+	})
+
+	err := execCmd(t, "filter", "--title", "test idea", "--repo", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown repo in new session, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown repo nonexistent") {
+		t.Errorf("error %q does not mention 'unknown repo nonexistent'", err.Error())
+	}
+}
+
 // TestFilterCmd_UnknownRepo_ReturnsError verifies that ct filter --resume ... --file
 // with an unknown repo name returns a clear error before any LLM call.
 // Given config with "PortfolioWebsite",

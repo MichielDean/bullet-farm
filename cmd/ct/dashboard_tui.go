@@ -597,37 +597,45 @@ func (m dashboardTUIModel) viewAqueductProgress(ch CataractaeInfo) string {
 	}
 
 	// Build top and bottom rows simultaneously.
-	// topRow  — ][ at raised gate positions, spaces elsewhere
-	// botRow  — full channel: seamless █ through raised gate, ][ at closed gate
+	//
+	// topRow: ][ at raised gate positions, spaces everywhere else.
+	// botRow: the channel. Raised gates leave NO trace — bars connect seamlessly.
+	//         Closed gates: ][ sits in the channel as the boundary.
+	//
+	// Segment width on the bottom row is always segW (no wall chars consumed by raised gates).
+	// Walls (│) only appear at the outermost edges and around closed gates.
 	var topRow, botRow strings.Builder
 	topRow.WriteString(indent)
 	botRow.WriteString(indent)
 
 	for i := range steps {
 		if i > 0 {
-			raised := (i - 1) < activeIdx // upstream cataracta complete → gate is raised
+			raised := (i - 1) < activeIdx
 			if raised {
+				// Raised: ][ lifts to top row, bottom is unbroken.
 				topRow.WriteString(gateStyle.Render("]["))
-				// Bottom row: seamless fill through raised gate position
-				botRow.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(waterFull)).Render("██"))
+				// No characters written to botRow here — seamless continuation.
 			} else {
-				topRow.WriteString("  ") // gate is down — nothing on top row
-				// Bottom row: ][ sitting in the channel (closed gate)
+				// Closed: nothing on top, ][ in the channel.
+				topRow.WriteString("  ")
 				botRow.WriteString(gateStyle.Render("]["))
 			}
 		}
 
-		// Top row: spaces over segment interior (gate markers only between segments)
+		// Top row: spaces across the full segment width.
 		topRow.WriteString(strings.Repeat(" ", segW))
 
-		// Bottom row segment fill.
-		// Left wall: always for first segment; after a closed gate; omit after raised gate.
+		// Bottom row: left │ only at start of bar or after a closed gate.
 		leftRaised := i > 0 && (i-1) < activeIdx
 		rightRaised := i < n-1 && i < activeIdx
 
-		innerW := segW
 		if !leftRaised {
 			botRow.WriteString(wallStyle(i).Render("│"))
+		}
+
+		// Fill: full segW minus left wall (if present) minus right wall (if present).
+		innerW := segW
+		if !leftRaised {
 			innerW--
 		}
 		if !rightRaised {

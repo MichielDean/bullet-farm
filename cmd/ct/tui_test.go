@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1670,6 +1671,8 @@ func TestTabApp_Detail_ConfirmOverlay_UppercaseY_ClosesOverlayAndReturnsCmd(t *t
 	if cmd == nil {
 		t.Error("expected non-nil cmd after 'Y' in confirm overlay, got nil")
 	}
+}
+
 // ── Peek tab ─────────────────────────────────────────────────────────────────
 
 // TestTabApp_Peek_PKeyFromDetail_SwitchesToPeekTab verifies that pressing 'p'

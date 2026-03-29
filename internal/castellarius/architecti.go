@@ -89,10 +89,9 @@ func (s *Castellarius) buildArchitectiSnapshot(ctx context.Context, trigger *cis
 	repoByDroplet := make(map[string]string)
 
 	sb.WriteString("# Architecti System Snapshot\n")
-	sb.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().UTC().Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("Triggering droplet: %s (status=%s, idle=%s)\n\n",
-		trigger.ID, trigger.Status,
-		time.Since(trigger.UpdatedAt).Round(time.Second)))
+	fmt.Fprintf(&sb, "Generated: %s\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(&sb, "Triggering droplet: %s (status=%s, idle=%s)\n\n",
+		trigger.ID, trigger.Status, time.Since(trigger.UpdatedAt).Round(time.Second))
 
 	// --- Droplet State Inventory ---
 	sb.WriteString("## Droplet State Inventory\n\n")
@@ -150,7 +149,7 @@ func (s *Castellarius) buildArchitectiSnapshot(ctx context.Context, trigger *cis
 	if s.dbPath != "" {
 		hf, err := ReadHealthFile(filepath.Dir(s.dbPath))
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("Error reading health file: %v\n\n", err))
+			fmt.Fprintf(&sb, "Error reading health file: %v\n\n", err)
 		} else {
 			lastTickAge := time.Since(hf.LastTickAt).Round(time.Second)
 			hungThreshold := time.Duration(architectiRestartCastellariusFactor) * s.pollInterval
@@ -158,9 +157,9 @@ func (s *Castellarius) buildArchitectiSnapshot(ctx context.Context, trigger *cis
 			if lastTickAge > hungThreshold {
 				hung = " [POSSIBLY HUNG]"
 			}
-			sb.WriteString(fmt.Sprintf("- Last tick: %s ago%s\n", lastTickAge, hung))
-			sb.WriteString(fmt.Sprintf("- Poll interval: %ds\n", hf.PollIntervalSec))
-			sb.WriteString(fmt.Sprintf("- Drought running: %v\n\n", hf.DroughtRunning))
+			fmt.Fprintf(&sb, "- Last tick: %s ago%s\n", lastTickAge, hung)
+			fmt.Fprintf(&sb, "- Poll interval: %ds\n", hf.PollIntervalSec)
+			fmt.Fprintf(&sb, "- Drought running: %v\n\n", hf.DroughtRunning)
 		}
 	} else {
 		sb.WriteString("DB path not configured — health file unavailable.\n\n")
@@ -190,14 +189,14 @@ func (s *Castellarius) buildArchitectiSnapshot(ctx context.Context, trigger *cis
 		sb.WriteString(strings.TrimRight(string(out), "\n"))
 		sb.WriteString("\n```\n\n")
 	} else {
-		sb.WriteString(fmt.Sprintf("(log file not found at %s)\n\n", logPath))
+		fmt.Fprintf(&sb, "(log file not found at %s)\n\n", logPath)
 	}
 
 	// --- Configuration ---
 	sb.WriteString("## Configuration\n")
-	sb.WriteString(fmt.Sprintf("- MaxFilesPerRun: %d\n", config.MaxFilesPerRun))
-	sb.WriteString(fmt.Sprintf("- ThresholdMinutes: %d\n", config.ThresholdMinutes))
-	sb.WriteString(fmt.Sprintf("- Poll interval: %s\n\n", s.pollInterval))
+	fmt.Fprintf(&sb, "- MaxFilesPerRun: %d\n", config.MaxFilesPerRun)
+	fmt.Fprintf(&sb, "- ThresholdMinutes: %d\n", config.ThresholdMinutes)
+	fmt.Fprintf(&sb, "- Poll interval: %s\n\n", s.pollInterval)
 
 	return sb.String(), repoByDroplet
 }
@@ -223,11 +222,11 @@ func writeDropletTable(sb *strings.Builder, heading string, items []*cistern.Dro
 			if outcome == "" {
 				outcome = "(none)"
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
-				d.ID, d.Repo, age, d.CurrentCataractae, d.Assignee, outcome))
+			fmt.Fprintf(sb, "| %s | %s | %s | %s | %s | %s |\n",
+				d.ID, d.Repo, age, d.CurrentCataractae, d.Assignee, outcome)
 		} else {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-				d.ID, d.Repo, age, d.CurrentCataractae, d.Assignee))
+			fmt.Fprintf(sb, "| %s | %s | %s | %s | %s |\n",
+				d.ID, d.Repo, age, d.CurrentCataractae, d.Assignee)
 		}
 	}
 	sb.WriteString("\n")

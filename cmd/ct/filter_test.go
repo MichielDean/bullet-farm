@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -600,6 +602,103 @@ func TestFilterCmd_SkipContextFlag_IsRecognized(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "nonexistent-xyz") {
 		t.Errorf("expected error about unknown repo 'nonexistent-xyz', got: %v", err)
+	}
+}
+
+// TestFilterCmd_SkipContext_PromptHasNoContextHeader verifies that when
+// --skip-context is set, the prompt sent to the agent contains no
+// '=== CODEBASE CONTEXT ===' header, exercising the if !filterSkipContext branch.
+// Given a config that routes the filter preset to fakeagent with FAKEAGENT_PROMPT_FILE set,
+// When ct filter --title "..." --skip-context is called,
+// Then the captured prompt must not contain the codebase context header.
+func TestFilterCmd_SkipContext_PromptHasNoContextHeader(t *testing.T) {
+	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
+	dir := t.TempDir()
+
+	// Config that overrides the claude preset command to point at fakeagent.
+	cfgPath := filepath.Join(dir, "cistern.yaml")
+	cfgContent := fmt.Sprintf("provider:\n  command: %s\nrepos:\n  - name: testRepo\n    cataractae: 1\n", fakeagentBin)
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("WriteFile config: %v", err)
+	}
+
+	promptFile := filepath.Join(dir, "prompt.txt")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", filepath.Join(dir, "test.db"))
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("FAKEAGENT_PROMPT_FILE", promptFile)
+	// Reset globals that may be polluted by prior tests.
+	filterTitle = ""
+	filterResume = ""
+	filterFile = false
+	filterRepo = ""
+	filterSkipContext = false
+	t.Cleanup(func() {
+		filterTitle = ""
+		filterResume = ""
+		filterFile = false
+		filterRepo = ""
+		filterSkipContext = false
+	})
+
+	if err := execCmd(t, "filter", "--title", "test idea", "--skip-context"); err != nil {
+		t.Fatalf("filter --skip-context: unexpected error: %v", err)
+	}
+
+	captured, err := os.ReadFile(promptFile)
+	if err != nil {
+		t.Fatalf("reading captured prompt: %v", err)
+	}
+	if strings.Contains(string(captured), "=== CODEBASE CONTEXT ===") {
+		t.Errorf("--skip-context: prompt must not contain context header, got:\n%s", captured)
+	}
+}
+
+// TestFilterCmd_WithoutSkipContext_PromptHasContextHeader verifies that when
+// --skip-context is NOT set, the prompt sent to the agent does contain the
+// '=== CODEBASE CONTEXT ===' header. This exercises the !filterSkipContext path.
+// Given a config that routes the filter preset to fakeagent with FAKEAGENT_PROMPT_FILE set,
+// When ct filter --title "..." is called (no --skip-context),
+// Then the captured prompt must contain the codebase context header.
+func TestFilterCmd_WithoutSkipContext_PromptHasContextHeader(t *testing.T) {
+	fakeagentBin := buildTestBin(t, "fakeagent", "github.com/MichielDean/cistern/internal/testutil/fakeagent")
+	dir := t.TempDir()
+
+	cfgPath := filepath.Join(dir, "cistern.yaml")
+	cfgContent := fmt.Sprintf("provider:\n  command: %s\nrepos:\n  - name: testRepo\n    cataractae: 1\n", fakeagentBin)
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("WriteFile config: %v", err)
+	}
+
+	promptFile := filepath.Join(dir, "prompt.txt")
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", filepath.Join(dir, "test.db"))
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("FAKEAGENT_PROMPT_FILE", promptFile)
+	// Reset globals that may be polluted by prior tests.
+	filterTitle = ""
+	filterResume = ""
+	filterFile = false
+	filterRepo = ""
+	filterSkipContext = false
+	t.Cleanup(func() {
+		filterTitle = ""
+		filterResume = ""
+		filterFile = false
+		filterRepo = ""
+		filterSkipContext = false
+	})
+
+	if err := execCmd(t, "filter", "--title", "test idea"); err != nil {
+		t.Fatalf("filter without --skip-context: unexpected error: %v", err)
+	}
+
+	captured, err := os.ReadFile(promptFile)
+	if err != nil {
+		t.Fatalf("reading captured prompt: %v", err)
+	}
+	if !strings.Contains(string(captured), "=== CODEBASE CONTEXT ===") {
+		t.Errorf("without --skip-context: prompt must contain context header, got:\n%s", captured)
 	}
 }
 

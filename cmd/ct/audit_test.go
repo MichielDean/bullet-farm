@@ -149,6 +149,29 @@ func TestExtractFindings_ReturnsErrorForMalformedJSON(t *testing.T) {
 	}
 }
 
+// TestExtractFindings_HandlesUnbalancedClosingBracketInString verifies that
+// extractFindings correctly parses JSON when a string field value contains an
+// unbalanced ']' character (no preceding '[' in that string).
+// The old bracket-depth parser would treat this ']' as closing the array,
+// truncating the JSON and causing a parse error.
+// Given a finding whose remediation text contains ']' without a preceding '[',
+// When extractFindings is called,
+// Then the finding is parsed correctly.
+func TestExtractFindings_HandlesUnbalancedClosingBracketInString(t *testing.T) {
+	input := `[{"title":"Unchecked return","severity":"required","file":"util.go","line":7,"attack_vector":"ignored error","remediation":"Check ] and handle errors"}]`
+	findings, err := extractFindings(input)
+	if err != nil {
+		t.Fatalf("extractFindings: unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	want := "Check ] and handle errors"
+	if findings[0].Remediation != want {
+		t.Errorf("remediation = %q, want %q", findings[0].Remediation, want)
+	}
+}
+
 // --- auditFindingDescription tests ---
 
 // TestAuditFindingDescription_ContainsAllFields verifies that auditFindingDescription
@@ -665,6 +688,54 @@ func TestAuditRunCmd_FilesDropletsForFindings(t *testing.T) {
 	}
 	if !strings.Contains(item.Description, "internal/db/query.go") {
 		t.Error("droplet description should contain the file path")
+	}
+}
+
+// TestAuditRunCmd_MultipleFindings_SummaryShowsCorrectSeverityPerFinding verifies
+// that each line in the "Audit complete" summary shows the severity belonging to
+// that specific finding, not an adjacent one. This exercises the index-alignment
+// fix in runAuditRun (filed[] and findings[] were previously indexed together,
+// which diverges when any c.Add call fails).
+// Given fakeauditagent in "multi" mode returning 3 findings with distinct severities,
+// When ct audit run completes,
+// Then the summary contains blocking, required, and suggestion exactly once each.
+func TestAuditRunCmd_MultipleFindings_SummaryShowsCorrectSeverityPerFinding(t *testing.T) {
+	fakeagentBin := buildTestBin(t, "fakeauditagent", "github.com/MichielDean/cistern/internal/testutil/fakeauditagent")
+	t.Setenv("FAKEAUDITAGENT_MODE", "multi")
+
+	home := t.TempDir()
+	repoWorktree := filepath.Join(home, ".cistern", "sandboxes", "TestRepo", "_primary")
+	if err := os.MkdirAll(repoWorktree, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	db := filepath.Join(t.TempDir(), "test.db")
+	cfgPath := writeTestConfigWithAgent(t, "TestRepo", fakeagentBin)
+	t.Setenv("CT_CONFIG", cfgPath)
+	t.Setenv("CT_DB", db)
+	t.Setenv("CT_NO_ASCII_LOGO", "1")
+	t.Setenv("HOME", home)
+	t.Cleanup(func() {
+		auditRunRepo = ""
+		auditRunDryRun = false
+		auditRunModel = ""
+		auditRunPriority = 1
+	})
+
+	out := captureStdout(t, func() {
+		err := execCmd(t, "audit", "run", "--repo", "TestRepo")
+		if err != nil {
+			t.Errorf("audit run: unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Filed 3 finding(s)") {
+		t.Errorf("expected 'Filed 3 finding(s)' in output, got: %s", out)
+	}
+	for _, sev := range []string{"blocking", "required", "suggestion"} {
+		if !strings.Contains(out, "["+sev+"]") {
+			t.Errorf("summary missing [%s]: %s", sev, out)
+		}
 	}
 }
 

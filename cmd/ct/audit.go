@@ -152,7 +152,14 @@ func runAuditRun(cmd *cobra.Command, args []string) error {
 	}
 	defer c.Close()
 
-	var filed []*cistern.Droplet
+	// filedEntry pairs a successfully filed droplet with the severity from the
+	// originating finding. This avoids an index mismatch between filed[] and
+	// findings[] when c.Add fails for some entries.
+	type filedEntry struct {
+		droplet  *cistern.Droplet
+		severity string
+	}
+	var filed []filedEntry
 	for _, f := range findings {
 		desc := auditFindingDescription(f)
 		item, addErr := c.Add(repo, f.Title, desc, auditRunPriority, 1)
@@ -160,12 +167,12 @@ func runAuditRun(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "warning: failed to file finding %q: %v\n", f.Title, addErr)
 			continue
 		}
-		filed = append(filed, item)
+		filed = append(filed, filedEntry{droplet: item, severity: f.Severity})
 	}
 
 	fmt.Printf("Audit complete. Filed %d finding(s):\n", len(filed))
-	for i, item := range filed {
-		fmt.Printf("  %s  %s [%s]\n", item.ID, item.Title, findings[i].Severity)
+	for _, ff := range filed {
+		fmt.Printf("  %s  %s [%s]\n", ff.droplet.ID, ff.droplet.Title, ff.severity)
 	}
 	return nil
 }
@@ -258,14 +265,33 @@ func extractFindings(text string) ([]AuditFinding, error) {
 	}
 
 	// Locate the JSON array using bracket depth.
+	// inString and escape track whether we are inside a JSON string so that
+	// '[' and ']' characters within string values do not affect the depth count.
 	start := strings.Index(text, "[")
 	if start == -1 {
 		return nil, fmt.Errorf("no JSON array found in audit agent response")
 	}
 	depth := 0
 	end := -1
+	inString := false
+	escape := false
 	for i := start; i < len(text); i++ {
-		switch text[i] {
+		ch := text[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			if ch == '\\' {
+				escape = true
+			} else if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
 		case '[':
 			depth++
 		case ']':

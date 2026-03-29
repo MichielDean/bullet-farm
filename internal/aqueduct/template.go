@@ -120,7 +120,6 @@ func BuildStepTemplateContext(wf *Workflow, step *WorkflowCataractae) StepTempla
 		OnRecirculate: step.OnRecirculate,
 		OnEscalate:    onEscalate,
 		ValidOutcomes: outcomes,
-		SkippedFor:    nil,
 	}
 }
 

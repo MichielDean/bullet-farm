@@ -20,7 +20,6 @@ import (
 
 var cataractaeRenderStep string
 var cataractaeRenderDroplet string
-var cataractaeRenderWorkflow string
 
 var cataractaeRenderCmd = &cobra.Command{
 	Use:   "render",
@@ -38,7 +37,7 @@ func runCataractaeRender(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--step is required")
 	}
 
-	wfPath, err := resolveWorkflowPathWithOverride(cataractaeRenderWorkflow)
+	wfPath, err := resolveWorkflowPath()
 	if err != nil {
 		return err
 	}
@@ -112,15 +111,6 @@ func runCataractaeRender(cmd *cobra.Command, args []string) error {
 	rendered := aqueduct.RenderTemplate(string(raw), ctx)
 	fmt.Print(rendered)
 	return nil
-}
-
-// resolveWorkflowPathWithOverride returns the workflow path, using the override
-// if non-empty, otherwise falling back to the config-resolved path.
-func resolveWorkflowPathWithOverride(override string) (string, error) {
-	if override != "" {
-		return override, nil
-	}
-	return resolveWorkflowPath()
 }
 
 // resolveInstructionsFile returns the InstructionsFile from the resolved provider
@@ -440,7 +430,7 @@ func init() {
 
 	cataractaeRenderCmd.Flags().StringVar(&cataractaeRenderStep, "step", "", "step name to render (required)")
 	cataractaeRenderCmd.Flags().StringVar(&cataractaeRenderDroplet, "droplet", "", "droplet ID to use for live context (optional)")
-	cataractaeRenderCmd.Flags().StringVar(&cataractaeRenderWorkflow, "workflow", "", "path to workflow YAML file")
+	cataractaeRenderCmd.Flags().StringVar(&cataractaeGenerateWorkflow, "workflow", "", "path to workflow YAML file")
 
 	cataractaeCmd.AddCommand(cataractaeGenerateCmd, cataractaeListCmd, cataractaeEditCmd, cataractaeStatusCmd, cataractaeAddCmd, cataractaeRenderCmd)
 	rootCmd.AddCommand(cataractaeCmd)

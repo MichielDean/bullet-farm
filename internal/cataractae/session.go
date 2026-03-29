@@ -446,8 +446,7 @@ func (s *Session) buildPrompt() string {
 			// filesystem injection (--add-dir). Also embed it in the prompt for reliability.
 			identityPath := s.resolveIdentityPath()
 			if content, err := os.ReadFile(identityPath); err == nil {
-				rendered := aqueduct.RenderTemplate(string(content), s.TemplateCtx)
-				prompt += "\n## Your Role\n\n" + rendered
+				prompt += "\n## Your Role\n\n" + aqueduct.RenderTemplate(string(content), s.TemplateCtx)
 			} else {
 				// File missing/unreadable — fall back to pointer so agent can try to find it.
 				prompt += "\nRead " + identityPath + " for your role instructions. "

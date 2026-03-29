@@ -117,25 +117,22 @@ func (s *Castellarius) startArchitectiQueue(ctx context.Context) {
 				}
 				if _, dup := seen[droplet.ID]; dup {
 					s.logger.Debug("architecti: drainer: duplicate — skipping", "droplet", droplet.ID)
-					if len(s.architectiQueue) == 0 {
-						seen = make(map[string]struct{})
-					}
-					continue
-				}
-				seen[droplet.ID] = struct{}{}
-				func() {
-					defer func() {
-						if r := recover(); r != nil {
-							s.logger.Error("architecti: drainer: panic recovered",
-								"droplet", droplet.ID, "panic", r)
+				} else {
+					seen[droplet.ID] = struct{}{}
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								s.logger.Error("architecti: drainer: panic recovered",
+									"droplet", droplet.ID, "panic", r)
+							}
+						}()
+						cfg := s.architectiConfigOrDefault()
+						if err := s.runArchitectiFn(ctx, droplet, cfg); err != nil {
+							s.logger.Error("architecti: run failed",
+								"droplet", droplet.ID, "error", err)
 						}
 					}()
-					cfg := s.architectiConfigOrDefault()
-					if err := s.runArchitectiFn(ctx, droplet, cfg); err != nil {
-						s.logger.Error("architecti: run failed",
-							"droplet", droplet.ID, "error", err)
-					}
-				}()
+				}
 				// Clear seen when the channel is drained — bounds map size to
 				// the queue capacity; safe because all in-burst duplicates have
 				// been consumed before the channel appears empty.

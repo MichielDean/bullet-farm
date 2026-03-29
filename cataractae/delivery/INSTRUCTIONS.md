@@ -150,10 +150,23 @@ Classify each failing check before acting on it. Classification determines wheth
 - Container startup failures: `container exited with code`, `failed to start container`, `OOMKilled`
 - Service unavailable: `connection refused`, `no such host`, `dial tcp.*refused`, `i/o timeout`
 
+**Counter-exempt** — process-level issues that block CI but are not code failures; resolve unconditionally (attempt counter does NOT apply):
+- Merge conflicts: branch is behind `origin/main`, CI detects out-of-date branch
+- Unresolved review comments: reviewer has requested changes
+
 For stagnant-eligible failures, signal immediately without incrementing the counter:
 ```bash
 ct droplet block $DROPLET_ID --notes "Stagnant: <infrastructure failure> — $PR_URL"
 ```
+
+### Counter-exempt handling
+
+Before entering the fix loop, resolve all counter-exempt issues unconditionally — no attempt counter applies:
+
+- **Merge conflict detected by CI** → rebase (Step 2) and push, then re-check CI
+- **Unresolved review comment** → address it, commit, push, then re-check CI
+
+Repeat until no counter-exempt issues remain, then proceed to the fix loop.
 
 ### Fix loop
 
@@ -165,8 +178,6 @@ For each recirculate-eligible failing check:
    - Compile error → fix code, `go build ./...`, commit, push
    - Test failure → fix test or code, `go test ./...`, commit, push
    - Flaky test → `gh run rerun <run_id>` and wait for result (**this counts as attempt 1; a second failure of the same check after rerun counts as attempt 2 and triggers recirculation**)
-   - Merge conflict detected by CI → rebase again (Step 2) and push
-   - Unresolved review comment → address it, commit, push
 
 After each fix commit:
 ```bash

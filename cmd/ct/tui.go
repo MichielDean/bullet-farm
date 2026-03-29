@@ -374,18 +374,17 @@ func (m tabAppModel) viewDroplets() string {
 	if len(items) == 0 {
 		parts = append(parts, "  (cistern is empty)")
 	} else {
+		const fixedW = 2 + 10 + 2 + 7 + 2 + 12 + 2 // matches the Sprintf format below
+		titleW := w - fixedW
+		if titleW < 8 {
+			titleW = 8
+		}
 		for i, item := range items {
 			stepName := item.CurrentCataractae
 			if stepName == "" {
 				stepName = "—"
 			}
 			step := padRight(stepName, 12)
-
-			fixedW := 2 + 10 + 2 + 7 + 2 + 12 + 2
-			titleW := w - fixedW
-			if titleW < 8 {
-				titleW = 8
-			}
 			title := item.Title
 			if len([]rune(title)) > titleW {
 				title = string([]rune(title)[:titleW-1]) + "…"

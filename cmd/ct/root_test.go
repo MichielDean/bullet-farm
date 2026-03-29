@@ -12,7 +12,7 @@ import (
 // TestRootCmd_NoLogoOnCommandExecution verifies that the ASCII logo is never
 // printed when a CLI command runs.
 // Given: a logo file exists and CT_ASCII_LOGO points to it,
-// When: any command executes (triggering PersistentPreRun),
+// When: any command executes,
 // Then: the logo content does not appear in stdout.
 func TestRootCmd_NoLogoOnCommandExecution(t *testing.T) {
 	// Create a recognisable logo file in a temp directory.
@@ -22,8 +22,6 @@ func TestRootCmd_NoLogoOnCommandExecution(t *testing.T) {
 		t.Fatalf("failed to write test logo file: %v", err)
 	}
 	t.Setenv("CT_ASCII_LOGO", logoPath)
-	// Ensure the opt-out env var is NOT set, so there is no false-pass from the guard.
-	t.Setenv("CT_NO_ASCII_LOGO", "")
 
 	// Capture stdout so we can inspect what was printed.
 	origStdout := os.Stdout

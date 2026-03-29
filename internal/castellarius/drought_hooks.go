@@ -242,6 +242,20 @@ func hookGitSync(cfg *aqueduct.AqueductConfig, sandboxRoot string, logger *slog.
 			continue
 		}
 
+		// Reset _primary to origin/main after a successful fetch so it always
+		// reflects upstream exactly. New worktrees are spawned from _primary, so
+		// this ensures they get the latest CLAUDE.md and repo files. Agent
+		// worktrees (non-_primary names) are never reset — they carry
+		// in-progress work on feature branches.
+		if filepath.Base(cloneDir) == "_primary" {
+			resetOut, resetErr := exec.Command("git", "-C", cloneDir, "reset", "--hard", "origin/main").CombinedOutput()
+			if resetErr != nil {
+				logger.Warn("git_sync: failed to reset _primary to origin/main", "repo", repo.Name, "error", resetErr, "output", string(resetOut))
+			} else {
+				logger.Info("git_sync: _primary reset to origin/main", "repo", repo.Name)
+			}
+		}
+
 		// Repo-relative workflow path: aqueduct/<filename>.
 		wfFilename := filepath.Base(repo.WorkflowPath)
 		repoRelPath := "aqueduct/" + wfFilename

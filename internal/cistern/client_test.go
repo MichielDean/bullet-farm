@@ -1640,6 +1640,13 @@ func TestCloseItem_ClearsAssignedAqueduct(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("myrepo", "Feature", "", 1, 2)
 	c.SetAssignedAqueduct(item.ID, "cistern-alpha")
+	pre, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pre.AssignedAqueduct != "cistern-alpha" {
+		t.Fatal("precondition failed: SetAssignedAqueduct did not set the field")
+	}
 
 	if err := c.CloseItem(item.ID); err != nil {
 		t.Fatal(err)
@@ -1660,6 +1667,13 @@ func TestEscalate_ClearsAssignedAqueduct(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("myrepo", "Stuck task", "", 1, 2)
 	c.SetAssignedAqueduct(item.ID, "cistern-beta")
+	pre, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pre.AssignedAqueduct != "cistern-beta" {
+		t.Fatal("precondition failed: SetAssignedAqueduct did not set the field")
+	}
 
 	if err := c.Escalate(item.ID, "timeout"); err != nil {
 		t.Fatal(err)
@@ -1680,6 +1694,13 @@ func TestCancel_ClearsAssignedAqueduct(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("myrepo", "Obsolete task", "", 1, 2)
 	c.SetAssignedAqueduct(item.ID, "cistern-gamma")
+	pre, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pre.AssignedAqueduct != "cistern-gamma" {
+		t.Fatal("precondition failed: SetAssignedAqueduct did not set the field")
+	}
 
 	if err := c.Cancel(item.ID, "no longer needed"); err != nil {
 		t.Fatal(err)
@@ -1691,5 +1712,37 @@ func TestCancel_ClearsAssignedAqueduct(t *testing.T) {
 	}
 	if got.AssignedAqueduct != "" {
 		t.Errorf("AssignedAqueduct after Cancel = %q, want empty string", got.AssignedAqueduct)
+	}
+}
+
+// TestSetAssignedAqueduct_WhenAlreadySet_DoesNotOverwrite verifies that the
+// conditional WHERE clause prevents a second SetAssignedAqueduct call from
+// overwriting an existing assignment.
+func TestSetAssignedAqueduct_WhenAlreadySet_DoesNotOverwrite(t *testing.T) {
+	c := testClient(t)
+	item, _ := c.Add("myrepo", "Contested task", "", 1, 2)
+
+	// First assignment should succeed.
+	if err := c.SetAssignedAqueduct(item.ID, "cistern-alpha"); err != nil {
+		t.Fatal(err)
+	}
+	pre, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pre.AssignedAqueduct != "cistern-alpha" {
+		t.Fatalf("precondition failed: want AssignedAqueduct = %q, got %q", "cistern-alpha", pre.AssignedAqueduct)
+	}
+
+	// Second assignment with a different value must not overwrite.
+	if err := c.SetAssignedAqueduct(item.ID, "cistern-beta"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AssignedAqueduct != "cistern-alpha" {
+		t.Errorf("AssignedAqueduct after second SetAssignedAqueduct = %q, want %q (original must not be overwritten)", got.AssignedAqueduct, "cistern-alpha")
 	}
 }

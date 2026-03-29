@@ -53,7 +53,7 @@ func TestHeartbeatArchitecti_WhenNilConfig_DoesNotSpawn(t *testing.T) {
 	// s.config.Architecti is nil (not set)
 
 	var called int32
-	s.runArchitectiFn = func(_ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		atomic.AddInt32(&called, 1)
 		return nil
 	}
@@ -80,7 +80,7 @@ func TestHeartbeatArchitecti_WhenDisabled_DoesNotSpawn(t *testing.T) {
 	}
 
 	var called int32
-	s.runArchitectiFn = func(_ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		atomic.AddInt32(&called, 1)
 		return nil
 	}
@@ -101,7 +101,7 @@ func TestHeartbeatArchitecti_StagnantDropletPastThreshold_SpawnsArchitecti(t *te
 	s.config.Architecti = architectiConfig(30, 10)
 
 	spawned := make(chan string, 4)
-	s.runArchitectiFn = func(d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		spawned <- d.ID
 		return nil
 	}
@@ -129,7 +129,7 @@ func TestHeartbeatArchitecti_BlockedDropletPastThreshold_SpawnsArchitecti(t *tes
 	s.config.Architecti = architectiConfig(30, 10)
 
 	spawned := make(chan string, 4)
-	s.runArchitectiFn = func(d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, d *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		spawned <- d.ID
 		return nil
 	}
@@ -155,7 +155,7 @@ func TestHeartbeatArchitecti_DropletBelowThreshold_DoesNotSpawn(t *testing.T) {
 	s.config.Architecti = architectiConfig(30, 10) // 30-minute threshold
 
 	var called int32
-	s.runArchitectiFn = func(_ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		atomic.AddInt32(&called, 1)
 		return nil
 	}
@@ -182,7 +182,7 @@ func TestHeartbeatArchitecti_PassesCorrectConfigToFn(t *testing.T) {
 	}
 
 	cfgCh := make(chan aqueduct.ArchitectiConfig, 1)
-	s.runArchitectiFn = func(_ *cistern.Droplet, cfg aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, cfg aqueduct.ArchitectiConfig) error {
 		cfgCh <- cfg
 		return nil
 	}
@@ -214,7 +214,7 @@ func TestHeartbeatArchitecti_WhenAlreadyInFlight_DoesNotDoubleSpawn(t *testing.T
 	unblock := make(chan struct{})
 
 	var called int32
-	s.runArchitectiFn = func(_ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		atomic.AddInt32(&called, 1)
 		close(started) // signal that goroutine is running
 		<-unblock      // block until test releases it
@@ -265,7 +265,7 @@ func TestHeartbeatArchitecti_AfterInFlightCompletes_AllowsRespawn(t *testing.T) 
 
 	var wg sync.WaitGroup
 	var called int32
-	s.runArchitectiFn = func(_ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
+	s.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
 		atomic.AddInt32(&called, 1)
 		wg.Done()
 		return nil

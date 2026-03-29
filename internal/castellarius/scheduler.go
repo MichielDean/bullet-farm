@@ -121,12 +121,16 @@ type Castellarius struct {
 
 	// runArchitectiFn is invoked for stagnant/blocked droplets when architecti
 	// is enabled. Defaults to runArchitecti; injectable for testing.
-	runArchitectiFn func(*cistern.Droplet, aqueduct.ArchitectiConfig) error
+	runArchitectiFn func(context.Context, *cistern.Droplet, aqueduct.ArchitectiConfig) error
 
 	// architectiInFlight tracks droplet IDs for which runArchitecti is currently
 	// executing. Used to prevent double-spawn. Protected by architectiInFlightMu.
 	architectiInFlight   map[string]struct{}
 	architectiInFlightMu sync.Mutex
+
+	// architectiWg tracks in-flight architecti goroutines for graceful shutdown.
+	// drainInFlight waits on this before returning.
+	architectiWg sync.WaitGroup
 }
 
 // isSupervisedProcess returns true when the Castellarius is being managed by
@@ -498,6 +502,20 @@ func (s *Castellarius) Run(ctx context.Context) error {
 // Always returns context.Canceled so the caller (cmd layer) treats it as a
 // clean exit from a signal.
 func (s *Castellarius) drainInFlight() error {
+	// Wait for in-flight architecti goroutines to finish or time out.
+	architectiDone := make(chan struct{})
+	go func() {
+		s.architectiWg.Wait()
+		close(architectiDone)
+	}()
+	architectiTimer := time.NewTimer(s.drainTimeout)
+	defer architectiTimer.Stop()
+	select {
+	case <-architectiDone:
+	case <-architectiTimer.C:
+		s.logger.Warn("drain timeout: in-flight architecti goroutines still running")
+	}
+
 	ids, err := s.stuckSessionIDs()
 	if err != nil {
 		// Conservative: treat a query failure as sessions still running.
@@ -1473,17 +1491,19 @@ func (s *Castellarius) heartbeatArchitecti(ctx context.Context) {
 					"status", item.Status,
 					"idle", time.Since(item.UpdatedAt).Round(time.Second).String(),
 				)
-				go func(d cistern.Droplet, c aqueduct.ArchitectiConfig) {
+				s.architectiWg.Add(1)
+				go func(ctx context.Context, d cistern.Droplet, c aqueduct.ArchitectiConfig) {
+					defer s.architectiWg.Done()
 					defer func() {
 						s.architectiInFlightMu.Lock()
 						delete(s.architectiInFlight, d.ID)
 						s.architectiInFlightMu.Unlock()
 					}()
-					if err := s.runArchitectiFn(&d, c); err != nil {
+					if err := s.runArchitectiFn(ctx, &d, c); err != nil {
 						s.logger.Error("heartbeat: architecti: run failed",
 							"droplet", d.ID, "error", err)
 					}
-				}(*item, cfg)
+				}(ctx, *item, cfg)
 			}
 		}
 	}

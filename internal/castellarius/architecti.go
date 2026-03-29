@@ -20,6 +20,7 @@ const (
 	architectiRateLimitWindow          = 24 * time.Hour
 	architectiRestartCastellariusFactor = 5 // lastTickAt must exceed this multiple of pollInterval
 	architectiSessionTimeout           = 10 * time.Minute
+	maxActionsPerRun                   = 1000 // cap total actions per invocation for defense-in-depth
 )
 
 // architectiAction is a single action output by the Architecti agent.
@@ -63,10 +64,15 @@ func (s *Castellarius) runArchitecti(ctx context.Context, droplet *cistern.Dropl
 	// Parse the JSON action array.
 	actions, err := parseArchitectiOutput(output, config.MaxFilesPerRun)
 	if err != nil {
+		// Truncate raw output to bounded length for security
+		rawOutput := string(output)
+		if len(rawOutput) > 500 {
+			rawOutput = rawOutput[:500] + "...(truncated)"
+		}
 		s.logger.Error("architecti: parse output failed",
 			"droplet", droplet.ID,
 			"error", err,
-			"raw_output", string(output))
+			"raw_output", rawOutput)
 		return fmt.Errorf("architecti: parse: %w", err)
 	}
 
@@ -246,7 +252,7 @@ func parseArchitectiOutput(output []byte, maxFiles int) ([]architectiAction, err
 		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 
-	// Enforce MaxFilesPerRun.
+	// Enforce MaxFilesPerRun and cap total actions per invocation.
 	fileCount := 0
 	var filtered []architectiAction
 	for _, a := range actions {
@@ -255,6 +261,9 @@ func parseArchitectiOutput(output []byte, maxFiles int) ([]architectiAction, err
 			if fileCount > maxFiles {
 				continue
 			}
+		}
+		if len(filtered) >= maxActionsPerRun {
+			break
 		}
 		filtered = append(filtered, a)
 	}
@@ -344,6 +353,10 @@ func (s *Castellarius) architectiRestart(action architectiAction, repoByDroplet 
 	}
 	if action.Cataractae == "" {
 		return fmt.Errorf("restart action missing cataractae")
+	}
+	// Validate cataractae against configured steps.
+	if !s.isValidCataractae(action.Cataractae) {
+		return fmt.Errorf("restart action has invalid cataractae: %q not found in any configured workflow", action.Cataractae)
 	}
 	client, err := s.architectiClient(action.DropletID, repoByDroplet)
 	if err != nil {
@@ -639,4 +652,16 @@ func architectiShellQuote(s string) string {
 // defaultRestartCastellarius restarts the Castellarius systemd user service.
 func defaultRestartCastellarius() error {
 	return exec.Command("systemctl", "--user", "restart", "castellarius").Run()
+}
+
+// isValidCataractae checks if a cataractae name exists in any configured workflow.
+func (s *Castellarius) isValidCataractae(name string) bool {
+	for _, workflow := range s.workflows {
+		for _, step := range workflow.Cataractae {
+			if step.Name == name {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -13,6 +13,7 @@ If go build fails: fix it before touching git. A broken build should not reach a
 ## Step 0.5 — Check for zero-commit branch
 
 ```bash
+DROPLET_ID=$(grep '^## Item:' CONTEXT.md | awk '{print $3}')
 git fetch origin main
 FETCH_EXIT=$?
 ```

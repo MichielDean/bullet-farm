@@ -1234,6 +1234,76 @@ func TestTabApp_Detail_ActionResult_StaleID_IsIgnored(t *testing.T) {
 	}
 }
 
+// TestTabApp_Droplets_ActionResult_Success_TriggersRefetch verifies that a successful
+// tuiActionResultMsg is handled even when the user has navigated to the Droplets tab.
+//
+// Given: a model on the Droplets tab with selectedID="ci-aaa" (navigated away mid-action)
+// When:  tuiActionResultMsg{dropletID:"ci-aaa", err:nil} arrives
+// Then:  overlayErr is empty and a non-nil refetch cmd is returned
+func TestTabApp_Droplets_ActionResult_Success_TriggersRefetch(t *testing.T) {
+	m := newTabAppModel("", "")
+	m.tab = tabDroplets
+	m.selectedID = "ci-aaa"
+
+	updated, cmd := m.Update(tuiActionResultMsg{dropletID: "ci-aaa", err: nil})
+	um := updated.(tabAppModel)
+
+	if um.overlayErr != "" {
+		t.Errorf("overlayErr = %q, want empty after successful action", um.overlayErr)
+	}
+	if cmd == nil {
+		t.Error("expected non-nil cmd (refetch) after successful action result on droplets tab, got nil")
+	}
+}
+
+// TestTabApp_Droplets_ActionResult_Error_StoresErrorMessage verifies that a failed
+// tuiActionResultMsg is handled even when the user has navigated to the Droplets tab.
+//
+// Given: a model on the Droplets tab with selectedID="ci-aaa"
+// When:  tuiActionResultMsg with err arrives
+// Then:  overlayErr contains the error message
+func TestTabApp_Droplets_ActionResult_Error_StoresErrorMessage(t *testing.T) {
+	m := newTabAppModel("", "")
+	m.tab = tabDroplets
+	m.selectedID = "ci-aaa"
+	actionErr := errors.New("db write failed")
+
+	updated, cmd := m.Update(tuiActionResultMsg{dropletID: "ci-aaa", err: actionErr})
+	um := updated.(tabAppModel)
+
+	if um.overlayErr == "" {
+		t.Error("overlayErr should be set when action result carries an error on droplets tab")
+	}
+	if !strings.Contains(um.overlayErr, "db write failed") {
+		t.Errorf("overlayErr = %q, want it to contain the error text", um.overlayErr)
+	}
+	if cmd == nil {
+		t.Error("expected non-nil cmd (refetch) even after errored action on droplets tab, got nil")
+	}
+}
+
+// TestTabApp_Droplets_ActionResult_StaleID_IsIgnored verifies that action results
+// for a different droplet are discarded even when the user is on the Droplets tab.
+//
+// Given: a model on the Droplets tab with selectedID="ci-aaa"
+// When:  tuiActionResultMsg for "ci-bbb" arrives
+// Then:  overlayErr stays empty and no cmd is returned
+func TestTabApp_Droplets_ActionResult_StaleID_IsIgnored(t *testing.T) {
+	m := newTabAppModel("", "")
+	m.tab = tabDroplets
+	m.selectedID = "ci-aaa"
+
+	updated, cmd := m.Update(tuiActionResultMsg{dropletID: "ci-bbb", err: errors.New("should be ignored")})
+	um := updated.(tabAppModel)
+
+	if um.overlayErr != "" {
+		t.Errorf("overlayErr = %q, want empty — stale result should be discarded", um.overlayErr)
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for stale action result on droplets tab, got non-nil")
+	}
+}
+
 // TestTabApp_Detail_OverlayActive_ScrollKeyGoesToOverlay verifies that when an
 // overlay is active, scroll keys ('j') are consumed by the overlay handler rather
 // than scrolling the underlying detail content.

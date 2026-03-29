@@ -285,7 +285,21 @@ func (m tabAppModel) detailLineCount() int {
 }
 
 // Update routes messages to the active view's handler.
+// tuiActionResultMsg is handled here before tab dispatch so it is never
+// silently dropped when the user navigates away from the Detail panel while
+// an async action is in-flight (e.g. during a SQLite busy-timeout delay).
 func (m tabAppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ar, ok := msg.(tuiActionResultMsg); ok {
+		if ar.dropletID != m.selectedID {
+			return m, nil
+		}
+		if ar.err != nil {
+			m.overlayErr = ar.err.Error()
+		} else {
+			m.overlayErr = ""
+		}
+		return m, tea.Batch(m.fetchDataCmd(), m.fetchDetailCmd(m.selectedID))
+	}
 	if m.tab == tabDetail {
 		return m.updateDetail(msg)
 	}
@@ -388,18 +402,6 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tuiTickMsg:
 		return m, m.fetchDataCmd()
-
-	case tuiActionResultMsg:
-		// Discard results for a droplet that is no longer selected.
-		if msg.dropletID != m.selectedID {
-			break
-		}
-		if msg.err != nil {
-			m.overlayErr = msg.err.Error()
-		} else {
-			m.overlayErr = ""
-		}
-		return m, tea.Batch(m.fetchDataCmd(), m.fetchDetailCmd(m.selectedID))
 
 	case tea.KeyMsg:
 		// When an overlay is active, route all key events to the overlay handler.

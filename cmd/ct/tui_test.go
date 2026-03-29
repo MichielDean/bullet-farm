@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -213,17 +215,20 @@ func TestTabApp_Detail_Escape_ReturnsToDropletsAndClearsSelection(t *testing.T) 
 }
 
 // TestTabApp_Detail_ScrollDown_IncreasesScrollY verifies that pressing 'j'
-// in the Detail tab increments the scroll offset.
+// in the Detail tab increments the scroll offset when content exceeds the viewport.
 //
-// Given: a model in the Detail tab with detailScrollY=0
+// Given: a model in the Detail tab with detailScrollY=0 and height=4 (content > viewport)
 // When:  'j' is pressed
 // Then:  detailScrollY becomes 1
 func TestTabApp_Detail_ScrollDown_IncreasesScrollY(t *testing.T) {
 	m := newTabAppModel("", "")
 	m.data = &DashboardData{}
 	m.tab = tabDetail
-	m.detailDroplet = &cistern.Droplet{ID: "ci-aaa"}
+	m.detailDroplet = &cistern.Droplet{ID: "ci-aaa", Status: "open"}
 	m.detailScrollY = 0
+	// height=4: viewH=3, content=5 lines (header+status+sep+NOTES+no-notes-yet),
+	// maxScroll=2 — so 'j' should increment to 1.
+	m.height = 4
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	um := updated.(tabAppModel)
@@ -563,5 +568,241 @@ func TestTabApp_Detail_WindowResize_UpdatesDimensions(t *testing.T) {
 	}
 	if um.height != 50 {
 		t.Errorf("height = %d, want 50", um.height)
+	}
+}
+
+// ── Issue 1: detailScrollY clamping ─────────────────────────────────────────
+
+// helper: build a model with N single-line notes so content overflows the viewport.
+// height=10, viewH=9. Content (no steps): 1+1+1+1 + (2N-1) = 4+2N-1 = 2N+3 lines.
+// With N=5: 13 lines, maxScroll=4.
+func detailModelWithNotes(n int) tabAppModel {
+	m := newTabAppModel("", "")
+	m.data = &DashboardData{}
+	m.tab = tabDetail
+	m.detailDroplet = &cistern.Droplet{ID: "ci-aaa", Title: "T", Status: "open"}
+	m.height = 10
+	m.width = 80
+	notes := make([]cistern.CataractaeNote, n)
+	for i := range notes {
+		notes[i] = cistern.CataractaeNote{
+			ID:             i + 1,
+			CataractaeName: fmt.Sprintf("author%d", i),
+			Content:        fmt.Sprintf("note%d", i),
+		}
+	}
+	m.detailNotes = notes
+	return m
+}
+
+// TestTabApp_Detail_ScrollDown_ClampsAtMaxScroll verifies that pressing 'j'
+// many times does not push detailScrollY past the maximum scrollable offset.
+//
+// Given: detail tab with 5 notes, height=10 (maxScroll=4)
+// When:  'j' is pressed 20 times
+// Then:  detailScrollY <= 4
+func TestTabApp_Detail_ScrollDown_ClampsAtMaxScroll(t *testing.T) {
+	m := detailModelWithNotes(5)
+	// maxScroll = 2*5+3 - 9 = 13-9 = 4
+
+	for i := 0; i < 20; i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = updated.(tabAppModel)
+	}
+
+	const wantMax = 4
+	if m.detailScrollY > wantMax {
+		t.Errorf("detailScrollY = %d, want <= %d (should be clamped at maxScroll)", m.detailScrollY, wantMax)
+	}
+}
+
+// TestTabApp_Detail_EndKey_ClampsToMaxScroll verifies that pressing 'G' sets
+// detailScrollY to the maximum scrollable offset, not an arbitrary large value.
+//
+// Given: detail tab with 5 notes, height=10 (maxScroll=4)
+// When:  'G' is pressed
+// Then:  detailScrollY == 4
+func TestTabApp_Detail_EndKey_ClampsToMaxScroll(t *testing.T) {
+	m := detailModelWithNotes(5)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	um := updated.(tabAppModel)
+
+	const wantMax = 4
+	if um.detailScrollY != wantMax {
+		t.Errorf("detailScrollY = %d after 'G', want %d (maxScroll)", um.detailScrollY, wantMax)
+	}
+}
+
+// TestTabApp_Detail_ScrollUp_AfterEndKey_Decrements verifies that pressing 'k'
+// after pressing 'G' actually decrements the scroll position. This was broken
+// when 'G' set detailScrollY=999999 — the user would need thousands of 'k'
+// presses before movement became visible.
+//
+// Given: detail tab at maximum scroll (after G)
+// When:  'k' is pressed
+// Then:  detailScrollY decreases by 1
+func TestTabApp_Detail_ScrollUp_AfterEndKey_Decrements(t *testing.T) {
+	m := detailModelWithNotes(5)
+
+	// Go to bottom.
+	raw, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = raw.(tabAppModel)
+	atBottom := m.detailScrollY
+
+	// Press k once.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	um := updated.(tabAppModel)
+
+	if um.detailScrollY != atBottom-1 {
+		t.Errorf("detailScrollY = %d after k from bottom (%d), want %d", um.detailScrollY, atBottom, atBottom-1)
+	}
+}
+
+// TestTabApp_Detail_PgDown_ClampsAtMaxScroll verifies that pgdown does not
+// push detailScrollY past the maximum scrollable offset.
+//
+// Given: detail tab with 5 notes, height=10 (maxScroll=4)
+// When:  pgdown is pressed
+// Then:  detailScrollY <= 4
+func TestTabApp_Detail_PgDown_ClampsAtMaxScroll(t *testing.T) {
+	m := detailModelWithNotes(5)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	um := updated.(tabAppModel)
+
+	const wantMax = 4
+	if um.detailScrollY > wantMax {
+		t.Errorf("detailScrollY = %d after pgdown, want <= %d", um.detailScrollY, wantMax)
+	}
+}
+
+// ── Issue 2: Droplets list scroll offset ─────────────────────────────────────
+
+// TestTabApp_Droplets_ScrollTop_FollowsCursorDown verifies that dropletsScrollTop
+// adjusts when the cursor moves below the visible viewport.
+//
+// Given: 10 items, height=7 (viewH=6, header+sep consume 2 lines → 4 item rows)
+// When:  cursor moves down to item 4 (content line 6, just past viewH=6)
+// Then:  dropletsScrollTop > 0 (viewport scrolled to follow cursor)
+func TestTabApp_Droplets_ScrollTop_FollowsCursorDown(t *testing.T) {
+	m := newTabAppModel("", "")
+	items := make([]*cistern.Droplet, 10)
+	for i := range items {
+		items[i] = &cistern.Droplet{ID: fmt.Sprintf("ci-%04d", i), Status: "open"}
+	}
+	m.data = &DashboardData{CisternItems: items}
+	m.tab = tabDroplets
+	m.cursor = 0
+	m.height = 7 // viewH=6; item cursorLine=cursor+2; item4→cursorLine6≥0+6 → scroll
+	m.width = 80
+
+	// Move cursor to item 4 (one past visible area).
+	for i := 0; i < 4; i++ {
+		raw, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = raw.(tabAppModel)
+	}
+
+	if m.cursor != 4 {
+		t.Fatalf("cursor = %d, want 4", m.cursor)
+	}
+	if m.dropletsScrollTop <= 0 {
+		t.Errorf("dropletsScrollTop = %d, want > 0 after cursor escaped viewport", m.dropletsScrollTop)
+	}
+}
+
+// TestTabApp_Droplets_ScrollTop_FollowsCursorUp verifies that dropletsScrollTop
+// decreases when the cursor moves above the visible viewport.
+//
+// Given: dropletsScrollTop=5, cursor=3 (above scrollTop after moving up)
+// When:  'k' is pressed so cursor moves to 2 (cursorLine=4, below scrollTop=5)
+// Then:  dropletsScrollTop adjusts so cursor is visible (≤ cursorLine)
+func TestTabApp_Droplets_ScrollTop_FollowsCursorUp(t *testing.T) {
+	m := newTabAppModel("", "")
+	items := make([]*cistern.Droplet, 10)
+	for i := range items {
+		items[i] = &cistern.Droplet{ID: fmt.Sprintf("ci-%04d", i), Status: "open"}
+	}
+	m.data = &DashboardData{CisternItems: items}
+	m.tab = tabDroplets
+	m.cursor = 3
+	m.dropletsScrollTop = 6 // cursor line 5 < scrollTop 6 → should adjust on next k
+	m.height = 10
+	m.width = 80
+
+	raw, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	um := raw.(tabAppModel)
+
+	// cursor=2, cursorLine=4. dropletsScrollTop must be ≤ 4.
+	cursorLine := um.cursor + 2
+	if um.dropletsScrollTop > cursorLine {
+		t.Errorf("dropletsScrollTop = %d > cursorLine %d — cursor above visible viewport", um.dropletsScrollTop, cursorLine)
+	}
+}
+
+// TestTabApp_Droplets_View_CursorAlwaysVisible verifies that the cursor row
+// appears in the rendered output even when the list is longer than the viewport.
+//
+// Given: 20 items, height=8, cursor at item 15
+// When:  View() is called
+// Then:  the cursor's item ID appears in the output
+func TestTabApp_Droplets_View_CursorAlwaysVisible(t *testing.T) {
+	m := newTabAppModel("", "")
+	items := make([]*cistern.Droplet, 20)
+	for i := range items {
+		items[i] = &cistern.Droplet{ID: fmt.Sprintf("ci-%04d", i), Status: "open"}
+	}
+	m.data = &DashboardData{CisternItems: items}
+	m.tab = tabDroplets
+	m.cursor = 15
+	m.height = 8
+	m.width = 80
+
+	// Move cursor to 15 so dropletsScrollTop is set correctly.
+	for i := 0; i < 15; i++ {
+		raw, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		m = raw.(tabAppModel)
+	}
+
+	view := m.View()
+	wantID := fmt.Sprintf("ci-%04d", 15)
+	if !strings.Contains(view, wantID) {
+		t.Errorf("view does not contain cursor item %q — cursor is off screen:\n%s", wantID, view)
+	}
+}
+
+// ── Issue 3: Error handling in fetchDetailCmd ─────────────────────────────────
+
+// TestTabApp_Detail_NotesFetchError_ShowsErrorIndicator verifies that when
+// the notes fetch fails, the detail view shows an error indication rather than
+// silently displaying "(no notes yet)" as if there were simply no notes.
+//
+// Given: detail tab with selectedID="ci-aaa"
+// When:  tuiDetailDataMsg arrives with err set (simulating GetNotes failure)
+// Then:  the model records the error and the view contains an error indicator
+func TestTabApp_Detail_NotesFetchError_ShowsErrorIndicator(t *testing.T) {
+	m := newTabAppModel("", "")
+	m.data = &DashboardData{}
+	m.tab = tabDetail
+	m.selectedID = "ci-aaa"
+	m.detailDroplet = &cistern.Droplet{ID: "ci-aaa", Title: "Test", Status: "open"}
+	m.width = 120
+	m.height = 30
+
+	fetchErr := errors.New("database query failed")
+	updated, _ := m.Update(tuiDetailDataMsg{dropletID: "ci-aaa", err: fetchErr})
+	um := updated.(tabAppModel)
+
+	if um.detailErr == nil {
+		t.Fatal("detailErr should be set when tuiDetailDataMsg carries an error")
+	}
+
+	view := um.View()
+	if strings.Contains(view, "(no notes yet)") {
+		t.Errorf("view should not show '(no notes yet)' when an error occurred; got:\n%s", view)
+	}
+	// The view must contain some error indication — either "error" or the error text.
+	if !strings.Contains(view, "error") && !strings.Contains(view, fetchErr.Error()) {
+		t.Errorf("view should contain error indication, got:\n%s", view)
 	}
 }

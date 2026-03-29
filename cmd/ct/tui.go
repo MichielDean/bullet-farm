@@ -19,9 +19,12 @@ const (
 // tuiDetailDataMsg carries notes fetched for the Detail panel.
 // The dropletID field lets the handler discard stale responses when the user
 // navigates away before the fetch completes.
+// err is non-nil when the notes fetch failed; the Detail view displays an error
+// indicator so the user is not misled into thinking the droplet has no notes.
 type tuiDetailDataMsg struct {
 	dropletID string
 	notes     []cistern.CataractaeNote
+	err       error
 }
 
 // tabAppModel is the root Bubble Tea model for `ct tui`.
@@ -35,8 +38,9 @@ type tabAppModel struct {
 	stateHash string
 
 	// Active view: tabDroplets or tabDetail.
-	tab    int
-	cursor int // cursor position in the Droplets list
+	tab              int
+	cursor           int // cursor position in the Droplets list
+	dropletsScrollTop int // viewport line offset for the Droplets list
 
 	// Detail panel state — populated when the Detail view opens.
 	selectedID    string
@@ -44,6 +48,7 @@ type tabAppModel struct {
 	detailNotes   []cistern.CataractaeNote // chronological order (oldest first)
 	detailSteps   []string                 // pipeline step names for the droplet
 	detailScrollY int
+	detailErr     error // non-nil when the notes fetch failed
 
 	width  int
 	height int
@@ -79,8 +84,8 @@ func (m tabAppModel) fetchDetailCmd(dropletID string) tea.Cmd {
 			return tuiDetailDataMsg{dropletID: dropletID}
 		}
 		defer c.Close()
-		notes, _ := c.GetNotes(dropletID)
-		return tuiDetailDataMsg{dropletID: dropletID, notes: notes}
+		notes, err := c.GetNotes(dropletID)
+		return tuiDetailDataMsg{dropletID: dropletID, notes: notes, err: err}
 	}
 }
 
@@ -99,6 +104,7 @@ func (m tabAppModel) openDetail(dropletID string) (tabAppModel, tea.Cmd) {
 	m.detailDroplet = m.findDroplet(dropletID)
 	m.detailNotes = nil
 	m.detailScrollY = 0
+	m.detailErr = nil
 	m.detailSteps = m.findStepsForDroplet(dropletID)
 	return m, m.fetchDetailCmd(dropletID)
 }
@@ -135,6 +141,43 @@ func (m tabAppModel) findStepsForDroplet(dropletID string) []string {
 	return nil
 }
 
+// detailLineCount returns the number of content lines that viewDetail produces
+// for the current model state. Used by updateDetail to compute maxScroll and
+// clamp detailScrollY after every scroll operation so the model never retains
+// an inflated offset that makes scroll-up appear broken.
+func (m tabAppModel) detailLineCount() int {
+	if m.detailDroplet == nil {
+		// "  Loading…\n\n" splits into 3 lines; no scrolling meaningful here.
+		return 3
+	}
+	n := 2 // header line + repo·status·step line
+	if len(m.detailSteps) > 0 {
+		n++ // pipeline position indicator
+	}
+	n++ // separator
+	n++ // "NOTES (count)" heading
+
+	if m.detailErr != nil {
+		n++ // error message line
+	} else if len(m.detailNotes) == 0 {
+		n++ // "(no notes yet)"
+	} else {
+		for _, note := range m.detailNotes {
+			content := strings.TrimSpace(note.Content)
+			noteLines := strings.Split(content, "\n")
+			n++ // first content line
+			for _, l := range noteLines[1:] {
+				if strings.TrimSpace(l) != "" {
+					n++ // non-empty continuation line
+				}
+			}
+			n++ // blank spacer after each note
+		}
+		n-- // trailing blank is trimmed by viewDetail
+	}
+	return n
+}
+
 // Update routes messages to the active view's handler.
 func (m tabAppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.tab == tabDetail {
@@ -156,6 +199,7 @@ func (m tabAppModel) updateDroplets(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if items := m.visibleItems(); m.cursor >= len(items) && len(items) > 0 {
 			m.cursor = len(items) - 1
 		}
+		m.dropletsScrollTop = m.clampedDropletsScrollTop()
 		return m, tuiTickWithInterval(refreshInterval)
 
 	case tuiTickMsg:
@@ -179,8 +223,31 @@ func (m tabAppModel) updateDroplets(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.openDetail(items[m.cursor].ID)
 			}
 		}
+		m.dropletsScrollTop = m.clampedDropletsScrollTop()
 	}
 	return m, nil
+}
+
+// clampedDropletsScrollTop returns a dropletsScrollTop value adjusted to keep
+// the cursor row within the visible viewport. Content line index for item i is
+// i+2 (header + separator occupy lines 0 and 1).
+func (m tabAppModel) clampedDropletsScrollTop() int {
+	viewH := m.height - 1 // 1 row reserved for the pinned footer
+	if viewH < 1 {
+		viewH = 1
+	}
+	cursorLine := m.cursor + 2 // header + sep = 2 lines before items
+	top := m.dropletsScrollTop
+	if cursorLine < top {
+		top = cursorLine
+	}
+	if cursorLine >= top+viewH {
+		top = cursorLine - viewH + 1
+	}
+	if top < 0 {
+		top = 0
+	}
+	return top
 }
 
 func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -192,13 +259,18 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tuiDetailDataMsg:
 		// Discard stale responses if the user navigated to a different droplet.
 		if msg.dropletID == m.selectedID {
-			notes := make([]cistern.CataractaeNote, len(msg.notes))
-			copy(notes, msg.notes)
-			// DB returns newest first; reverse to chronological order (oldest first).
-			for i, j := 0, len(notes)-1; i < j; i, j = i+1, j-1 {
-				notes[i], notes[j] = notes[j], notes[i]
+			if msg.err != nil {
+				m.detailErr = msg.err
+			} else {
+				m.detailErr = nil
+				notes := make([]cistern.CataractaeNote, len(msg.notes))
+				copy(notes, msg.notes)
+				// DB returns newest first; reverse to chronological order (oldest first).
+				for i, j := 0, len(notes)-1; i < j; i, j = i+1, j-1 {
+					notes[i], notes[j] = notes[j], notes[i]
+				}
+				m.detailNotes = notes
 			}
-			m.detailNotes = notes
 		}
 
 	case tuiDataMsg:
@@ -213,6 +285,14 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fetchDataCmd()
 
 	case tea.KeyMsg:
+		viewH := m.height - 1
+		if viewH < 1 {
+			viewH = 1
+		}
+		maxScroll := m.detailLineCount() - viewH
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
 		switch msg.String() {
 		case "q", "Q", "ctrl+c":
 			return m, tea.Quit
@@ -229,7 +309,7 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "home", "g":
 			m.detailScrollY = 0
 		case "end", "G":
-			m.detailScrollY = 999999 // clamped in viewDetail
+			m.detailScrollY = maxScroll
 		case "pgdown", "ctrl+d":
 			m.detailScrollY += m.height / 2
 		case "pgup", "ctrl+u":
@@ -237,6 +317,10 @@ func (m tabAppModel) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.detailScrollY < 0 {
 				m.detailScrollY = 0
 			}
+		}
+		// Clamp to valid range after every scroll operation.
+		if m.detailScrollY > maxScroll {
+			m.detailScrollY = maxScroll
 		}
 	}
 	return m, nil
@@ -303,7 +387,7 @@ func (m tabAppModel) viewDroplets() string {
 	parts = append(parts, sep)
 	footer := tuiStyleFooter.Render("  ↑↓/jk navigate  enter/d detail  q quit")
 
-	// Apply viewport — same pattern as dashboardTUIModel.View().
+	// Apply viewport with scroll offset so the cursor is always visible.
 	full := strings.Join(parts, "\n")
 	lines := strings.Split(full, "\n")
 	total := len(lines)
@@ -311,11 +395,22 @@ func (m tabAppModel) viewDroplets() string {
 	if viewH < 1 {
 		viewH = 1
 	}
-	end := viewH
+	scrollTop := m.dropletsScrollTop
+	maxScrollTop := total - viewH
+	if maxScrollTop < 0 {
+		maxScrollTop = 0
+	}
+	if scrollTop > maxScrollTop {
+		scrollTop = maxScrollTop
+	}
+	if scrollTop < 0 {
+		scrollTop = 0
+	}
+	end := scrollTop + viewH
 	if end > total {
 		end = total
 	}
-	return strings.Join(lines[:end], "\n") + "\n" + footer
+	return strings.Join(lines[scrollTop:end], "\n") + "\n" + footer
 }
 
 // viewDetail renders the Detail panel for the selected droplet.
@@ -386,7 +481,9 @@ func (m tabAppModel) viewDetail() string {
 	// Notes timeline.
 	noteCount := len(m.detailNotes)
 	parts = append(parts, tuiStyleHeader.Render(fmt.Sprintf("  NOTES  (%d)", noteCount)))
-	if noteCount == 0 {
+	if m.detailErr != nil {
+		parts = append(parts, tuiStyleRed.Render("  [error loading notes: "+m.detailErr.Error()+"]"))
+	} else if noteCount == 0 {
 		parts = append(parts, "  (no notes yet)")
 	} else {
 		for _, note := range m.detailNotes {

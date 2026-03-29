@@ -681,6 +681,67 @@ Recovery attempts are attached as notes on the droplet and logged by the Castell
 
 ---
 
+## Architecti: Autonomous Diagnosis Agent
+
+The Architecti is an autonomous recovery operator that diagnoses stagnant droplets and proposes corrective actions. Unlike the automatic stuck delivery and dispatch-loop recovery (which are built-in), the Architecti is an **optional** diagnostic agent that you can enable and configure.
+
+### When it runs
+
+A droplet triggers the Architecti when:
+- The droplet has been **stagnant or blocked** for longer than `threshold_minutes` (configurable, default 30 minutes)
+- The Architecti is **enabled** in your cistern.yaml
+- No Architecti invocation is already in-flight for that droplet
+
+### What it does
+
+The Architecti receives a comprehensive snapshot of the Castellarius state (all droplets, sessions, infrastructure health, recent logs) and outputs a JSON array of recovery actions:
+
+```json
+[
+  {"action": "restart", "droplet_id": "ci-xxxx", "cataractae": "implement", "reason": "..."},
+  {"action": "cancel", "droplet_id": "ci-xxxx", "reason": "..."},
+  {"action": "file", "repo": "cistern", "title": "...", "description": "...", "reason": "..."},
+  {"action": "note", "droplet_id": "ci-xxxx", "body": "...", "reason": "..."},
+  {"action": "restart_castellarius", "reason": "..."}
+]
+```
+
+| Action | Purpose | When to use |
+|---|---|---|
+| **restart** | Restart a droplet at a named cataractae | Transient failures: orphaned sessions, infrastructure blips, timeouts |
+| **cancel** | Mark a droplet as cancelled (irrecoverable) | Work is contradictory, target no longer exists, or redundant |
+| **file** | Create a new droplet for a structural issue | Repeatable bugs in the pipeline itself (not application bugs) |
+| **note** | Add a diagnostic note without changing state | Record observations for human review |
+| **restart_castellarius** | Restart the Castellarius process | Only when health file shows the scheduler is genuinely hung (last tick > 5× poll interval) |
+
+### Configuration
+
+Add an `architecti` section to `~/.cistern/cistern.yaml`:
+
+```yaml
+architecti:
+  enabled: true
+  threshold_minutes: 30
+  max_files_per_run: 100
+```
+
+**Key fields:**
+- `enabled`: Activates the Architecti trigger. When `false` (default), no diagnosis goroutines are spawned
+- `threshold_minutes`: Minutes a droplet must be stagnant/blocked before Architecti is invoked
+- `max_files_per_run`: Maximum number of recovery actions (including file creations) per invocation
+
+**To disable:** Omit the `architecti` section entirely or set `enabled: false`. Existing configs work unchanged.
+
+### Rate limits and safety
+
+- Max 1 `restart` per droplet per 24h rolling window (enforced by Castellarius)
+- Max `max_files_per_run` recovery actions per invocation
+- Unknown action types are safely ignored
+- Actions on delivered or cancelled droplets are rejected
+- All actions are logged and noted on the droplet for audit trail
+
+---
+
 ## Recovery
 
 When a delivery fails mid-flight (merge conflict, CI failure, permission issue) or a droplet gets

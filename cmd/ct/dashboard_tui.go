@@ -932,11 +932,10 @@ func (m dashboardTUIModel) viewInlineFlowNotes(ch CataractaeInfo) []string {
 			}
 
 			who  := "[" + note.CataractaeName + "]"
-			when := ts
 			text := firstMeaningfulLine(note.Content)
 			text  = truncate(text, maxW-30)
 			lines = append(lines,
-				fmt.Sprintf("    › %s  %s  %s", who, text, when),
+				fmt.Sprintf("    › %s  %s  %s", who, text, ts),
 			)
 		}
 	}

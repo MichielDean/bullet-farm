@@ -167,23 +167,15 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 				s.logger.Warn("dispatch-loop recovery: feature branch missing from git — creating fresh branch from origin/main",
 					"droplet", item.ID, "branch", branch)
 				if rmErr := os.RemoveAll(worktreePath); rmErr != nil {
-					reason := fmt.Sprintf("dispatch-loop recovery: could not remove stale worktree directory: %v", rmErr)
 					s.logger.Warn("dispatch-loop recovery: os.RemoveAll failed — skipping fresh-branch retry",
 						"droplet", item.ID, "branch", branch, "error", rmErr)
-					s.addNote(client, item.ID, "dispatch-loop", reason)
-					if escErr := client.Escalate(item.ID, reason); escErr != nil {
-						s.logger.Error("dispatch-loop recovery: escalate failed", "droplet", item.ID, "error", escErr)
-					}
-					s.dispatchLoop.reset(item.ID)
+					s.escalateDroplet(client, item.ID,
+						fmt.Sprintf("dispatch-loop recovery: could not remove stale worktree directory: %v", rmErr))
 					return
 				}
 				if _, err2 := prepareDropletWorktree(primaryDir, s.sandboxRoot, repo.Name, item.ID); err2 != nil {
-					reason := fmt.Sprintf("dispatch-loop recovery: branch %s missing, fresh-branch creation failed: %v", branch, err2)
-					s.addNote(client, item.ID, "dispatch-loop", reason)
-					if escErr := client.Escalate(item.ID, reason); escErr != nil {
-						s.logger.Error("dispatch-loop recovery: escalate failed", "droplet", item.ID, "error", escErr)
-					}
-					s.dispatchLoop.reset(item.ID)
+					s.escalateDroplet(client, item.ID,
+						fmt.Sprintf("dispatch-loop recovery: branch %s missing, fresh-branch creation failed: %v", branch, err2))
 				} else {
 					s.addNote(client, item.ID, "dispatch-loop",
 						fmt.Sprintf("dispatch-loop recovery: %s — fresh branch created from origin/main (branch %s was missing, attempt %s)",
@@ -213,6 +205,16 @@ func (s *Castellarius) recoverDispatchLoop(client CisternClient, item *cistern.D
 	s.addNote(client, item.ID, "dispatch-loop",
 		fmt.Sprintf("dispatch-loop recovery: %s — no applicable recovery (attempt %s), will retry",
 			item.ID, attempt))
+}
+
+// escalateDroplet notes, escalates the droplet to stagnant, and resets the
+// dispatch tracker. It is a terminal operation — callers must return after it.
+func (s *Castellarius) escalateDroplet(client CisternClient, dropletID, reason string) {
+	s.addNote(client, dropletID, "dispatch-loop", reason)
+	if err := client.Escalate(dropletID, reason); err != nil {
+		s.logger.Error("dispatch-loop recovery: escalate failed", "droplet", dropletID, "error", err)
+	}
+	s.dispatchLoop.reset(dropletID)
 }
 
 // worktreeInOutput reports whether out (from "git worktree list --porcelain")

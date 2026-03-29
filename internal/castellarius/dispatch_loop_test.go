@@ -306,6 +306,35 @@ func makeWorktreeDirWithoutFeatureBranch(t *testing.T, worktreeDir string) {
 	branchMustRun(t, branchGitCmd(worktreeDir, "commit", "-m", "init"))
 }
 
+// makePrimaryClone creates a bare remote and clones it to primaryDir with an
+// initial commit on main. It mirrors makeBareAndClone in branch_lifecycle_test.go
+// but accepts a caller-specified destination so the clone lands at the path that
+// recoverDispatchLoop expects (sandboxRoot/<repoName>/_primary).
+func makePrimaryClone(t *testing.T, primaryDir string) {
+	t.Helper()
+	parent := filepath.Dir(primaryDir)
+	remoteDir := filepath.Join(parent, "remote")
+	initDir := filepath.Join(parent, "init")
+	branchMustRun(t, branchGitCmd(".", "init", "--bare", remoteDir))
+	branchMustRun(t, branchGitCmd(".", "init", initDir))
+	branchMustRun(t, branchGitCmd(initDir, "config", "user.email", "test@test.com"))
+	branchMustRun(t, branchGitCmd(initDir, "config", "user.name", "Test"))
+	if err := os.WriteFile(filepath.Join(initDir, "README.md"), []byte("init\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	branchMustRun(t, branchGitCmd(initDir, "add", "."))
+	branchMustRun(t, branchGitCmd(initDir, "commit", "-m", "initial"))
+	branchMustRun(t, branchGitCmd(initDir, "branch", "-M", "main"))
+	branchMustRun(t, branchGitCmd(initDir, "remote", "add", "origin", remoteDir))
+	branchMustRun(t, branchGitCmd(initDir, "push", "-u", "origin", "main"))
+	if err := os.MkdirAll(filepath.Dir(primaryDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, primaryDir))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "test@test.com"))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Test"))
+}
+
 // TestRecoverDispatchLoop_PathspecError_LogsWarnAndEscalates verifies that when
 // prepareDropletWorktree fails with "pathspec did not match any file(s) known to git"
 // (i.e. the feature branch was deleted) and the fresh-branch fallback also fails,
@@ -400,38 +429,13 @@ func TestRecoverDispatchLoop_PathspecError_LogsWarnAndEscalates(t *testing.T) {
 // fresh-branch fallback succeeds, the droplet is NOT escalated and a recovery
 // note is written.
 func TestRecoverDispatchLoop_PathspecError_FreshBranchSucceeds_NoEscalation(t *testing.T) {
-	base := t.TempDir()
-	sandboxRoot := base
+	sandboxRoot := t.TempDir()
 	const repoName = "test-repo"
 	const itemID = "dl-pathspec-fresh"
 
 	primaryDir := filepath.Join(sandboxRoot, repoName, "_primary")
 	worktreeDir := filepath.Join(sandboxRoot, repoName, itemID)
-
-	// Build: bare remote → init + push → clone as primaryDir.
-	remoteDir := filepath.Join(base, "remote")
-	initDir := filepath.Join(base, "init")
-	branchMustRun(t, branchGitCmd(".", "init", "--bare", remoteDir))
-	branchMustRun(t, branchGitCmd(".", "init", initDir))
-	branchMustRun(t, branchGitCmd(initDir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(initDir, "config", "user.name", "Test"))
-	if err := os.WriteFile(filepath.Join(initDir, "README.md"), []byte("init\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	branchMustRun(t, branchGitCmd(initDir, "add", "."))
-	branchMustRun(t, branchGitCmd(initDir, "commit", "-m", "initial"))
-	branchMustRun(t, branchGitCmd(initDir, "branch", "-M", "main"))
-	branchMustRun(t, branchGitCmd(initDir, "remote", "add", "origin", remoteDir))
-	branchMustRun(t, branchGitCmd(initDir, "push", "-u", "origin", "main"))
-	if err := os.MkdirAll(filepath.Dir(primaryDir), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, primaryDir))
-	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Test"))
-
-	// Create a git repo at worktreeDir with no feat/<itemID> branch.
-	// This causes the resume path to fail with "pathspec did not match".
+	makePrimaryClone(t, primaryDir)
 	makeWorktreeDirWithoutFeatureBranch(t, worktreeDir)
 
 	client := newMockClient()

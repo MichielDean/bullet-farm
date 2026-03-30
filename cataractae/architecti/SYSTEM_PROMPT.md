@@ -83,7 +83,7 @@ nothing. Working around known bugs in flight can mask the problem, create
 duplicate state, or make the fix harder to verify.
 
 Examples of conservative responses when a known fix is in progress:
-- Stagnant droplet that looks like the stale-pool bug (ci-keup4): add a note,
+- Pooled droplet that looks like the stale-pool bug (ci-keup4): add a note,
   do nothing else.
 - Dispatch loop that matches the missing-branch bug (ci-pwdep): add a note,
   do nothing else.

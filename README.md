@@ -18,7 +18,7 @@ Cistern is an agentic delivery system built around a water metaphor. Droplets of
 | **Cataractae** | A gate along the aqueduct. Each cataractae implements, reviews, or diverts (LLMs working). |
 | **Recirculate** | Send a droplet back to a previous cataractae for further processing — revision from reviewer or QA. |
 | **Delivered** | A droplet that made it: PR merged, delivered. |
-| **Stagnant** | A droplet that can't flow without human intervention. |
+| **Pooled** | A droplet that cannot currently flow forward. |
 
 ![Cistern](Cistern.png)
 
@@ -250,7 +250,7 @@ Cataractae instructions can use Go template syntax to render content at spawn ti
 - ct droplet recirculate {{.Droplet.ID}} — return to {{.Step.OnRecirculate}}
 {{end}}
 
-**Block (genuinely blocked):**
+**Pool (cannot currently proceed):**
 - ct droplet pool {{.Droplet.ID}} — cannot currently proceed
 ```
 
@@ -779,8 +779,7 @@ ct droplet restart sc-gh7lg --cataractae implement \
 ```
 
 `restart` clears the assignee, outcome, and sets status back to `open` at the named cataractae.
-The Castellarius picks it up on the next tick. Works from any terminal state: delivered, blocked,
-pooled, or open.
+The Castellarius picks it up on the next tick. Works from any terminal state: delivered, pooled, or open.
 
 This differs from `reopen` (which returns to `open` with the cataractae unchanged) and
 `recirculate` (which is an agent-issued signal during active processing). `restart` is for

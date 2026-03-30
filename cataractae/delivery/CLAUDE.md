@@ -153,7 +153,7 @@ Classify each failing check before acting on it. Classification determines wheth
 - Schema mismatches: `field missing`, `type mismatch`, `unknown field`, `validation error`
 - Compilation errors in test or application code
 
-**Stagnant-eligible** — infrastructure failures the implementer cannot address (attempt counter does NOT apply):
+**Pooled-eligible** — infrastructure failures the implementer cannot address (attempt counter does NOT apply):
 - Port conflicts: `address already in use`, `bind: address already in use`
 - Container startup failures: `container exited with code`, `failed to start container`, `OOMKilled`
 - Service unavailable: `connection refused`, `no such host`, `dial tcp.*refused`, `i/o timeout`

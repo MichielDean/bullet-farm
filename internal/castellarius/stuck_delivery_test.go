@@ -50,7 +50,7 @@ func stuckDeliveryWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
 		Cataractae: []aqueduct.WorkflowCataractae{
-			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, OnPass: "delivery", OnFail: "blocked"},
+			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, OnPass: "delivery", OnFail: "pooled"},
 			{
 				Name:           "delivery",
 				Type:           aqueduct.CataractaeTypeAgent,

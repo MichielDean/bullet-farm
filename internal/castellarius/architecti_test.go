@@ -22,24 +22,24 @@ func architectiConfig(maxFiles int) *aqueduct.ArchitectiConfig {
 	}
 }
 
-// stagnantDroplet creates a droplet in stagnant state whose UpdatedAt is
+// stagnantDroplet creates a droplet in pooled state whose UpdatedAt is
 // updatedAgo in the past.
 func stagnantDroplet(id string, updatedAgo time.Duration) *cistern.Droplet {
 	return &cistern.Droplet{
 		ID:        id,
 		Repo:      "test-repo",
-		Status:    "stagnant",
+		Status:    "pooled",
 		UpdatedAt: time.Now().Add(-updatedAgo),
 	}
 }
 
-// blockedDroplet creates a droplet in blocked state whose UpdatedAt is
+// pooledDroplet creates a droplet in pooled state whose UpdatedAt is
 // updatedAgo in the past.
-func blockedDroplet(id string, updatedAgo time.Duration) *cistern.Droplet {
+func pooledDroplet(id string, updatedAgo time.Duration) *cistern.Droplet {
 	return &cistern.Droplet{
 		ID:        id,
 		Repo:      "test-repo",
-		Status:    "blocked",
+		Status:    "pooled",
 		UpdatedAt: time.Now().Add(-updatedAgo),
 	}
 }
@@ -47,7 +47,7 @@ func blockedDroplet(id string, updatedAgo time.Duration) *cistern.Droplet {
 // --- tryEnqueueArchitecti tests ---
 
 func TestTryEnqueueArchitecti_NoExistingNote_EnqueuesAndWritesNote(t *testing.T) {
-	// Given: stagnant droplet with no existing [architecti] invocation note
+	// Given: pooled droplet with no existing [architecti] invocation note
 	client := newMockClient()
 	droplet := stagnantDroplet("d-001", 5*time.Minute)
 	client.items["d-001"] = droplet
@@ -92,7 +92,7 @@ func TestTryEnqueueArchitecti_ExistingInvocationNote_DoesNotEnqueue(t *testing.T
 		{
 			DropletID:      "d-001",
 			CataractaeName: "architecti",
-			Content:        architectiInvocationNotePrefix + " stagnant",
+			Content:        architectiInvocationNotePrefix + " pooled",
 			CreatedAt:      time.Now(),
 		},
 	}
@@ -175,10 +175,10 @@ func TestTryEnqueueArchitecti_AddNoteFails_EnqueuesWithoutNote(t *testing.T) {
 	}
 }
 
-func TestTryEnqueueArchitecti_BlockedDroplet_EnqueuesAndWritesNote(t *testing.T) {
-	// Given: blocked droplet with no existing invocation note
+func TestTryEnqueueArchitecti_PooledDroplet_EnqueuesAndWritesNote(t *testing.T) {
+	// Given: pooled droplet with no existing invocation note
 	client := newMockClient()
-	droplet := blockedDroplet("d-002", 10*time.Minute)
+	droplet := pooledDroplet("d-002", 10*time.Minute)
 	client.items["d-002"] = droplet
 
 	s := testScheduler(client, newMockRunner(client))
@@ -203,13 +203,13 @@ func TestTryEnqueueArchitecti_BlockedDroplet_EnqueuesAndWritesNote(t *testing.T)
 	var found bool
 	for _, n := range notes {
 		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
-			if strings.Contains(n.Content, "blocked") {
+			if strings.Contains(n.Content, "pooled") {
 				found = true
 			}
 		}
 	}
 	if !found {
-		t.Error("expected invocation note mentioning 'blocked' status")
+		t.Error("expected invocation note mentioning 'pooled' status")
 	}
 }
 
@@ -412,7 +412,7 @@ func TestStartArchitectiQueue_DefaultConfig_WhenArchitectiNil(t *testing.T) {
 }
 
 func TestTryEnqueueArchitecti_RestartSafe_ExistingNoteBlocksReEnqueue(t *testing.T) {
-	// Given: Castellarius restarts; stagnant droplet already has an invocation note
+	// Given: Castellarius restarts; pooled droplet already has an invocation note
 	// from the prior run. The note check must prevent re-enqueue.
 	client := newMockClient()
 	droplet := stagnantDroplet("d-001", 120*time.Minute)
@@ -422,7 +422,7 @@ func TestTryEnqueueArchitecti_RestartSafe_ExistingNoteBlocksReEnqueue(t *testing
 		{
 			DropletID:      "d-001",
 			CataractaeName: "architecti",
-			Content:        architectiInvocationNotePrefix + " stagnant",
+			Content:        architectiInvocationNotePrefix + " pooled",
 			CreatedAt:      time.Now().Add(-90 * time.Minute),
 		},
 	}
@@ -756,7 +756,7 @@ func TestStartArchitectiQueue_PanicInRunFn_DrainerContinues(t *testing.T) {
 	s.startArchitectiQueue(ctx)
 
 	// Enqueue the panicking droplet first, then a normal one
-	s.architectiQueue <- &cistern.Droplet{ID: "d-panic", Status: "stagnant"}
+	s.architectiQueue <- &cistern.Droplet{ID: "d-panic", Status: "pooled"}
 	s.architectiQueue <- stagnantDroplet("d-ok", 5*time.Minute)
 
 	// Then: drainer recovers from panic and processes d-ok
@@ -1178,7 +1178,7 @@ func TestRunArchitectiAdHoc_SnapshotContainsTriggerDropletID(t *testing.T) {
 
 	trigger := &cistern.Droplet{
 		ID:        "my-trigger-droplet",
-		Status:    "stagnant",
+		Status:    "pooled",
 		UpdatedAt: time.Now().Add(-30 * time.Minute),
 	}
 
@@ -1386,7 +1386,7 @@ func TestRunArchitectiAdHoc_Normal_MarkdownWrappedJSON_ReturnsParsedActions(t *t
 
 	// LLM commonly wraps JSON in a markdown fenced code block
 	agentOutput := "Here are my proposed actions:\n\n```json\n" +
-		`[{"action":"restart","droplet_id":"d-001","cataractae":"implement","reason":"stagnant"}]` +
+		`[{"action":"restart","droplet_id":"d-001","cataractae":"implement","reason":"pooled"}]` +
 		"\n```\n"
 	s.architectiExecFn = func(_ context.Context, _ string) ([]byte, error) {
 		return []byte(agentOutput), nil

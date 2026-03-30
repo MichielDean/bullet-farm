@@ -163,7 +163,7 @@ func (m *mockClient) GetNotes(id string) ([]cistern.CataractaeNote, error) {
 	return m.notes[id], nil
 }
 
-func (m *mockClient) Escalate(id, reason string) error {
+func (m *mockClient) Pool(id, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.escalated[id] = reason
@@ -321,7 +321,7 @@ func testWorkflow() *aqueduct.Workflow {
 				Name:   "implement",
 				Type:   aqueduct.CataractaeTypeAgent,
 				OnPass: "review",
-				OnFail: "blocked",
+				OnFail: "pooled",
 			},
 			{
 				Name:          "review",
@@ -360,9 +360,9 @@ func testScheduler(client CisternClient, runner CataractaeRunner) *Castellarius 
 func TestRoute(t *testing.T) {
 	step := aqueduct.WorkflowCataractae{
 		OnPass:        "review",
-		OnFail:        "blocked",
+		OnFail:        "pooled",
 		OnRecirculate: "implement",
-		OnEscalate:    "human",
+		OnPool:        "human",
 	}
 
 	tests := []struct {
@@ -370,10 +370,10 @@ func TestRoute(t *testing.T) {
 		want   string
 	}{
 		{ResultPass, "review"},
-		{ResultFail, "blocked"},
+		{ResultFail, "pooled"},
 		{ResultRecirculate, "implement"},
-		{ResultEscalate, "human"},
-		{Result("unknown"), "blocked"},
+		{ResultPool, "human"},
+		{Result("unknown"), "pooled"},
 	}
 
 	for _, tt := range tests {
@@ -385,7 +385,7 @@ func TestRoute(t *testing.T) {
 }
 
 func TestIsTerminal(t *testing.T) {
-	for _, name := range []string{"done", "blocked", "human", "escalate", "Done", "BLOCKED"} {
+	for _, name := range []string{"done", "pooled", "human", "pool", "Done", "POOLED"} {
 		if !isTerminal(name) {
 			t.Errorf("isTerminal(%q) = false, want true", name)
 		}
@@ -507,14 +507,14 @@ func TestTick_TerminalDone(t *testing.T) {
 	}
 }
 
-func TestTick_TerminalBlocked(t *testing.T) {
+func TestTick_TerminalPooled(t *testing.T) {
 	client := newMockClient()
 	client.readyItems = []*cistern.Droplet{
 		{ID: "b1", CurrentCataractae: "implement"},
 	}
 
 	runner := newMockRunner(client)
-	runner.outcomes["implement"] = "block" // block → ResultFail → OnFail = "blocked"
+	runner.outcomes["implement"] = "fail" // fail → ResultFail → OnFail = "pooled"
 
 	sched := testScheduler(client, runner)
 	sched.Tick(context.Background())
@@ -527,7 +527,7 @@ func TestTick_TerminalBlocked(t *testing.T) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if _, ok := client.escalated["b1"]; !ok {
-		t.Error("expected item escalated for terminal 'blocked'")
+		t.Error("expected item pooled for terminal 'pooled'")
 	}
 }
 
@@ -669,7 +669,7 @@ func TestTick_RecirculateNoPassRoute_StillEscalates(t *testing.T) {
 			{
 				Name:   "implement",
 				Type:   aqueduct.CataractaeTypeAgent,
-				OnFail: "blocked",
+				OnFail: "pooled",
 				// OnPass and OnRecirculate intentionally omitted.
 			},
 		},
@@ -714,7 +714,7 @@ func TestTick_RecirculateNoRoute_BlocksWithDiagnosticNote(t *testing.T) {
 				{
 					Name:   "implement",
 					Type:   aqueduct.CataractaeTypeAgent,
-					OnFail: "blocked",
+					OnFail: "pooled",
 					// Intentionally no OnPass and no OnRecirculate
 				},
 				{
@@ -738,11 +738,11 @@ func TestTick_RecirculateNoRoute_BlocksWithDiagnosticNote(t *testing.T) {
 	sched.Tick(context.Background())
 	time.Sleep(10 * time.Millisecond)
 
-	// Then: droplet is blocked/escalated.
+	// Then: droplet is pooled.
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if _, ok := client.escalated["b1"]; !ok {
-		t.Fatal("expected droplet to be blocked/escalated when no on_recirculate route exists")
+		t.Fatal("expected droplet to be pooled when no on_recirculate route exists")
 	}
 
 	// And: a diagnostic note naming the step and missing route is attached.
@@ -1285,11 +1285,11 @@ func criticalWorkflow() *aqueduct.Workflow {
 	return &aqueduct.Workflow{
 		Name: "feature",
 		Cataractae: []aqueduct.WorkflowCataractae{
-			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, OnPass: "adversarial-review", OnFail: "blocked"},
+			{Name: "implement", Type: aqueduct.CataractaeTypeAgent, OnPass: "adversarial-review", OnFail: "pooled"},
 			{Name: "adversarial-review", Type: aqueduct.CataractaeTypeAgent, OnPass: "qa", OnFail: "implement", OnRecirculate: "implement"},
 			{Name: "qa", Type: aqueduct.CataractaeTypeAgent, OnPass: "docs", OnFail: "implement"},
-			{Name: "docs", Type: aqueduct.CataractaeTypeAgent, OnPass: "delivery", OnFail: "implement", OnRecirculate: "implement", OnEscalate: "human"},
-			{Name: "delivery", Type: aqueduct.CataractaeTypeAgent, OnPass: "done", OnRecirculate: "implement", OnEscalate: "human"},
+			{Name: "docs", Type: aqueduct.CataractaeTypeAgent, OnPass: "delivery", OnFail: "implement", OnRecirculate: "implement", OnPool: "human"},
+			{Name: "delivery", Type: aqueduct.CataractaeTypeAgent, OnPass: "done", OnRecirculate: "implement", OnPool: "human"},
 		},
 		Complexity: aqueduct.ComplexityConfig{
 			Standard: aqueduct.ComplexityLevel{Level: 1},
@@ -1612,11 +1612,11 @@ func TestObserve_FirstPass(t *testing.T) {
 }
 
 // TestObserve_ExternallyChangedStatus_FreesPoolSlot verifies that when a droplet's
-// status is changed to 'cancelled' or 'stagnant' externally while in_progress (without
+// status is changed to 'cancelled' or 'pooled' externally while in_progress (without
 // signaling an outcome), the observe phase detects it, kills the agent session, and
 // releases the aqueduct pool slot.
 func TestObserve_ExternallyChangedStatus_FreesPoolSlot(t *testing.T) {
-	for _, extStatus := range []string{"cancelled", "stagnant"} {
+	for _, extStatus := range []string{"cancelled", "pooled"} {
 		t.Run(extStatus, func(t *testing.T) {
 			var logBuf bytes.Buffer
 			client := newMockClient()

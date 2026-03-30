@@ -397,7 +397,7 @@ var statusCmd = &cobra.Command{
 				case "delivered":
 					done++
 				}
-				if item.CurrentCataractae == "human" && (item.Status == "stagnant" || item.Status == "escalated") {
+				if item.CurrentCataractae == "human" && item.Status == "pooled" {
 					humanGated = append(humanGated, item)
 				}
 			}
@@ -560,7 +560,7 @@ var architectiRunCmd = &cobra.Command{
 	Short: "Invoke Architecti ad-hoc: build a snapshot, run the agent, and dispatch actions",
 	Long: `Invoke the Architecti agent on demand.
 
-Architecti is the autonomous recovery agent that examines stagnant and blocked
+Architecti is the autonomous recovery agent that examines pooled
 droplets and takes corrective action (restart, cancel, file, note). Normally it
 is triggered automatically by the scheduler when droplets exceed the stagnation
 threshold.
@@ -742,7 +742,7 @@ func startupRequiredEnvVars(cfgPath string) (requiredVars []string, usesClaude b
 //
 // "queued" counts droplets with status "open".
 // "flowing" counts droplets with status "in_progress".
-// Other statuses (stagnant, delivered, cancelled, …) are ignored.
+// Other statuses (pooled, delivered, cancelled, …) are ignored.
 func repoQueueSummary(repoName string, allItems []*cistern.Droplet) string {
 	queued := 0
 	var flowing []*cistern.Droplet

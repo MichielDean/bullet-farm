@@ -18,7 +18,7 @@ func TestStatusCode(t *testing.T) {
 		{"flowing", colorGreen},
 		{"queued", colorYellow},
 		{"awaiting", colorYellow},
-		{"stagnant", colorRed},
+		{"pooled", colorRed},
 		{"delivered", colorDim},
 		{"cancelled", colorDim},
 		{"unknown", ""},
@@ -42,7 +42,7 @@ func TestStatusCell(t *testing.T) {
 		{"flowing", 12, "● flowing   "},
 		{"queued", 12, "○ queued    "},
 		{"awaiting", 12, "⏸ awaiting  "},
-		{"stagnant", 12, "✗ stagnant  "},
+		{"pooled", 12, "✗ pooled    "},
 		{"delivered", 12, "✓ delivered "},
 		// unknown status: icon is " ", no color code
 		{"unknown", 12, "  unknown   "},

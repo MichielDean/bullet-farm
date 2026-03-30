@@ -184,7 +184,7 @@ func (r *Runner) findWorkerByName(name string) *Worker {
 
 // SpawnStep prepares the sandbox and context for a step, then spawns the agent
 // session in tmux and returns immediately. The agent signals completion by calling
-// `ct droplet pass/recirculate/block <id>`, which the Castellarius observe loop
+// `ct droplet pass/recirculate/pool <id>`, which the Castellarius observe loop
 // detects on its next tick.
 //
 // sandboxDirOverride, if non-empty, is used as the sandbox directory instead of

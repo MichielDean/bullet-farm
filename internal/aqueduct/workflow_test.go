@@ -45,16 +45,16 @@ func TestParseValidWorkflow(t *testing.T) {
 	if impl.OnPass != "review" {
 		t.Errorf("step[0].OnPass = %q, want %q", impl.OnPass, "review")
 	}
-	if impl.OnFail != "blocked" {
-		t.Errorf("step[0].OnFail = %q, want %q", impl.OnFail, "blocked")
+	if impl.OnFail != "pooled" {
+		t.Errorf("step[0].OnFail = %q, want %q", impl.OnFail, "pooled")
 	}
 
 	review := w.Cataractae[1]
 	if review.OnRecirculate != "implement" {
 		t.Errorf("step[1].OnRecirculate = %q, want %q", review.OnRecirculate, "implement")
 	}
-	if review.OnEscalate != "human" {
-		t.Errorf("step[1].OnEscalate = %q, want %q", review.OnEscalate, "human")
+	if review.OnPool != "human" {
+		t.Errorf("step[1].OnPool = %q, want %q", review.OnPool, "human")
 	}
 
 	merge := w.Cataractae[3]
@@ -289,16 +289,16 @@ func TestValidateModelMustBeNonEmpty(t *testing.T) {
 }
 
 func TestTerminalRefsAreValid(t *testing.T) {
-	// "done", "blocked", "human", "escalate" should be accepted as targets.
+	// "done", "pooled", "human", "pool" should be accepted as targets.
 	yaml := `
 name: terminals
 cataractae:
   - name: s1
     type: agent
     on_pass: done
-    on_fail: blocked
+    on_fail: pooled
     on_recirculate: human
-    on_escalate: escalate
+    on_pool: pool
 `
 	_, err := ParseWorkflowBytes([]byte(yaml))
 	if err != nil {

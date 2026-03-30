@@ -105,7 +105,7 @@ ct droplet recirculate <id> --notes "Tests pass but quality is insufficient:\n1.
 
 **Block (genuine ambiguity about requirements that needs human input):**
 ```
-ct droplet block <id> --notes "Escalating: requirements ambiguity — <specific question>"
+ct droplet pool <id> --notes "Escalating: requirements ambiguity — <specific question>"
 ```
 
 **Cancel (won't be implemented — superseded, filed in error, or no longer needed):**

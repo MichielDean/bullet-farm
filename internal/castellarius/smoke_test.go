@@ -23,7 +23,7 @@ func featureWorkflow() *aqueduct.Workflow {
 				Context:        aqueduct.ContextFullCodebase,
 				TimeoutMinutes: 30,
 				OnPass:         "review",
-				OnFail:         "blocked",
+				OnFail:         "pooled",
 			},
 			{
 				Name:       "review",
@@ -32,7 +32,7 @@ func featureWorkflow() *aqueduct.Workflow {
 				Context:    aqueduct.ContextDiffOnly,
 				OnPass:     "qa",
 				OnRecirculate: "implement",
-				OnEscalate: "human",
+				OnPool: "human",
 			},
 			{
 				Name:     "qa",
@@ -48,7 +48,7 @@ func featureWorkflow() *aqueduct.Workflow {
 				Identity:      "delivery",
 				OnPass:        "done",
 				OnRecirculate: "implement",
-				OnEscalate:    "human",
+				OnPool:    "human",
 			},
 		},
 	}
@@ -161,7 +161,7 @@ func (c *pipelineClient) GetNotes(id string) ([]cistern.CataractaeNote, error) {
 	return result, nil
 }
 
-func (c *pipelineClient) Escalate(id, reason string) error {
+func (c *pipelineClient) Pool(id, reason string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.escalated = reason
@@ -220,10 +220,10 @@ func resultToOutcome(r Result) string {
 		return "pass"
 	case ResultRecirculate:
 		return "recirculate"
-	case ResultEscalate:
-		return "escalate"
+	case ResultPool:
+		return "pool"
 	default: // ResultFail and anything unknown
-		return "block"
+		return "fail"
 	}
 }
 

@@ -161,7 +161,7 @@ ct droplet pass <id> --notes "Implemented X using TDD. Added N tests covering ha
 
 **Block (genuinely blocked — waiting on external dependency or fundamentally unclear requirements):**
 ```
-ct droplet block <id> --notes "Blocked: <specific reason>"
+ct droplet pool <id> --notes "Blocked: <specific reason>"
 ```
 
 **Cancel (won't be implemented — superseded, filed in error, or no longer needed):**

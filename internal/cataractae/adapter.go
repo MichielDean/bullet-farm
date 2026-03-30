@@ -61,7 +61,7 @@ func NewAdapter(cfg *aqueduct.AqueductConfig, workflows map[string]*aqueduct.Wor
 // Spawn implements castellarius.CataractaeRunner.
 // For automated steps, runs synchronously and writes the outcome to the DB.
 // For agent steps, spawns a tmux session and returns immediately; the agent
-// signals completion by calling `ct droplet pass/recirculate/block <id>`.
+// signals completion by calling `ct droplet pass/recirculate/pool <id>`.
 func (a *Adapter) Spawn(ctx context.Context, req castellarius.CataractaeRequest) error {
 	if req.Step.Type == aqueduct.CataractaeTypeAutomated {
 		return a.spawnAutomated(ctx, req)

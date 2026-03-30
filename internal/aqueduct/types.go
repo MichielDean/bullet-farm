@@ -44,7 +44,7 @@ type WorkflowCataractae struct {
 	OnPass         string     `yaml:"on_pass,omitempty"`
 	OnFail         string     `yaml:"on_fail,omitempty"`
 	OnRecirculate  string     `yaml:"on_recirculate,omitempty"`
-	OnEscalate     string     `yaml:"on_escalate,omitempty"`
+	OnPool         string     `yaml:"on_pool,omitempty"`
 }
 
 // ComplexityLevel configures a single complexity tier.
@@ -161,9 +161,9 @@ type LLMConfig struct {
 }
 
 // ArchitectiConfig configures the Architecti autonomous diagnosis agent that
-// examines stagnant or blocked droplets. Architecti is always active as a
+// examines pooled droplets. Architecti is always active as a
 // serial queue drainer — no enable flag or threshold required. The scheduler
-// enqueues a droplet on every stagnant/blocked transition (one-to-one guarantee)
+// enqueues a droplet on every pooled transition (one-to-one guarantee)
 // and drains the queue serially in the background.
 type ArchitectiConfig struct {
 	// MaxFilesPerRun caps the number of files architecti may examine per
@@ -213,6 +213,6 @@ type AqueductConfig struct {
 	DashboardFontFamily string `yaml:"dashboard_font_family,omitempty"`
 
 	// Architecti configures the autonomous diagnosis agent that examines
-	// stagnant or blocked droplets. Omit to disable.
+	// pooled droplets. Omit to disable.
 	Architecti *ArchitectiConfig `yaml:"architecti,omitempty"`
 }

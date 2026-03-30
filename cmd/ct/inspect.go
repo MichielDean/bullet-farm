@@ -36,7 +36,7 @@ type cisternInfo struct {
 	Total    int `json:"total"`
 	Flowing  int `json:"flowing"`
 	Queued   int `json:"queued"`
-	Stagnant  int `json:"stagnant"`
+	Pooled    int `json:"pooled"`
 	Delivered int `json:"delivered"`
 }
 
@@ -136,8 +136,8 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 		case "open":
 			queueState.Queued++
 			queueState.Total++
-		case "stagnant":
-			queueState.Stagnant++
+		case "pooled":
+			queueState.Pooled++
 			queueState.Total++
 		case "delivered":
 			queueState.Delivered++

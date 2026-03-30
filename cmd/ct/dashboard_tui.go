@@ -394,9 +394,9 @@ func (m dashboardTUIModel) View() string {
 	parts = append(parts, m.viewCistern()...)
 	parts = append(parts, sep)
 
-	// 5. Stagnant droplets — dedicated panel, always visible.
-	parts = append(parts, tuiStyleHeader.Render("  STAGNANT"))
-	parts = append(parts, m.viewStagnant()...)
+	// 5. Pooled droplets — dedicated panel, always visible.
+	parts = append(parts, tuiStyleHeader.Render("  POOLED"))
+	parts = append(parts, m.viewPooled()...)
 	parts = append(parts, sep)
 
 	// 6. Recent flow.
@@ -1008,22 +1008,22 @@ func (m dashboardTUIModel) viewCisternRow(item *cistern.Droplet) string {
 	)
 }
 
-// viewStagnant renders the stagnant droplets panel.
-// When no stagnant droplets exist it renders a compact count label ("Stagnant: 0")
+// viewPooled renders the pooled droplets panel.
+// When no pooled droplets exist it renders a compact count label ("Pooled: 0")
 // so the operator always knows the section is present. When droplets are present
 // the section expands to a full list showing ID, time since last state change, and title.
-func (m dashboardTUIModel) viewStagnant() []string {
-	if len(m.data.StagnantItems) == 0 {
-		return []string{"  " + tuiStyleDim.Render("Stagnant: 0")}
+func (m dashboardTUIModel) viewPooled() []string {
+	if len(m.data.PooledItems) == 0 {
+		return []string{"  " + tuiStyleDim.Render("Pooled: 0")}
 	}
-	lines := make([]string, 0, len(m.data.StagnantItems))
-	for _, item := range m.data.StagnantItems {
-		lines = append(lines, m.viewStagnantRow(item))
+	lines := make([]string, 0, len(m.data.PooledItems))
+	for _, item := range m.data.PooledItems {
+		lines = append(lines, m.viewPooledRow(item))
 	}
 	return lines
 }
 
-func (m dashboardTUIModel) viewStagnantRow(item *cistern.Droplet) string {
+func (m dashboardTUIModel) viewPooledRow(item *cistern.Droplet) string {
 	icon := tuiStyleRed.Render("✗")
 	id := padRight(item.ID, 10)
 	elapsed := formatElapsed(time.Since(item.UpdatedAt))
@@ -1065,7 +1065,7 @@ func (m dashboardTUIModel) viewRecentRow(item *cistern.Droplet) string {
 	switch item.Status {
 	case "delivered":
 		icon = tuiStyleGreen.Render("✓")
-	case "stagnant":
+	case "pooled":
 		icon = tuiStyleRed.Render("✗")
 	default:
 		icon = "·"

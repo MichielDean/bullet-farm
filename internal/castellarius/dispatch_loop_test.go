@@ -338,7 +338,7 @@ func makePrimaryClone(t *testing.T, primaryDir string) {
 // TestRecoverDispatchLoop_PathspecError_LogsWarnAndEscalates verifies that when
 // prepareDropletWorktree fails with "pathspec did not match any file(s) known to git"
 // (i.e. the feature branch was deleted) and the fresh-branch fallback also fails,
-// the recovery logs at WARN level, escalates the droplet to stagnant with a note
+// the recovery logs at WARN level, escalates the droplet to pooled with a note
 // containing the branch name and failure reason, and resets the dispatch tracker.
 func TestRecoverDispatchLoop_PathspecError_LogsWarnAndEscalates(t *testing.T) {
 	sandboxRoot := t.TempDir()

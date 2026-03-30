@@ -225,7 +225,7 @@ func TestOutcomeValidate(t *testing.T) {
 		{"pass", false},
 		{"fail", false},
 		{"recirculate", false},
-		{"escalate", false},
+		{"pool", false},
 		{"", true},
 		{"unknown", true},
 	}
@@ -247,7 +247,7 @@ func TestOutcomeRouteField(t *testing.T) {
 		{"pass", "on_pass"},
 		{"fail", "on_fail"},
 		{"recirculate", "on_recirculate"},
-		{"escalate", "on_escalate"},
+		{"pool", "on_pool"},
 		{"unknown", ""},
 	}
 

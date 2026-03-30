@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MichielDean/cistern/internal/gates"
-	"github.com/MichielDean/cistern/internal/cistern"
-	"github.com/MichielDean/cistern/internal/castellarius"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/castellarius"
+	"github.com/MichielDean/cistern/internal/cistern"
+	"github.com/MichielDean/cistern/internal/gates"
 )
 
 // Adapter wraps Runner instances to implement castellarius.CataractaeRunner.

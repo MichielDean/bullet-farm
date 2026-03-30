@@ -63,14 +63,14 @@ func TestTruncate(t *testing.T) {
 		max  int
 		want string
 	}{
-		{"hello", 10, "hello"},    // shorter than max — unchanged
-		{"hello", 5, "hello"},     // exactly max — unchanged
+		{"hello", 10, "hello"},      // shorter than max — unchanged
+		{"hello", 5, "hello"},       // exactly max — unchanged
 		{"hello world", 5, "hell…"}, // longer than max
-		{"hello", 1, "…"},         // max <= 1
-		{"hi", 1, "…"},            // max <= 1
-		{"hello", 0, "…"},         // max <= 1 (0)
-		{"", 5, ""},               // empty string
-		{"αβγδε", 3, "αβ…"},       // multi-byte runes
+		{"hello", 1, "…"},           // max <= 1
+		{"hi", 1, "…"},              // max <= 1
+		{"hello", 0, "…"},           // max <= 1 (0)
+		{"", 5, ""},                 // empty string
+		{"αβγδε", 3, "αβ…"},         // multi-byte runes
 	}
 	for _, tt := range tests {
 		got := truncate(tt.s, tt.max)
@@ -163,7 +163,7 @@ func TestParseDuration(t *testing.T) {
 		{"1d", 24 * time.Hour, false},
 		{"30d", 30 * 24 * time.Hour, false},
 		{"invalid", 0, true},
-		{"1.5d", 0, true},  // non-integer days
+		{"1.5d", 0, true}, // non-integer days
 		{"", 0, true},
 	}
 	for _, tt := range tests {
@@ -193,10 +193,10 @@ func TestInferPrefix(t *testing.T) {
 		{"github.com/Org/cistern", "ci"},
 		{"github.com/Org/ABCTool", "ab"},
 		{"NoSlash", "no"},
-		{"ab", "ab"},   // len == 2 → returned as-is
-		{"AB", "AB"},   // len == 2 → returned as-is (NOT lowercased, unlike >2-char names)
-		{"a", "a"},     // len == 1 → returned as-is
-		{"", "ct"},     // empty → default "ct"
+		{"ab", "ab"},              // len == 2 → returned as-is
+		{"AB", "AB"},              // len == 2 → returned as-is (NOT lowercased, unlike >2-char names)
+		{"a", "a"},                // len == 1 → returned as-is
+		{"", "ct"},                // empty → default "ct"
 		{"github.com/Org/", "ct"}, // trailing slash → empty last segment
 	}
 	for _, tt := range tests {

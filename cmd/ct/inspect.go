@@ -9,16 +9,16 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/spf13/cobra"
 )
 
 var inspectTable bool
 
 type cisternStateInfo struct {
-	Config      string `json:"config"`
-	Running     bool   `json:"running"`
+	Config  string `json:"config"`
+	Running bool   `json:"running"`
 }
 
 type cataractaeInfo struct {
@@ -33,9 +33,9 @@ type cataractaeInfo struct {
 }
 
 type cisternInfo struct {
-	Total    int `json:"total"`
-	Flowing  int `json:"flowing"`
-	Queued   int `json:"queued"`
+	Total     int `json:"total"`
+	Flowing   int `json:"flowing"`
+	Queued    int `json:"queued"`
 	Pooled    int `json:"pooled"`
 	Delivered int `json:"delivered"`
 }
@@ -60,7 +60,7 @@ type recentEvent struct {
 
 type inspectOutput struct {
 	Cistern      cisternStateInfo `json:"cistern"`
-	Cataractae      []cataractaeInfo     `json:"cataractae"`
+	Cataractae   []cataractaeInfo `json:"cataractae"`
 	Counts       cisternInfo      `json:"counts"`
 	Droplets     []dropletInfo    `json:"droplets"`
 	RecentEvents []recentEvent    `json:"recent_events"`
@@ -96,7 +96,7 @@ func buildInspectOutput(cfgPath, dbPath string) (inspectOutput, error) {
 			Config:  cfgPath,
 			Running: lockErr == nil,
 		},
-		Cataractae:      []cataractaeInfo{},
+		Cataractae:   []cataractaeInfo{},
 		Droplets:     []dropletInfo{},
 		RecentEvents: []recentEvent{},
 	}

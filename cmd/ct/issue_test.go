@@ -264,7 +264,6 @@ func TestDropletPass_NoIssues(t *testing.T) {
 	}
 }
 
-
 // --- pass: pooled / terminal status tests ---
 
 // TestDropletPass_WhenPooled_SetsStatusDelivered verifies that passing a pooled

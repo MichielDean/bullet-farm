@@ -23,14 +23,14 @@ const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 // Droplet represents a unit of work flowing through the cistern.
 type Droplet struct {
-	ID               string `json:"id"`
-	Repo             string `json:"repo"`
-	Title            string `json:"title"`
-	Description      string `json:"description"`
-	Priority         int    `json:"priority"`
-	Complexity       int    `json:"complexity"`
-	Status           string `json:"status"`
-	Assignee         string `json:"assignee"` // empty string when unassigned
+	ID                string `json:"id"`
+	Repo              string `json:"repo"`
+	Title             string `json:"title"`
+	Description       string `json:"description"`
+	Priority          int    `json:"priority"`
+	Complexity        int    `json:"complexity"`
+	Status            string `json:"status"`
+	Assignee          string `json:"assignee"` // empty string when unassigned
 	CurrentCataractae string `json:"current_cataractae"`
 	// Outcome is set by agents via `ct droplet pass/recirculate/block`.
 	// Empty string means no outcome yet (NULL in DB).
@@ -50,11 +50,11 @@ type Droplet struct {
 
 // CataractaeNote is a note attached by a workflow cataractae.
 type CataractaeNote struct {
-	ID        int       `json:"id"`
-	DropletID    string    `json:"droplet_id"`
-	CataractaeName string   `json:"cataractae_name"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             int       `json:"id"`
+	DropletID      string    `json:"droplet_id"`
+	CataractaeName string    `json:"cataractae_name"`
+	Content        string    `json:"content"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Client is a SQLite-backed work queue client.
@@ -301,7 +301,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 }
 
 // GetReadyForAqueduct is like GetReady but only returns droplets that are either
-// unassigned (assigned_aqueduct = '') or already assigned to aqueductName.
+// unassigned (assigned_aqueduct = ”) or already assigned to aqueductName.
 // This enforces sticky aqueduct assignment: once a droplet enters an aqueduct
 // it stays there for its entire lifecycle.
 func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error) {
@@ -855,9 +855,9 @@ func (c *Client) Purge(olderThan time.Duration, dryRun bool) (int, error) {
 
 // RecentEvent is a summary entry from the events or step_notes table.
 type RecentEvent struct {
-	Time  time.Time `json:"time"`
-	Droplet  string    `json:"droplet"`
-	Event string    `json:"event"`
+	Time    time.Time `json:"time"`
+	Droplet string    `json:"droplet"`
+	Event   string    `json:"event"`
 }
 
 // ListRecentEvents returns up to limit recent entries from the events and

@@ -940,7 +940,7 @@ func TestPurge(t *testing.T) {
 	pooled, _ := c.Add("myrepo", "Pooled", "", 1, 3)
 	inProgress, _ := c.Add("myrepo", "In progress", "", 1, 3)
 
-	c.CloseItem(delivered.ID)        // status = delivered
+	c.CloseItem(delivered.ID)  // status = delivered
 	c.Pool(pooled.ID, "stuck") // status = pooled
 	c.UpdateStatus(inProgress.ID, "in_progress")
 

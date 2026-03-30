@@ -78,26 +78,26 @@ type CataractaeRequest struct {
 // Castellarius is the core loop that polls for work, assigns it to operators,
 // and routes outcomes through workflow cataractae.
 type Castellarius struct {
-	config            aqueduct.AqueductConfig
-	workflows         map[string]*aqueduct.Workflow
-	clients           map[string]CisternClient
-	pools             map[string]*AqueductPool
-	runner            CataractaeRunner
-	logger            *slog.Logger
-	pollInterval      time.Duration
+	config       aqueduct.AqueductConfig
+	workflows    map[string]*aqueduct.Workflow
+	clients      map[string]CisternClient
+	pools        map[string]*AqueductPool
+	runner       CataractaeRunner
+	logger       *slog.Logger
+	pollInterval time.Duration
 	// heartbeatInterval controls how often orphaned in-progress droplets are
 	// checked. Independent of pollInterval so it fires even when the main tick
 	// is busy. Defaults to 30s.
-	heartbeatInterval   time.Duration
-	sandboxRoot         string
-	cleanupInterval     time.Duration
-	dbPath              string
-	wasDrought          bool
-	startupBinaryMtime  time.Time // mtime of the binary at startup; used to detect updates
-	cfgPath             string    // path to cistern.yaml; used to detect config-file updates
-	startupCfgMtime     time.Time // mtime of cistern.yaml at startup; used to detect updates
-	supervised          bool      // true if managed by systemd/supervisord/etc.
-	reloadCh            chan struct{} // signals Tick() to hot-reload workflows from disk
+	heartbeatInterval  time.Duration
+	sandboxRoot        string
+	cleanupInterval    time.Duration
+	dbPath             string
+	wasDrought         bool
+	startupBinaryMtime time.Time     // mtime of the binary at startup; used to detect updates
+	cfgPath            string        // path to cistern.yaml; used to detect config-file updates
+	startupCfgMtime    time.Time     // mtime of cistern.yaml at startup; used to detect updates
+	supervised         bool          // true if managed by systemd/supervisord/etc.
+	reloadCh           chan struct{} // signals Tick() to hot-reload workflows from disk
 
 	// Stuck delivery recovery — injectable for testing.
 	findPRFn        func(ctx context.Context, repoName, dropletID, sandboxDir string) (prURL, state, mergeStateStatus string, err error)
@@ -251,23 +251,23 @@ func New(config aqueduct.AqueductConfig, dbPath string, runner CataractaeRunner,
 	}
 
 	s := &Castellarius{
-		config:             config,
-		workflows:          make(map[string]*aqueduct.Workflow),
-		clients:            make(map[string]CisternClient),
-		pools:              make(map[string]*AqueductPool),
-		runner:             runner,
-		logger:             slog.Default(),
-		pollInterval:       10 * time.Second,
-		heartbeatInterval:  30 * time.Second,
-		drainTimeout:       5 * time.Minute,
-		dbPath:             dbPath,
-		startupBinaryMtime: startupBinaryMtime,
-		supervised:         isSupervisedProcess(),
-		reloadCh:           make(chan struct{}, 1),
-		findPRFn:           defaultFindPR,
-		killSessionFn:      defaultKillSession,
-		rebaseAndPushFn:    defaultRebaseAndPush,
-		ghMergeFn:          defaultGhMerge,
+		config:                 config,
+		workflows:              make(map[string]*aqueduct.Workflow),
+		clients:                make(map[string]CisternClient),
+		pools:                  make(map[string]*AqueductPool),
+		runner:                 runner,
+		logger:                 slog.Default(),
+		pollInterval:           10 * time.Second,
+		heartbeatInterval:      30 * time.Second,
+		drainTimeout:           5 * time.Minute,
+		dbPath:                 dbPath,
+		startupBinaryMtime:     startupBinaryMtime,
+		supervised:             isSupervisedProcess(),
+		reloadCh:               make(chan struct{}, 1),
+		findPRFn:               defaultFindPR,
+		killSessionFn:          defaultKillSession,
+		rebaseAndPushFn:        defaultRebaseAndPush,
+		ghMergeFn:              defaultGhMerge,
 		dispatchLoop:           newDispatchLoopTracker(),
 		lastStallNoted:         make(map[string]time.Time),
 		architectiQueue:        make(chan *cistern.Droplet, architectiQueueCap),
@@ -354,19 +354,19 @@ func NewFromParts(
 	opts ...Option,
 ) *Castellarius {
 	s := &Castellarius{
-		config:            config,
-		workflows:         workflows,
-		clients:           clients,
-		pools:             make(map[string]*AqueductPool),
-		runner:            runner,
-		logger:            slog.Default(),
-		pollInterval:      10 * time.Second,
-		heartbeatInterval: 30 * time.Second,
-		drainTimeout:      5 * time.Minute,
-		findPRFn:          defaultFindPR,
-		killSessionFn:     defaultKillSession,
-		rebaseAndPushFn:   defaultRebaseAndPush,
-		ghMergeFn:         defaultGhMerge,
+		config:                 config,
+		workflows:              workflows,
+		clients:                clients,
+		pools:                  make(map[string]*AqueductPool),
+		runner:                 runner,
+		logger:                 slog.Default(),
+		pollInterval:           10 * time.Second,
+		heartbeatInterval:      30 * time.Second,
+		drainTimeout:           5 * time.Minute,
+		findPRFn:               defaultFindPR,
+		killSessionFn:          defaultKillSession,
+		rebaseAndPushFn:        defaultRebaseAndPush,
+		ghMergeFn:              defaultGhMerge,
 		dispatchLoop:           newDispatchLoopTracker(),
 		lastStallNoted:         make(map[string]time.Time),
 		architectiQueue:        make(chan *cistern.Droplet, architectiQueueCap),
@@ -1078,12 +1078,12 @@ func (s *Castellarius) dispatchRepo(ctx context.Context, repo aqueduct.RepoConfi
 		)
 
 		req := CataractaeRequest{
-			Item:       item,
-			Step:       *step,
-			Workflow:   wf,
-			RepoConfig: repo,
+			Item:         item,
+			Step:         *step,
+			Workflow:     wf,
+			RepoConfig:   repo,
 			AqueductName: worker.Name,
-			Notes:      notes,
+			Notes:        notes,
 		}
 
 		w := worker // capture for goroutine

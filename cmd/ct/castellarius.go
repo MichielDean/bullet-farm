@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
-	"github.com/MichielDean/cistern/internal/cataractae"
 	"github.com/MichielDean/cistern/internal/castellarius"
+	"github.com/MichielDean/cistern/internal/cataractae"
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/skills"
 	"github.com/spf13/cobra"

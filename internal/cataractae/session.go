@@ -567,7 +567,6 @@ func (s *Session) isAgentAlive() bool {
 	return slices.Contains(s.Preset.ProcessNames, current)
 }
 
-
 // claudePathFn resolves the path to the claude executable. It is a variable so
 // tests can substitute it to inject a known absolute path without modifying the
 // process environment or requiring the binary to exist on the test machine.

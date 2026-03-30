@@ -155,4 +155,3 @@ func cataractaeInstructionsTemplate() string {
    - ` + "`ct droplet pool <id> --notes \"...\"`" + `
 `
 }
-

@@ -10,17 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
 const (
-	refreshInterval          = 2 * time.Second
-	idleRefreshInterval      = 5 * time.Second // slow rate when Castellarius is idle
-	recentEventLimit         = 5
-
+	refreshInterval     = 2 * time.Second
+	idleRefreshInterval = 5 * time.Second // slow rate when Castellarius is idle
+	recentEventLimit    = 5
 
 	// ANSI color codes
 	colorGreen  = "\033[32m"
@@ -33,18 +32,16 @@ const (
 	clearScreen = "\033[2J\033[H"
 )
 
-
-
 // CataractaeInfo describes the state of a single aqueduct — its name, which droplet it carries, and where in the cataractae chain that droplet is.
 type CataractaeInfo struct {
 	Name            string        `json:"name"`
-	RepoName        string        `json:"repo_name"`   // repository this aqueduct belongs to
+	RepoName        string        `json:"repo_name"` // repository this aqueduct belongs to
 	DropletID       string        `json:"droplet_id"`
-	Title           string        `json:"title"`       // human-readable title of the flowing droplet
+	Title           string        `json:"title"` // human-readable title of the flowing droplet
 	Step            string        `json:"step"`
-	Steps           []string      `json:"steps"`       // workflow step names in order
-	Elapsed         time.Duration `json:"elapsed"`     // nanoseconds; use elapsed/1e9 for seconds
-	CataractaeIndex  int          `json:"cataractae_index"` // 1-based index; 0 if unknown
+	Steps           []string      `json:"steps"`            // workflow step names in order
+	Elapsed         time.Duration `json:"elapsed"`          // nanoseconds; use elapsed/1e9 for seconds
+	CataractaeIndex int           `json:"cataractae_index"` // 1-based index; 0 if unknown
 	TotalCataractae int           `json:"total_cataractae"`
 }
 

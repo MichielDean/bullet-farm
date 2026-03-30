@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 )
 
 // --- helpers ---
@@ -280,9 +280,9 @@ func TestRenderDashboard_ContainsExpectedSections(t *testing.T) {
 	steps := []string{"implement", "review", "merge"}
 	data := &DashboardData{
 		CataractaeCount: 2,
-		FlowingCount:   1,
-		QueuedCount:    1,
-		DoneCount:      3,
+		FlowingCount:    1,
+		QueuedCount:     1,
+		DoneCount:       3,
 		Cataractae: []CataractaeInfo{
 			{Name: "virgo", DropletID: "ci-abc12", Step: "implement", Steps: steps, CataractaeIndex: 1, TotalCataractae: 3, Elapsed: 2*time.Minute + 14*time.Second},
 			{Name: "marcia", Steps: steps},
@@ -384,7 +384,7 @@ func TestRenderFlowGraphRow_ActiveStep(t *testing.T) {
 		Step:            "review",
 		Steps:           []string{"implement", "review", "qa"},
 		Elapsed:         3*time.Minute + 12*time.Second,
-		CataractaeIndex:  2,
+		CataractaeIndex: 2,
 		TotalCataractae: 3,
 	}
 	graphLine, infoLine := renderFlowGraphRow(ch)
@@ -467,7 +467,7 @@ func TestRenderFlowGraphRow_PointerAligned(t *testing.T) {
 		DropletID:       "ci-abc",
 		Step:            "review",
 		Steps:           []string{"implement", "review", "qa"},
-		CataractaeIndex:  2,
+		CataractaeIndex: 2,
 		TotalCataractae: 3,
 	}
 	graphLine, infoLine := renderFlowGraphRow(ch)
@@ -680,7 +680,7 @@ func TestTUIView_ContainsPooledSection(t *testing.T) {
 	m.height = 50
 	m.data = &DashboardData{
 		PooledItems: nil,
-		FetchedAt:     time.Now(),
+		FetchedAt:   time.Now(),
 	}
 
 	out := m.View()
@@ -693,16 +693,14 @@ func TestTUIView_ContainsPooledSection(t *testing.T) {
 
 func TestRenderDashboard_AqueductsClosedWhenNoCataractae(t *testing.T) {
 	data := &DashboardData{
-		Cataractae:   []CataractaeInfo{},
-		FetchedAt: time.Now(),
+		Cataractae: []CataractaeInfo{},
+		FetchedAt:  time.Now(),
 	}
 	out := renderDashboard(data)
 	if !strings.Contains(out, "No aqueducts configured") {
 		t.Error("expected 'No aqueducts configured' when no channels configured")
 	}
 }
-
-
 
 // --- TestProgressBar ---
 

@@ -50,8 +50,8 @@ type DropletTemplateContext struct {
 // TemplateContext is the top-level data passed to CLAUDE.md template rendering.
 // It maps to the three top-level template namespaces: .Step, .Droplet, .Pipeline.
 type TemplateContext struct {
-	Step     StepTemplateContext
-	Droplet  DropletTemplateContext
+	Step    StepTemplateContext
+	Droplet DropletTemplateContext
 	// Pipeline is the ordered slice of all step names in the workflow.
 	Pipeline []string
 }

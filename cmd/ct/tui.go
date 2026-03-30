@@ -26,11 +26,11 @@ const (
 
 // Action constants identify the pending Detail-panel action.
 const (
-	actionCancel   = "cancel"
-	actionPool = "pool"
-	actionRestart  = "restart"
-	actionAddNote  = "addnote"
-	actionSetStep  = "setstep"
+	actionCancel  = "cancel"
+	actionPool    = "pool"
+	actionRestart = "restart"
+	actionAddNote = "addnote"
+	actionSetStep = "setstep"
 )
 
 // tuiDetailDataMsg carries notes fetched for the Detail panel.
@@ -62,8 +62,8 @@ type tabAppModel struct {
 	data *DashboardData
 
 	// Active view: tabDroplets, tabDetail, or tabPeek.
-	tab              int
-	cursor           int // cursor position in the Droplets list
+	tab               int
+	cursor            int // cursor position in the Droplets list
 	dropletsScrollTop int // viewport line offset for the Droplets list
 
 	// Detail panel state — populated when the Detail view opens.

@@ -230,7 +230,7 @@ func TestValidateCisternConfig_WorkersNamesMismatch(t *testing.T) {
 
 func TestValidateCisternConfig_ZeroWorkers(t *testing.T) {
 	cfg := &AqueductConfig{
-		Repos:           []RepoConfig{{Name: "r1", Cataractae: 0}},
+		Repos:         []RepoConfig{{Name: "r1", Cataractae: 0}},
 		MaxCataractae: 1,
 	}
 	err := ValidateAqueductConfig(cfg)
@@ -254,7 +254,7 @@ func TestValidateCisternConfig_NamesOnly(t *testing.T) {
 
 func TestValidateCisternConfig_MissingRepoName(t *testing.T) {
 	cfg := &AqueductConfig{
-		Repos:           []RepoConfig{{Cataractae: 1}},
+		Repos:         []RepoConfig{{Cataractae: 1}},
 		MaxCataractae: 1,
 	}
 	err := ValidateAqueductConfig(cfg)
@@ -704,4 +704,3 @@ func TestScaffoldCataractaeDir_ErrorIfInstructionsExists(t *testing.T) {
 		t.Errorf("error = %q, want it to contain 'already exists'", err)
 	}
 }
-

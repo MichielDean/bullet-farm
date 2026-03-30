@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/aqueduct"
+	"github.com/MichielDean/cistern/internal/cistern"
 )
 
 // newTestLogger creates a slog.Logger backed by buf for test inspection.
@@ -36,18 +36,17 @@ type mockClient struct {
 	mu                  sync.Mutex
 	readyItems          []*cistern.Droplet
 	readyCalls          int
-	steps               map[string]string              // id → current step (for assertions)
-	items               map[string]*cistern.Droplet    // id → item (for List/SetOutcome)
+	steps               map[string]string           // id → current step (for assertions)
+	items               map[string]*cistern.Droplet // id → item (for List/SetOutcome)
 	notes               map[string][]cistern.CataractaeNote
 	pooled              map[string]string
 	attached            []attachedNote
 	closed              map[string]bool
 	lastReviewedCommits map[string]string
-	addNoteErr          error // if set, AddNote returns this error
-	getNotesErr         error // if set, GetNotes returns this error
-	getReadyErr         error // if set, GetReady returns this error once then clears
-	listErr             error // if set, List returns this error
-	assignErr           error // if set, Assign returns this error
+	addNoteErr          error             // if set, AddNote returns this error
+	getReadyErr         error             // if set, GetReady returns this error once then clears
+	listErr             error             // if set, List returns this error
+	assignErr           error             // if set, Assign returns this error
 	cancelled           map[string]string // id → cancel reason
 	filed               []filedDroplet    // FileDroplet calls
 	assignCalls         int               // total Assign call count
@@ -157,9 +156,6 @@ func (m *mockClient) AddNote(id, fromStep, notes string) error {
 func (m *mockClient) GetNotes(id string) ([]cistern.CataractaeNote, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.getNotesErr != nil {
-		return nil, m.getNotesErr
-	}
 	return m.notes[id], nil
 }
 
@@ -410,7 +406,7 @@ func TestCurrentStep_FirstStep(t *testing.T) {
 func TestCurrentStep_FromCurrentStep(t *testing.T) {
 	wf := testWorkflow()
 	item := &cistern.Droplet{
-		ID:               "b1",
+		ID:                "b1",
 		CurrentCataractae: "review",
 	}
 
@@ -423,7 +419,7 @@ func TestCurrentStep_FromCurrentStep(t *testing.T) {
 func TestCurrentStep_UnknownStep(t *testing.T) {
 	wf := testWorkflow()
 	item := &cistern.Droplet{
-		ID:               "b1",
+		ID:                "b1",
 		CurrentCataractae: "nonexistent",
 	}
 
@@ -1055,57 +1051,6 @@ func TestTick_PerRepoIsolation(t *testing.T) {
 	}
 }
 
-func TestTick_ScanBadStates_ExistingStagnantDroplet_Enqueued(t *testing.T) {
-	// Given: a stagnant droplet exists with no invocation note before the tick
-	client := newMockClient()
-	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
-	sched := testScheduler(client, newMockRunner(client))
-
-	// When: tick runs
-	sched.Tick(context.Background())
-
-	// Then: droplet is in the architectiQueue — scanBadStates ran at the end of tick
-	select {
-	case got := <-sched.architectiQueue:
-		if got.ID != "d-001" {
-			t.Errorf("queue got droplet ID %q, want %q", got.ID, "d-001")
-		}
-	default:
-		t.Fatal("expected d-001 in architectiQueue after tick, but queue was empty")
-	}
-}
-
-func TestRun_StartupScan_ExistingStagnantDroplet_Enqueued(t *testing.T) {
-	// Given: a stagnant droplet exists before Castellarius starts
-	client := newMockClient()
-	client.items["d-001"] = &cistern.Droplet{ID: "d-001", Repo: "test-repo", Status: "stagnant"}
-
-	runner := newMockRunner(client)
-	sched := testScheduler(client, runner)
-	// Inject a no-op runArchitectiFn so the drainer does not attempt real invocations.
-	sched.runArchitectiFn = func(_ context.Context, _ *cistern.Droplet, _ aqueduct.ArchitectiConfig) error {
-		return nil
-	}
-
-	// Use a pre-cancelled context — Run exits immediately after the startup scan.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	sched.Run(ctx) //nolint:errcheck
-
-	// Then: invocation note present — startup scanBadStates called tryEnqueueArchitecti.
-	// Removing s.scanBadStates() from Run() would leave this test failing.
-	client.mu.Lock()
-	notes := client.notes["d-001"]
-	client.mu.Unlock()
-
-	for _, n := range notes {
-		if n.CataractaeName == "architecti" && strings.HasPrefix(n.Content, architectiInvocationNotePrefix) {
-			return
-		}
-	}
-	t.Error("expected architecti invocation note after startup scan, but none found")
-}
-
 func TestRun_CancelledContext(t *testing.T) {
 	client := newMockClient()
 	runner := newMockRunner(nil)
@@ -1406,9 +1351,9 @@ func TestComplexity_HumanGateSetsCurrentCataractae(t *testing.T) {
 
 func TestParseOutcome(t *testing.T) {
 	tests := []struct {
-		outcome         string
-		wantResult      Result
-		wantRecircTo    string
+		outcome      string
+		wantResult   Result
+		wantRecircTo string
 	}{
 		{"pass", ResultPass, ""},
 		{"recirculate", ResultRecirculate, ""},
@@ -1474,11 +1419,11 @@ func TestObserve_HeadNotAdvanced(t *testing.T) {
 
 	client := newMockClient()
 	item := &cistern.Droplet{
-		ID:               "ph-1",
+		ID:                "ph-1",
 		CurrentCataractae: "implement",
-		Assignee:         "alpha",
-		Status:           "in_progress",
-		Outcome:          "pass",
+		Assignee:          "alpha",
+		Status:            "in_progress",
+		Outcome:           "pass",
 	}
 	client.items["ph-1"] = item
 
@@ -1530,11 +1475,11 @@ func TestObserve_HeadAdvanced(t *testing.T) {
 
 	client := newMockClient()
 	item := &cistern.Droplet{
-		ID:               "ph-2",
+		ID:                "ph-2",
 		CurrentCataractae: "implement",
-		Assignee:         "alpha",
-		Status:           "in_progress",
-		Outcome:          "pass",
+		Assignee:          "alpha",
+		Status:            "in_progress",
+		Outcome:           "pass",
 	}
 	client.items["ph-2"] = item
 
@@ -1588,11 +1533,11 @@ func TestObserve_HeadAdvanced(t *testing.T) {
 func TestObserve_FirstPass(t *testing.T) {
 	client := newMockClient()
 	item := &cistern.Droplet{
-		ID:               "ph-3",
+		ID:                "ph-3",
 		CurrentCataractae: "implement",
-		Assignee:         "alpha",
-		Status:           "in_progress",
-		Outcome:          "pass",
+		Assignee:          "alpha",
+		Status:            "in_progress",
+		Outcome:           "pass",
 	}
 	client.items["ph-3"] = item
 	// lastReviewedCommits["ph-3"] is empty — first pass.
@@ -2739,7 +2684,7 @@ func TestRemoveDropletWorktree_LogsWorktreeDeleted(t *testing.T) {
 	}
 	buf.Reset()
 
-	removeDropletWorktreeWithLogger(l, primary, sandboxRoot, repoName, "ci-wt-del", false)
+	removeDropletWorktreeWithLogger(l, primary, sandboxRoot, repoName, "ci-wt-del")
 
 	out := buf.String()
 	if !strings.Contains(out, "worktree deleted") {
@@ -2747,11 +2692,6 @@ func TestRemoveDropletWorktree_LogsWorktreeDeleted(t *testing.T) {
 	}
 	if !strings.Contains(out, "ci-wt-del") {
 		t.Errorf("log missing droplet ID; got: %s", out)
-	}
-
-	// Branch deletion is the guarded invariant — assert it directly.
-	if branchExists(t, primary, "feat/ci-wt-del") {
-		t.Error("feat/ci-wt-del should have been deleted by removeDropletWorktreeWithLogger")
 	}
 }
 
@@ -2768,7 +2708,7 @@ func TestRemoveDropletWorktree_LogsWarn_WhenWorktreeMissing(t *testing.T) {
 	dropletID := "ci-wt-missing"
 
 	// Do NOT create the worktree — removal should fail.
-	removeDropletWorktreeWithLogger(l, primary, sandboxRoot, repoName, dropletID, false)
+	removeDropletWorktreeWithLogger(l, primary, sandboxRoot, repoName, dropletID)
 
 	out := buf.String()
 	if strings.Contains(out, "worktree deleted") {

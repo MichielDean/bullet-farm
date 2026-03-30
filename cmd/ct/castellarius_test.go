@@ -283,7 +283,6 @@ func TestValidateWorkflowSkills_ErrorMentionsInstallCommand(t *testing.T) {
 	}
 }
 
-
 // writeMinimalConfig writes a minimal cistern.yaml with the given provider name
 // to a temp dir and returns the path to the config file.
 func writeMinimalConfig(t *testing.T, dir, providerName string) string {

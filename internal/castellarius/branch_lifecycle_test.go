@@ -1,7 +1,7 @@
 package castellarius
 
 import (
-	"bytes"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -294,9 +294,10 @@ func TestPrepareDropletWorktree_FreshBranch_StartsAtOriginMain(t *testing.T) {
 
 // --- keepBranch / stagnant-resume tests ---
 
-// newBranchLifecycleLogger creates a slog.Logger backed by buf for test inspection.
-func newBranchLifecycleLogger(buf *bytes.Buffer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+// newBranchLifecycleLogger creates a slog.Logger that writes to w.
+// Pass io.Discard for tests that don't assert log output.
+func newBranchLifecycleLogger(w io.Writer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 // TestRemoveDropletWorktree_KeepBranch_WhenStagnant_PreservesFeatureBranch verifies
@@ -306,8 +307,7 @@ func TestRemoveDropletWorktree_KeepBranch_WhenStagnant_PreservesFeatureBranch(t 
 	// Given: a worktree created for a droplet with a commit on the feature branch.
 	primaryDir := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
-	var buf bytes.Buffer
-	l := newBranchLifecycleLogger(&buf)
+	l := newBranchLifecycleLogger(io.Discard)
 
 	worktreePath, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-stagnant")
 	if err != nil {
@@ -340,8 +340,7 @@ func TestRemoveDropletWorktree_DeletesBranchAndDir_WhenDone(t *testing.T) {
 	// Given: a worktree created for a droplet.
 	primaryDir := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
-	var buf bytes.Buffer
-	l := newBranchLifecycleLogger(&buf)
+	l := newBranchLifecycleLogger(io.Discard)
 
 	worktreePath, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-done")
 	if err != nil {
@@ -370,8 +369,7 @@ func TestPrepareDropletWorktree_ResumesFromExistingBranch_AfterStagnantCleanup(t
 	// Given: a worktree created, agent commits some work, stagnant cleanup runs.
 	primaryDir := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
-	var buf bytes.Buffer
-	l := newBranchLifecycleLogger(&buf)
+	l := newBranchLifecycleLogger(io.Discard)
 
 	worktreePath, err := prepareDropletWorktreeWithLogger(l, primaryDir, sandboxRoot, "myrepo", "drop-resume-stagnant")
 	if err != nil {

@@ -127,7 +127,7 @@ ct droplet note <id> "..."               # Add a narrative note (for summaries o
 
 **Status Updates:**
 - **In-progress droplets**: Signal commands update the outcome field; Castellarius detects the outcome and routes accordingly
-- **Stagnant droplets**: Signal commands immediately update the status:
+- **Pooled droplets**: Signal commands immediately update the status:
   - `pass` → `status=delivered` (directly closed)
   - `pool` → Sets status to pooled with reason recorded in events
   - `recirculate` → Reopens for the target stage (clears outcome to prevent routing loops)
@@ -259,10 +259,10 @@ The flow dashboard displays a live view of the aqueduct system with sections:
 - Lists all open droplets not yet started
 - Sorted by priority (highest first)
 
-**Stagnant** — Escalated droplets that need intervention
+**Pooled** — Droplets that cannot currently proceed
 - Shows all droplets with pooled status (cannot proceed)
 - Lists ID, time since last state change, and title
-- When count is zero, displays "Stagnant: 0" as a compact indicator
+- When count is zero, displays "Pooled: 0" as a compact indicator
 
 **Recent Flow** — Recently completed or pooled droplets
 - Shows delivered, cancelled, and pooled droplets with timestamps
@@ -303,7 +303,7 @@ The droplet browser provides three views:
 **Detail View Actions** (dispatch directly without leaving the TUI)
 - `r` — **Restart** — Re-enter the pipeline at the start; prompts for optional reason
 - `x` — **Cancel** — Mark as cancelled (confirmation required: `y` or `n`)
-- `e` — **Pool — Mark droplet as pooled (confirmation required: `y` or `n`)
+- `e` — **Pool** — Mark droplet as pooled (confirmation required: `y` or `n`)
 - `n` — **Add Note** — Append a manual note to the droplet; enter text and press Enter
 - `s` — **Set Step** — Jump to a different pipeline step; enter step name and press Enter
 

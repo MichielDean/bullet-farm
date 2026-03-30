@@ -231,6 +231,6 @@ func TestBuildInspectOutput_UsesProvidedPathsAndIncludesPooled(t *testing.T) {
 		t.Fatalf("droplets: got %d, want 1", len(out.Droplets))
 	}
 	if out.Droplets[0].Status != "pooled" {
-		t.Errorf("droplet status: got %q, want escalated", out.Droplets[0].Status)
+		t.Errorf("droplet status: got %q, want pooled", out.Droplets[0].Status)
 	}
 }

@@ -281,7 +281,7 @@ func writeContextFile(path string, p ContextParams) error {
 	b.WriteString("**Recirculate (needs rework — send back upstream):**\n")
 	b.WriteString(fmt.Sprintf("    ct droplet recirculate %s\n", p.Item.ID))
 	b.WriteString(fmt.Sprintf("    ct droplet recirculate %s --to implement\n\n", p.Item.ID))
-	b.WriteString("**Block (cannot currently proceed):**\n")
+	b.WriteString("**Pool (cannot currently proceed):**\n")
 	b.WriteString(fmt.Sprintf("    ct droplet pool %s\n\n", p.Item.ID))
 	b.WriteString("Add notes before signaling:\n")
 	b.WriteString(fmt.Sprintf("    ct droplet note %s \"What you did / found\"\n\n", p.Item.ID))

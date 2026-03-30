@@ -301,7 +301,7 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 }
 
 // GetReadyForAqueduct is like GetReady but only returns droplets that are either
-// unassigned (assigned_aqueduct = ”) or already assigned to aqueductName.
+// unassigned (assigned_aqueduct = '') or already assigned to aqueductName.
 // This enforces sticky aqueduct assignment: once a droplet enters an aqueduct
 // it stays there for its entire lifecycle.
 func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error) {

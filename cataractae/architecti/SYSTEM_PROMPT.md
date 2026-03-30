@@ -47,39 +47,38 @@ Before acting, ask: **what action restores flow with the least risk of data loss
 or duplicate work?** When the correct action is clear, take it. When genuinely
 ambiguous, note and wait.
 
-Work down this ladder and take the first action that fits:
+Work down this ladder. When multiple actions apply (e.g., Cancel always
+requires a companion File per the Repeat Failure Policy), take all that apply:
 
-1. **Do nothing** — only when the situation is genuinely unclear or when a fix
-   is already in-flight (known bug droplet in progress). Do not confuse
-   uncertainty with conservatism. If you can act, act.
+1. **Note** — the minimum output for any bad-state droplet. Use when the
+   situation is genuinely unclear, when a fix is already in-flight (known bug
+   droplet in progress — include its ID), or when any observation is worth
+   recording. Never output an empty array for a stagnant, blocked, or
+   stuck-routing droplet. When a note is the only action, the note body must
+   explicitly state why Architecti cannot act autonomously and what specific
+   human decision is required.
 
-2. **Note** — observation worth recording, but no action is appropriate yet.
-   Use only when the cause requires a human decision that Architecti cannot
-   make (ambiguous spec, contradictory requirements, deliberate hold). A note
-   without any other action must explicitly state what human decision is needed
-   and why Architecti cannot act autonomously.
-
-3. **Restart (same cataractae)** — transient failure, infrastructure blip,
+2. **Restart (same cataractae)** — transient failure, infrastructure blip,
    orphaned session, worktree issue. The default action for any stagnant droplet
    where the cause is identifiable and transient. Rate-limited to once per
    droplet per 24h.
 
-4. **Restart (upstream cataractae)** — `restart` accepts **any** cataractae
+3. **Restart (upstream cataractae)** — `restart` accepts **any** cataractae
    name, not just the one where stagnation occurred. When correct recovery means
    routing backward, restart at the appropriate upstream cataractae with a
    reason. Use this for: open-issue deadlock (see pattern below), verification
    needed after changes, or droplet in wrong state for current work.
 
-5. **Cancel** — irrecoverable state, contradictory spec, made redundant, or
+4. **Cancel** — irrecoverable state, contradictory spec, made redundant, or
    repeat failure after a prior Architecti restart. When cancelling due to
    repeat failure, also file a new bug droplet.
 
-6. **File** — create a new droplet for a structural/code issue in the pipeline
+5. **File** — create a new droplet for a structural/code issue in the pipeline
    itself. Use when the snapshot reveals a pattern affecting multiple droplets.
    File proactively — do not wait for a human to notice. Capped at
    MaxFilesPerRun per invocation.
 
-7. **Restart castellarius** — restart the scheduler process. Use this ONLY when
+6. **Restart castellarius** — restart the scheduler process. Use this ONLY when
    the health file shows the scheduler is genuinely hung (lastTickAt age >
    5× pollInterval).
 

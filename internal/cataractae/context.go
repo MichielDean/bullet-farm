@@ -265,6 +265,23 @@ func writeContextFile(path string, p ContextParams) error {
 		}
 	}
 
+	// Manual notes (added via `ct droplet note`) are operator annotations not
+	// tied to any cataractae — show them in a dedicated section so they are
+	// never silently dropped by the step-name filter above.
+	var manualNotes []cistern.CataractaeNote
+	for _, n := range p.Notes {
+		if n.CataractaeName == "manual" {
+			manualNotes = append(manualNotes, n)
+		}
+	}
+	if len(manualNotes) > 0 {
+		b.WriteString("## Manual Notes\n\n")
+		for _, n := range manualNotes {
+			b.WriteString(n.Content)
+			b.WriteString("\n\n")
+		}
+	}
+
 	if len(p.Step.Skills) > 0 {
 		b.WriteString("<available_skills>\n")
 		for _, skill := range p.Step.Skills {

@@ -191,3 +191,68 @@ func TestWriteContextFile_RecentStepNotes_EmptyWhenNoOwnNotes(t *testing.T) {
 		t.Error("cross-cataractae note 'deliver note only' must not appear anywhere in Recent Step Notes")
 	}
 }
+
+// TestWriteContextFile_ManualNotes_ShownSeparately verifies that notes with
+// CataractaeName=="manual" appear in a dedicated "## Manual Notes" section
+// and are NOT silently dropped by the step-name filter (ci-tgj96).
+//
+// Given: notes from implement, deliver, and manual sources
+// When:  writeContextFile is called with step "implement"
+// Then:  manual notes appear in "## Manual Notes", implement notes appear in
+//
+//	"## Recent Step Notes", and deliver notes appear in neither section.
+func TestWriteContextFile_ManualNotes_ShownSeparately(t *testing.T) {
+	item := &cistern.Droplet{ID: "ci-test3", Title: "Test manual notes", Status: "in_progress"}
+	step := &aqueduct.WorkflowCataractae{Name: "implement", Type: "agent"}
+
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "manual", Content: "operator annotation: critical refinement needed"},
+		{CataractaeName: "implement", Content: "implement note A"},
+		{CataractaeName: "deliver", Content: "deliver note X"},
+		{CataractaeName: "manual", Content: "operator annotation: second note"},
+	}
+
+	p := ContextParams{
+		Item:  item,
+		Step:  step,
+		Notes: notes,
+	}
+
+	ctxPath := filepath.Join(t.TempDir(), "CONTEXT.md")
+	if err := writeContextFile(ctxPath, p); err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	content, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	got := string(content)
+
+	// Manual notes must appear in the dedicated Manual Notes section.
+	manualIdx := strings.Index(got, "## Manual Notes")
+	if manualIdx == -1 {
+		t.Fatal("'## Manual Notes' section not found — manual notes would be invisible (regression: ci-tgj96)")
+	}
+	manualSection := got[manualIdx:]
+	if !strings.Contains(manualSection, "operator annotation: critical refinement needed") {
+		t.Error("expected first manual note in '## Manual Notes' section")
+	}
+	if !strings.Contains(manualSection, "operator annotation: second note") {
+		t.Error("expected second manual note in '## Manual Notes' section")
+	}
+
+	// Own-step notes must still appear in Recent Step Notes.
+	recentIdx := strings.Index(got, "## Recent Step Notes")
+	if recentIdx == -1 {
+		t.Fatal("'## Recent Step Notes' section not found")
+	}
+	if !strings.Contains(got[recentIdx:], "implement note A") {
+		t.Error("expected own-cataractae note 'implement note A' in '## Recent Step Notes'")
+	}
+
+	// Cross-cataractae step notes must not appear anywhere.
+	if strings.Contains(got, "deliver note X") {
+		t.Error("cross-cataractae note 'deliver note X' must not appear anywhere in CONTEXT.md")
+	}
+}

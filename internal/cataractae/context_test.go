@@ -437,6 +437,55 @@ func TestWriteContextFile_Phase1OnlyContainsOwnIssues(t *testing.T) {
 	}
 }
 
+// TestWriteContextFile_RecentStepNotes_MatchesByIdentity verifies that notes
+// stored under step.Identity appear in "Recent Step Notes" even when
+// step.Identity != step.Name (ci-0y5ha: ownNotes partition fix).
+//
+// Given: a step with Name="review" and Identity="reviewer", and a note with
+//
+//	CataractaeName="reviewer" (CLI-sourced notes use Identity, not Name)
+//
+// When:  writeContextFile is called
+// Then:  the note appears in "## Recent Step Notes"
+func TestWriteContextFile_RecentStepNotes_MatchesByIdentity(t *testing.T) {
+	item := &cistern.Droplet{ID: "ci-0y5ha-id", Title: "Identity test", Status: "in_progress"}
+	step := &aqueduct.WorkflowCataractae{Name: "review", Identity: "reviewer", Type: "agent"}
+
+	notes := []cistern.CataractaeNote{
+		{CataractaeName: "reviewer", Content: "note stored under identity"},
+		{CataractaeName: "review", Content: "note stored under name"},
+		{CataractaeName: "implement", Content: "foreign note must be excluded"},
+	}
+
+	p := ContextParams{Item: item, Step: step, Notes: notes}
+	ctxPath := filepath.Join(t.TempDir(), "CONTEXT.md")
+	if err := writeContextFile(ctxPath, p); err != nil {
+		t.Fatalf("writeContextFile: %v", err)
+	}
+
+	content, err := os.ReadFile(ctxPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	got := string(content)
+
+	sectionStart := strings.Index(got, "## Recent Step Notes")
+	if sectionStart == -1 {
+		t.Fatal("'## Recent Step Notes' section not found")
+	}
+	section := got[sectionStart:]
+
+	if !strings.Contains(section, "note stored under identity") {
+		t.Error("note stored under step.Identity must appear in Recent Step Notes (ci-0y5ha fix)")
+	}
+	if !strings.Contains(section, "note stored under name") {
+		t.Error("note stored under step.Name must appear in Recent Step Notes")
+	}
+	if strings.Contains(section, "foreign note must be excluded") {
+		t.Error("foreign note must NOT appear in Recent Step Notes")
+	}
+}
+
 // TestWriteContextFile_NoTwoPhaseWhenOnlyForeignIssues verifies that the
 // two-phase review template is NOT shown when all OpenIssues belong to other
 // cataractae — the current reviewer has no own issues to verify (ci-0y5ha fix 3).

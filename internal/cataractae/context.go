@@ -279,12 +279,14 @@ func writeContextFile(path string, p ContextParams) error {
 	var ownNotes, manualNotes, schedulerNotes []cistern.CataractaeNote
 	for _, n := range p.Notes {
 		switch n.CataractaeName {
-		case p.Step.Name:
-			ownNotes = append(ownNotes, n)
 		case "manual":
 			manualNotes = append(manualNotes, n)
 		case "scheduler":
 			schedulerNotes = append(schedulerNotes, n)
+		default:
+			if n.CataractaeName == p.Step.Name || (p.Step.Identity != "" && n.CataractaeName == p.Step.Identity) {
+				ownNotes = append(ownNotes, n)
+			}
 		}
 	}
 	if len(ownNotes) > 4 {

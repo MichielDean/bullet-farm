@@ -954,10 +954,11 @@ func (s *Castellarius) observeRepo(_ context.Context, repo aqueduct.RepoConfig) 
 		}
 
 		if isTerminal(next) {
-			cleanupBranch(strings.ToLower(next) != "done")
+			keepBranch := strings.ToLower(next) != "done"
+			cleanupBranch(keepBranch)
 			s.handleTerminal(client, item.ID, next, step.Name)
 			// Pooled/human terminals become pooled: enqueue for Architecti.
-			if strings.ToLower(next) != "done" {
+			if keepBranch {
 				s.tryEnqueueArchitecti(client, item)
 			}
 			continue

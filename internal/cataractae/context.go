@@ -414,10 +414,8 @@ func revisionCycleNotes(notes []cistern.CataractaeNote, step *aqueduct.WorkflowC
 	if step != nil && isReviewerCataractae(step) {
 		// Fix ci-0y5ha: reviewer cataractae only see their own prior notes — not other
 		// reviewers'. Match by step name or identity (notes may be stored under either).
-		stepName := step.Name
-		stepIdentity := step.Identity
 		for _, n := range cycle {
-			if n.CataractaeName == stepName || (stepIdentity != "" && n.CataractaeName == stepIdentity) {
+			if n.CataractaeName == step.Name || (step.Identity != "" && n.CataractaeName == step.Identity) {
 				filtered = append(filtered, n)
 			}
 		}

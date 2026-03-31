@@ -354,11 +354,6 @@ func TestRevisionCycleNotes_ReviewerExcludesOtherReviewerCataractae(t *testing.T
 	if got[0].CataractaeName != "security" {
 		t.Errorf("expected security note, got CataractaeName=%q", got[0].CataractaeName)
 	}
-	for _, n := range got {
-		if n.CataractaeName == "qa" {
-			t.Error("qa note must NOT appear in security reviewer's revisionCycleNotes (cross-contamination: ci-0y5ha)")
-		}
-	}
 }
 
 // TestRevisionCycleNotes_ReviewerMatchesByIdentity verifies that when

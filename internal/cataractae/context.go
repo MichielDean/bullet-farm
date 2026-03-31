@@ -246,12 +246,16 @@ func writeContextFile(path string, p ContextParams) error {
 		b.WriteString("---\n\n")
 	}
 
-	// Show the last 4 notes from this cataractae only — cross-cataractae notes would
-	// anchor agents on prior work from unrelated stages (cross-contamination).
-	var ownNotes []cistern.CataractaeNote
+	// Partition notes in one pass:
+	//   ownNotes    — same cataractae only (avoids anchoring on unrelated stages)
+	//   manualNotes — operator annotations via `ct droplet note` (never step-filtered)
+	var ownNotes, manualNotes []cistern.CataractaeNote
 	for _, n := range p.Notes {
-		if n.CataractaeName == p.Step.Name {
+		switch n.CataractaeName {
+		case p.Step.Name:
 			ownNotes = append(ownNotes, n)
+		case "manual":
+			manualNotes = append(manualNotes, n)
 		}
 	}
 	if len(ownNotes) > 4 {
@@ -262,16 +266,6 @@ func writeContextFile(path string, p ContextParams) error {
 		for _, n := range ownNotes {
 			b.WriteString(n.Content)
 			b.WriteString("\n\n")
-		}
-	}
-
-	// Manual notes (added via `ct droplet note`) are operator annotations not
-	// tied to any cataractae — show them in a dedicated section so they are
-	// never silently dropped by the step-name filter above.
-	var manualNotes []cistern.CataractaeNote
-	for _, n := range p.Notes {
-		if n.CataractaeName == "manual" {
-			manualNotes = append(manualNotes, n)
 		}
 	}
 	if len(manualNotes) > 0 {

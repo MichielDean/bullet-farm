@@ -40,9 +40,8 @@ func TestMockLLM_HardcodedDataIsWellFormed(t *testing.T) {
 }
 
 // TestMockLLM_RecordsRequestsForAllProviders is a table-driven test
-// demonstrating how the mock server supports each provider configuration.
-// Each entry reflects how a caller would configure callRefineAPI for that
-// provider once multi-provider support lands.
+// demonstrating how the mock server supports each provider configuration
+// by sending a direct HTTP request to each endpoint.
 func TestMockLLM_RecordsRequestsForAllProviders(t *testing.T) {
 	tests := []struct {
 		name     string

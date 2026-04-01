@@ -17,9 +17,9 @@
 //	hardcoded proposal array and a test session_id. This is the behaviour
 //	expected by callFilterAgent() in filter.go.
 //
-//	When only --print is present (without --output-format), prints the hardcoded
-//	proposal array directly. This preserves backward compatibility with
-//	runNonInteractive() in refine.go.
+//	When only --print is present (without --output-format), or when
+//	FAKEAGENT_MODE=raw_fallback is set, prints the hardcoded proposal array
+//	directly. This exercises the JSON-fallback path in callFilterAgent().
 //
 //	We scan os.Args directly because flag.Parse stops at the first positional
 //	arg (e.g. a subcommand like "exec"), which would otherwise prevent --print

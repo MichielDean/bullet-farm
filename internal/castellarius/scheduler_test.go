@@ -48,6 +48,7 @@ type mockClient struct {
 	getNotesErr         error             // if set, GetNotes returns this error
 	getReadyErr         error             // if set, GetReady returns this error once then clears
 	listErr             error             // if set, List returns this error
+	listIssuesErr       error             // if set, ListIssues returns this error
 	assignErr           error             // if set, Assign returns this error
 	cancelled           map[string]string // id → cancel reason
 	filed               []filedDroplet    // FileDroplet calls
@@ -241,6 +242,9 @@ func (m *mockClient) GetLastReviewedCommit(id string) (string, error) {
 func (m *mockClient) ListIssues(dropletID string, openOnly bool, flaggedBy string) ([]cistern.DropletIssue, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.listIssuesErr != nil {
+		return nil, m.listIssuesErr
+	}
 	var result []cistern.DropletIssue
 	for _, iss := range m.issues[dropletID] {
 		if openOnly && iss.Status != "open" {
@@ -1086,6 +1090,40 @@ func TestTick_ImplementRecirculate_GetNotesError_RoutesNormally(t *testing.T) {
 	for _, n := range client.attached {
 		if n.id == "d6" && strings.Contains(n.notes, "loop-recovery") {
 			t.Errorf("unexpected loop-recovery note on GetNotes error: %q", n.notes)
+		}
+	}
+}
+
+func TestTick_ImplementRecirculate_ListIssuesError_RoutesNormally(t *testing.T) {
+	// Given: implement recirculates but ListIssues fails.
+	// When: the scheduler observes the recirculate outcome.
+	// Then: loop recovery does not fire; droplet routes normally back to implement.
+	client := newMockClient()
+	client.readyItems = []*cistern.Droplet{{ID: "d7", CurrentCataractae: "implement"}}
+	client.listIssuesErr = errors.New("storage unavailable")
+
+	runner := newMockRunner(client)
+	runner.outcomes["implement"] = "recirculate"
+
+	sched := loopTestScheduler(client, runner)
+	sched.Tick(context.Background())
+	if !runner.waitCalls(1, time.Second) {
+		t.Fatal("timed out waiting for spawn")
+	}
+	sched.Tick(context.Background())
+	time.Sleep(10 * time.Millisecond)
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	// Should still route to implement — no recovery without issue list.
+	if client.steps["d7"] != "implement" {
+		t.Errorf("expected implement on ListIssues error, got %q", client.steps["d7"])
+	}
+	// No loop-recovery notes should have been added.
+	for _, n := range client.attached {
+		if n.id == "d7" && strings.Contains(n.notes, "loop-recovery") {
+			t.Errorf("unexpected loop-recovery note on ListIssues error: %q", n.notes)
 		}
 	}
 }

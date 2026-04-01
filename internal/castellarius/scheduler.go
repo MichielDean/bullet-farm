@@ -1192,7 +1192,7 @@ const loopDetectN = 2
 // loopRecoveryPendingCount returns the number of [scheduler:loop-recovery-pending]
 // notes for the given issue ID previously written by the scheduler.
 func loopRecoveryPendingCount(notes []cistern.CataractaeNote, issueID string) int {
-	marker := "[scheduler:loop-recovery-pending] issue=" + issueID
+	marker := "[scheduler:loop-recovery-pending] issue=" + issueID + " "
 	count := 0
 	for _, n := range notes {
 		if n.CataractaeName == "scheduler" && strings.Contains(n.Content, marker) {

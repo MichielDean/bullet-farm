@@ -3,6 +3,7 @@ package jira
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,12 @@ import (
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
 )
+
+// errTransport is an http.RoundTripper that always returns a fixed error, used to
+// simulate transport-level failures (e.g. connection refused, DNS failure).
+type errTransport struct{ err error }
+
+func (e errTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, e.err }
 
 // helpers
 
@@ -386,6 +393,106 @@ func TestADFToPlainText(t *testing.T) {
 			},
 			want: "Hello world",
 		},
+		{
+			name: "Heading",
+			doc: &adfDocument{
+				Type: "doc",
+				Content: []adfNode{
+					{
+						Type: "heading",
+						Content: []adfNode{
+							{Type: "text", Text: "Section Title"},
+						},
+					},
+				},
+			},
+			want: "Section Title",
+		},
+		{
+			name: "BulletListWithListItem",
+			doc: &adfDocument{
+				Type: "doc",
+				Content: []adfNode{
+					{
+						Type: "bulletList",
+						Content: []adfNode{
+							{
+								Type: "listItem",
+								Content: []adfNode{
+									{
+										Type: "paragraph",
+										Content: []adfNode{
+											{Type: "text", Text: "First item"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: "First item",
+		},
+		{
+			name: "OrderedListWithListItem",
+			doc: &adfDocument{
+				Type: "doc",
+				Content: []adfNode{
+					{
+						Type: "orderedList",
+						Content: []adfNode{
+							{
+								Type: "listItem",
+								Content: []adfNode{
+									{
+										Type: "paragraph",
+										Content: []adfNode{
+											{Type: "text", Text: "Step one"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: "Step one",
+		},
+		{
+			name: "CodeBlock",
+			doc: &adfDocument{
+				Type: "doc",
+				Content: []adfNode{
+					{
+						Type: "codeBlock",
+						Content: []adfNode{
+							{Type: "text", Text: "fmt.Println()"},
+						},
+					},
+				},
+			},
+			want: "fmt.Println()",
+		},
+		{
+			name: "Blockquote",
+			doc: &adfDocument{
+				Type: "doc",
+				Content: []adfNode{
+					{
+						Type: "blockquote",
+						Content: []adfNode{
+							{
+								Type: "paragraph",
+								Content: []adfNode{
+									{Type: "text", Text: "quoted text"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: "quoted text",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -506,5 +613,33 @@ func TestProvider_FetchIssue_BaseURLTrailingSlashStripped(t *testing.T) {
 
 	if strings.Contains(gotPath, "//") {
 		t.Errorf("request path %q contains double slashes — base URL trailing slash not stripped", gotPath)
+	}
+}
+
+// TestProvider_FetchIssue_ReturnsError_OnTransportFailure verifies FetchIssue returns an error
+// when the HTTP transport itself fails (e.g. connection refused, DNS failure).
+func TestProvider_FetchIssue_ReturnsError_OnTransportFailure(t *testing.T) {
+	client := &http.Client{Transport: errTransport{err: errors.New("connection refused")}}
+	p := newWithClient("http://127.0.0.1:0", "u@e.com", "tok", client)
+
+	_, err := p.FetchIssue("PROJ-1")
+	if err == nil {
+		t.Error("FetchIssue: expected error on transport failure, got nil")
+	}
+}
+
+// TestProvider_FetchIssue_ReturnsError_OnMalformedJSON verifies FetchIssue returns an error
+// when the server responds with HTTP 200 but a non-JSON body.
+func TestProvider_FetchIssue_ReturnsError_OnMalformedJSON(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not valid json {{{"))
+	})
+	p, _ := newTestProvider(t, handler)
+
+	_, err := p.FetchIssue("PROJ-1")
+	if err == nil {
+		t.Error("FetchIssue: expected error on malformed JSON response, got nil")
 	}
 }

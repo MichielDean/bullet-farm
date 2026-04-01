@@ -2730,9 +2730,10 @@ func TestHeartbeatRepo_Debounce_AddNoteFailure_DoesNotArmDebounce(t *testing.T) 
 		t.Error("expected debounce not armed after AddNote failure, but it was set")
 	}
 
-	// Second tick: AddNote now succeeds → stall note and recovery note must be written.
-	// The failed first tick produced no entries; attached[0] is the stall note and
-	// attached[1] is the recovery note, both written on this second tick.
+	// Second tick: AddNote now succeeds → stall note is written.
+	// The failed first tick produced no entries; attached[0] is the stall note,
+	// written on this second tick. No recovery note: assignee is set, so orphan
+	// recovery does not fire.
 	client.addNoteErr = nil
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 	stallNotes := 0

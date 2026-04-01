@@ -53,7 +53,7 @@ BASE=main
 EXTERNAL_REF=$(grep '^\*\*External Ref:\*\*' CONTEXT.md | awk '{print $3}' | tr -d '[:space:]')
 REF_KEY=""
 if [ -n "$EXTERNAL_REF" ]; then
-  REF_KEY=$(echo "$EXTERNAL_REF" | cut -d: -f2)
+  REF_KEY=$(echo "$EXTERNAL_REF" | cut -d: -f2-)
 fi
 
 echo "Delivering $DROPLET_ID from $BRANCH (external_ref: ${EXTERNAL_REF:-none})"

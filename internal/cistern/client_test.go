@@ -1905,3 +1905,37 @@ func TestSetAssignedAqueduct_WhenAlreadySet_DoesNotOverwrite(t *testing.T) {
 		t.Errorf("AssignedAqueduct after second SetAssignedAqueduct = %q, want %q (original must not be overwritten)", got.AssignedAqueduct, "cistern-alpha")
 	}
 }
+
+// TestExternalRef_RoundTrips_ThroughGetReadyForAqueduct verifies that
+// GetReadyForAqueduct — the primary dispatch path used by the castellarius —
+// returns the external_ref stored on the droplet.
+//
+// Given: a droplet with ExternalRef "jira:DPF-456" in the ready state
+// When:  GetReadyForAqueduct is called for the droplet's repo and aqueduct
+// Then:  the returned droplet has ExternalRef == "jira:DPF-456"
+func TestExternalRef_RoundTrips_ThroughGetReadyForAqueduct(t *testing.T) {
+	c := testClient(t)
+	// Given: a droplet with an external_ref set.
+	item, err := c.Add("myrepo", "Imported task", "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetExternalRef(item.ID, "jira:DPF-456"); err != nil {
+		t.Fatal(err)
+	}
+
+	// When: GetReadyForAqueduct is called (droplet has no assigned aqueduct, so it
+	// is eligible for any aqueduct).
+	got, err := c.GetReadyForAqueduct("myrepo", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("GetReadyForAqueduct: expected droplet, got nil")
+	}
+
+	// Then: ExternalRef is populated.
+	if got.ExternalRef != "jira:DPF-456" {
+		t.Errorf("GetReadyForAqueduct ExternalRef = %q, want %q", got.ExternalRef, "jira:DPF-456")
+	}
+}

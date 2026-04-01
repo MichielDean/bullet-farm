@@ -266,6 +266,63 @@ func TestJiraProvider_FetchIssue_TimesOutOnSlowServer(t *testing.T) {
 	}
 }
 
+func TestJiraProvider_FetchIssue_WithADFDescription(t *testing.T) {
+	// Given: a Jira API server that returns an ADF object as the description.
+	adfPayload := map[string]any{
+		"type":    "doc",
+		"version": 1,
+		"content": []any{
+			map[string]any{
+				"type": "paragraph",
+				"content": []any{
+					map[string]any{
+						"type": "text",
+						"text": "This is an ADF description",
+					},
+				},
+			},
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp := map[string]any{
+			"key": "PROJ-10",
+			"fields": map[string]any{
+				"summary":     "ADF issue",
+				"description": adfPayload,
+				"priority":    map[string]string{"name": "Medium"},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	ctor, _ := tracker.Resolve("jira")
+	t.Setenv("JIRA_TOKEN_ADF", "test-token")
+
+	p, err := ctor(tracker.TrackerConfig{
+		Name:     "jira",
+		BaseURL:  srv.URL,
+		TokenEnv: "JIRA_TOKEN_ADF",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When: FetchIssue is called.
+	issue, err := p.FetchIssue("PROJ-10")
+
+	// Then: the description is extracted from the ADF structure.
+	if err != nil {
+		t.Fatalf("FetchIssue: %v", err)
+	}
+	want := "This is an ADF description"
+	if issue.Description != want {
+		t.Errorf("Description = %q, want %q", issue.Description, want)
+	}
+}
+
 // --- helpers ---
 
 type fakeProvider struct{}

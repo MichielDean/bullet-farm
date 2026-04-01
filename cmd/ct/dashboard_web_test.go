@@ -1435,6 +1435,60 @@ func TestDashboardTUI_FrameAccumulate_MidChunkMarkerCommitsPendingAsLastFrame(t 
 	}
 }
 
+// TestDashboardTUI_FrameAccumulate_TwoMarkersInOneChunkCommitsBothFrames verifies
+// that when a single broadcast chunk contains two repaintMarkers, frameAccumulate
+// correctly commits the first frame as lastFrame and begins accumulating the second.
+//
+// Given: a DashboardTUI with inFrame=true and pending = marker+"frame-one-content"
+//
+//	(established by broadcasting marker+"frame-one-content"), flush timer stopped
+//
+// When:  a single chunk marker+"frame-two-content"+marker+"frame-three-start" is broadcast
+// Then:  lastFrame == marker+"frame-two-content"
+// And:   pending  == marker+"frame-three-start"
+//
+// This exercises the loop in frameAccumulate running through a second iteration
+// with idx>=0, verifying that bytes.Clone(repaintMarker) isolates the new pending
+// backing from the committed lastFrame across loop iterations.
+func TestDashboardTUI_FrameAccumulate_TwoMarkersInOneChunkCommitsBothFrames(t *testing.T) {
+	tui := newDashboardTUI("", "", "")
+	marker := string(repaintMarker)
+
+	// Establish inFrame=true with pending = marker+"frame-one-content".
+	tui.broadcast([]byte(marker + "frame-one-content"))
+
+	// Stop the flush timer so it cannot commit pending during the test.
+	tui.mu.Lock()
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	// Single chunk with two repaint markers: frame-two is fully enclosed between
+	// the first and second marker, so frameAccumulate must commit it as lastFrame
+	// and leave frame-three-start accumulating in pending.
+	tui.broadcast([]byte(marker + "frame-two-content" + marker + "frame-three-start"))
+
+	tui.mu.Lock()
+	gotLastFrame := bytes.Clone(tui.lastFrame)
+	gotPending := bytes.Clone(tui.pending)
+	if tui.flushTimer != nil {
+		tui.flushTimer.Stop()
+		tui.flushTimer = nil
+	}
+	tui.mu.Unlock()
+
+	wantLastFrame := []byte(marker + "frame-two-content")
+	if !bytes.Equal(gotLastFrame, wantLastFrame) {
+		t.Errorf("lastFrame = %q, want %q", gotLastFrame, wantLastFrame)
+	}
+	wantPending := []byte(marker + "frame-three-start")
+	if !bytes.Equal(gotPending, wantPending) {
+		t.Errorf("pending = %q, want %q", gotPending, wantPending)
+	}
+}
+
 // readWSTextFrame reads one unmasked WebSocket text frame from br and returns the payload.
 func readWSTextFrame(br *bufio.Reader) (string, error) {
 	header := make([]byte, 2)

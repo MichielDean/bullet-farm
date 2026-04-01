@@ -96,8 +96,137 @@ func GenerateCataractaeFiles(w *Workflow, cataractaeDir string, instructionsFile
 			return written, fmt.Errorf("write %s: %w", path, err)
 		}
 		written = append(written, path)
+
+		posPath, err := writePipelinePositionFile(cataractaeDir, identity, w)
+		if err != nil {
+			return written, err
+		}
+		written = append(written, posPath)
+
+		skillPath, err := injectProtocolSkill(cataractaeDir, identity)
+		if err != nil {
+			return written, err
+		}
+		if skillPath != "" {
+			written = append(written, skillPath)
+		}
 	}
 	return written, nil
+}
+
+// protocolSkillPathFn returns the path to the locally installed cataractae-protocol
+// SKILL.md. Overridable in tests to avoid filesystem dependencies.
+var protocolSkillPathFn = func() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cistern", "skills", "cataractae-protocol", "SKILL.md")
+}
+
+// personaDescription extracts the first non-empty, non-heading line from PERSONA.md
+// data that appears after the "# Role:" header. Falls back to TitleCaseName(identity)
+// when no such line exists.
+func personaDescription(data []byte, identity string) string {
+	seenRole := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# Role:") {
+			seenRole = true
+			continue
+		}
+		if !seenRole || trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		return trimmed
+	}
+	return TitleCaseName(identity)
+}
+
+// neighborDescription returns the display name + description for a neighboring step.
+// If the step has an identity, it reads the description from that identity's PERSONA.md.
+// Otherwise it falls back to TitleCaseName(step.Name).
+func neighborDescription(step WorkflowCataractae, cataractaeDir string) string {
+	if step.Identity == "" {
+		return TitleCaseName(step.Name)
+	}
+	data, err := os.ReadFile(filepath.Join(cataractaeDir, step.Identity, "PERSONA.md"))
+	if err != nil {
+		return TitleCaseName(step.Identity)
+	}
+	return personaDescription(data, step.Identity)
+}
+
+// writePipelinePositionFile writes PIPELINE_POSITION.md into <cataractaeDir>/<identity>/
+// describing the identity's position in the workflow: predecessor and successor step.
+func writePipelinePositionFile(cataractaeDir, identity string, w *Workflow) (string, error) {
+	// Find the first step index that uses this identity.
+	idx := -1
+	for i, step := range w.Cataractae {
+		if step.Identity == identity {
+			idx = i
+			break
+		}
+	}
+
+	var predLine, succLine string
+
+	if idx < 0 || idx == 0 {
+		predLine = "none — you are first"
+	} else {
+		pred := w.Cataractae[idx-1]
+		predName := pred.Identity
+		if predName == "" {
+			predName = pred.Name
+		}
+		predLine = predName + " — " + neighborDescription(pred, cataractaeDir)
+	}
+
+	if idx < 0 || idx == len(w.Cataractae)-1 {
+		succLine = "none — you are last"
+	} else {
+		succ := w.Cataractae[idx+1]
+		succName := succ.Identity
+		if succName == "" {
+			succName = succ.Name
+		}
+		succLine = succName + " — " + neighborDescription(succ, cataractaeDir)
+	}
+
+	content := "# Pipeline Position\n\n" +
+		"- Your role: " + identity + "\n" +
+		"- Predecessor: " + predLine + "\n" +
+		"- Successor: " + succLine + "\n"
+
+	path := filepath.Join(cataractaeDir, identity, "PIPELINE_POSITION.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("write PIPELINE_POSITION.md for %s: %w", identity, err)
+	}
+	return path, nil
+}
+
+// injectProtocolSkill copies the cataractae-protocol SKILL.md into
+// <cataractaeDir>/<identity>/skills/cataractae-protocol/SKILL.md.
+// Returns the destination path and true when copied; returns "", nil when the
+// source is absent or empty (graceful skip for fresh environments).
+func injectProtocolSkill(cataractaeDir, identity string) (string, error) {
+	src := protocolSkillPathFn()
+	if src == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read protocol skill: %w", err)
+	}
+	destDir := filepath.Join(cataractaeDir, identity, "skills", "cataractae-protocol")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir skill dir for %s: %w", identity, err)
+	}
+	dest := filepath.Join(destDir, "SKILL.md")
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
+		return "", fmt.Errorf("write protocol skill for %s: %w", identity, err)
+	}
+	return dest, nil
 }
 
 // TitleCaseName converts a snake_case or kebab-case name to Title Case.

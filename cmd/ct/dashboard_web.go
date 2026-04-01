@@ -244,9 +244,6 @@ func wsReadClientFrame(br *bufio.Reader, buf []byte) (opcode byte, payload []byt
 	return opcode, buf[:payloadLen], buf, nil
 }
 
-// wsUpgrade performs the RFC 6455 handshake. On success it returns the hijacked
-// connection and its buffered read-writer. On failure it writes an HTTP error
-// and returns a non-nil error.
 // isAllowedWSOrigin returns true for localhost and private-network (RFC 1918)
 // addresses. The dashboard is a local tool — LAN access is expected.
 func isAllowedWSOrigin(host string) bool {
@@ -266,6 +263,9 @@ func isAllowedWSOrigin(host string) bool {
 	return false
 }
 
+// wsUpgrade performs the RFC 6455 handshake. On success it returns the hijacked
+// connection and its buffered read-writer. On failure it writes an HTTP error
+// and returns a non-nil error.
 func wsUpgrade(w http.ResponseWriter, r *http.Request) (net.Conn, *bufio.ReadWriter, error) {
 	// Validate Origin header to prevent cross-origin WebSocket hijacking.
 	// Browsers allow JS on any origin to connect to localhost WS endpoints, so

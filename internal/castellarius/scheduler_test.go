@@ -648,15 +648,14 @@ func TestTick_RecirculateNoOnRecirculateRoute_RestartsAtImplement(t *testing.T) 
 		t.Error("expected no pooling when recirculate has no on_recirculate route")
 	}
 	// Exactly one structured routing note must be attached.
-	var hasNote bool
+	noteCount := 0
 	for _, n := range client.attached {
 		if n.id == "b1" && strings.Contains(n.notes, "[scheduler:routing]") && strings.Contains(n.notes, "restarting at implement") {
-			hasNote = true
-			break
+			noteCount++
 		}
 	}
-	if !hasNote {
-		t.Errorf("expected structured routing note, got notes: %v", client.attached)
+	if noteCount != 1 {
+		t.Errorf("expected exactly one structured routing note, got %d; notes: %v", noteCount, client.attached)
 	}
 }
 
@@ -695,6 +694,16 @@ func TestTick_RecirculateNoOnRecirculateOrPassRoute_RestartsAtImplement(t *testi
 	}
 	if client.steps["b2"] != "implement" {
 		t.Errorf("expected restart at implement, got %q", client.steps["b2"])
+	}
+	// Exactly one structured routing note must be attached.
+	noteCount := 0
+	for _, n := range client.attached {
+		if n.id == "b2" && strings.Contains(n.notes, "[scheduler:routing]") && strings.Contains(n.notes, "restarting at implement") {
+			noteCount++
+		}
+	}
+	if noteCount != 1 {
+		t.Errorf("expected exactly one structured routing note, got %d; notes: %v", noteCount, client.attached)
 	}
 }
 
@@ -752,18 +761,17 @@ func TestTick_RecirculateNoRoute_WritesStructuredNoteAndRestartsAtImplement(t *t
 	}
 
 	// And: exactly one structured routing note is attached.
-	found := false
+	noteCount := 0
 	for _, n := range client.attached {
 		if n.id == "b1" &&
 			strings.Contains(n.notes, "[scheduler:routing]") &&
 			strings.Contains(n.notes, "implement") &&
 			strings.Contains(n.notes, "on_recirculate") {
-			found = true
-			break
+			noteCount++
 		}
 	}
-	if !found {
-		t.Errorf("expected structured [scheduler:routing] note, got notes: %v", client.attached)
+	if noteCount != 1 {
+		t.Errorf("expected exactly one structured [scheduler:routing] note, got %d; notes: %v", noteCount, client.attached)
 	}
 }
 

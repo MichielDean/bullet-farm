@@ -23,20 +23,10 @@ func buildTestBin(t *testing.T, name, importPath string) string {
 	return bin
 }
 
-// TestMockLLM_ChatCompletions verifies that the mock server correctly handles
-// POST /v1/chat/completions and returns a well-formed OpenAI response.
-// This endpoint is used by future multi-provider callRefineAPI configurations
-// (openai, openrouter, ollama, custom).
-func TestMockLLM_ChatCompletions(t *testing.T) {
-	mock := mockllm.New()
-	defer mock.Close()
-
-	reqs := mock.Requests()
-	if len(reqs) != 0 {
-		t.Fatalf("expected 0 requests before any calls, got %d", len(reqs))
-	}
-
-	// Parse the hardcoded JSON to verify it is well-formed.
+// TestMockLLM_HardcodedDataIsWellFormed verifies that HardcodedProposalsJSON is
+// valid JSON containing the expected mock payload, so test infrastructure stays
+// honest when mockllm is updated.
+func TestMockLLM_HardcodedDataIsWellFormed(t *testing.T) {
 	var items []map[string]any
 	if err := json.Unmarshal([]byte(mockllm.HardcodedProposalsJSON), &items); err != nil {
 		t.Fatalf("HardcodedProposalsJSON is not valid JSON: %v", err)

@@ -122,6 +122,7 @@ func (m *mockClient) Assign(id, worker, step string) error {
 		item.Outcome = "" // clear outcome on advance
 		if worker == "" {
 			item.Status = "open"
+			item.AssignedAqueduct = ""
 		} else {
 			item.Status = "in_progress"
 		}
@@ -2087,12 +2088,15 @@ func TestHeartbeatRepo_StallDetected_AppendsNoteAndWarnLog(t *testing.T) {
 
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 
-	// Note must have been appended.
-	if len(client.attached) != 1 {
-		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	// Stall note and recovery note must both be appended.
+	if len(client.attached) != 2 {
+		t.Fatalf("expected 2 notes (stall + recovery), got %d", len(client.attached))
 	}
 	if !strings.Contains(client.attached[0].notes, "stalled") {
 		t.Errorf("stall note body missing 'stalled'; got: %s", client.attached[0].notes)
+	}
+	if !strings.Contains(client.attached[1].notes, "[scheduler:recovery]") {
+		t.Errorf("recovery note missing '[scheduler:recovery]'; got: %s", client.attached[1].notes)
 	}
 
 	// A Warn-level log entry must be present containing the droplet ID.
@@ -2127,16 +2131,19 @@ func TestHeartbeatRepo_Debounce_SuppressesSecondNote(t *testing.T) {
 	runner := newMockRunner(client)
 	sched := NewFromParts(config, workflows, clients, runner)
 
-	// First call: no signals → stalled → note written.
+	// First call: no signals → stalled → stall note + recovery note written, item reset to open.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
-	if len(client.attached) != 1 {
-		t.Fatalf("expected 1 stall note after first tick, got %d", len(client.attached))
+	if len(client.attached) != 2 {
+		t.Fatalf("expected 2 notes (stall + recovery) after first tick, got %d", len(client.attached))
+	}
+	if item.Status != "open" {
+		t.Errorf("expected item reset to open after orphan recovery, got status %q", item.Status)
 	}
 
-	// Second call: signals have not advanced → debounce suppresses.
+	// Second call: item is now open (no longer in_progress) → no additional notes.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
-	if len(client.attached) != 1 {
-		t.Errorf("expected still 1 note after second tick (debounced), got %d", len(client.attached))
+	if len(client.attached) != 2 {
+		t.Errorf("expected still 2 notes after second tick (item is open), got %d", len(client.attached))
 	}
 }
 
@@ -2174,10 +2181,10 @@ func TestHeartbeatRepo_Debounce_NoteSignalAdvances_ClearsDebounce(t *testing.T) 
 	}
 
 	// heartbeatRepo should clear the debounce (note signal > debounceTime) and
-	// then detect stall again → write a new note.
+	// then detect stall again → write stall note + recovery note, reset item to open.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
-	if len(client.attached) != 1 {
-		t.Errorf("expected 1 new stall note after note signal reset debounce, got %d", len(client.attached))
+	if len(client.attached) != 2 {
+		t.Errorf("expected 2 notes (stall + recovery) after debounce reset, got %d", len(client.attached))
 	}
 }
 
@@ -2224,10 +2231,10 @@ func TestHeartbeatRepo_Debounce_WorktreeSignalAdvances_ClearsDebounce(t *testing
 	}
 
 	// Debounce should be cleared (worktree signal > debounceTime), droplet is
-	// still stalled → new note written.
+	// still stalled → stall note + recovery note written, item reset to open.
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
-	if len(client.attached) != 1 {
-		t.Errorf("expected 1 new stall note after worktree signal reset debounce, got %d", len(client.attached))
+	if len(client.attached) != 2 {
+		t.Errorf("expected 2 notes (stall + recovery) after worktree signal reset debounce, got %d", len(client.attached))
 	}
 }
 
@@ -2311,8 +2318,8 @@ func TestHeartbeatRepo_StallThreshold_ExplicitMinutesRespected(t *testing.T) {
 
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 
-	if len(client.attached) != 1 {
-		t.Errorf("expected 1 stall note with 1-min threshold and 2-min-old signals, got %d", len(client.attached))
+	if len(client.attached) != 2 {
+		t.Errorf("expected 2 notes (stall + recovery) with 1-min threshold and 2-min-old signals, got %d", len(client.attached))
 	}
 }
 
@@ -2540,10 +2547,11 @@ func TestHeartbeatRepo_StallWithAssignee_SpawnsSession(t *testing.T) {
 	}
 }
 
-// TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn verifies that when a
-// stall is detected but the droplet has no assignee, the stall note is written
-// but runner.Spawn is NOT called (there is no session to resume).
-func TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn(t *testing.T) {
+// TestHeartbeatRepo_StallWithNoAssignee_RecoverAndNoSpawn verifies that when a
+// stall is detected on an orphaned droplet (no assignee), both the stall note and
+// the recovery note are written, the droplet is reset to open, and runner.Spawn is
+// NOT called (there is no session to resume).
+func TestHeartbeatRepo_StallWithNoAssignee_RecoverAndNoSpawn(t *testing.T) {
 	client := newMockClient()
 	runner := newMockRunner(client)
 
@@ -2564,9 +2572,17 @@ func TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn(t *testing.T) {
 
 	sched.heartbeatRepo(context.Background(), config.Repos[0])
 
-	// Stall note must still be written.
-	if len(client.attached) != 1 {
-		t.Fatalf("expected 1 stall note, got %d", len(client.attached))
+	// Stall note and recovery note must both be written.
+	if len(client.attached) != 2 {
+		t.Fatalf("expected 2 notes (stall + recovery) for orphaned droplet, got %d", len(client.attached))
+	}
+	if !strings.Contains(client.attached[1].notes, "[scheduler:recovery]") {
+		t.Errorf("second note should be recovery note; got: %s", client.attached[1].notes)
+	}
+
+	// Item must be reset to open.
+	if item.Status != "open" {
+		t.Errorf("expected item reset to open, got status %q", item.Status)
 	}
 
 	// Spawn must NOT have been called.
@@ -2574,7 +2590,82 @@ func TestHeartbeatRepo_StallWithNoAssignee_NoteOnlyNoSpawn(t *testing.T) {
 	calls := runner.calls
 	runner.mu.Unlock()
 	if len(calls) != 0 {
-		t.Errorf("expected runner.Spawn not called for no-assignee droplet, got %d calls", len(calls))
+		t.Errorf("expected runner.Spawn not called for orphaned droplet, got %d calls", len(calls))
+	}
+}
+
+// TestHeartbeatRepo_OrphanRecovery_ClearsAssignedAqueduct verifies that the
+// orphan recovery path clears assigned_aqueduct so the re-opened droplet is not
+// locked to a specific aqueduct operator that may no longer exist.
+func TestHeartbeatRepo_OrphanRecovery_ClearsAssignedAqueduct(t *testing.T) {
+	client := newMockClient()
+	runner := newMockRunner(client)
+
+	item := &cistern.Droplet{
+		ID:               "orphan-aq",
+		CurrentCataractae: "implement",
+		Status:           "in_progress",
+		Assignee:         "",
+		AssignedAqueduct: "virgo", // stale aqueduct from a previous dispatch attempt
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	if item.Status != "open" {
+		t.Errorf("expected item status=open after recovery, got %q", item.Status)
+	}
+	if item.AssignedAqueduct != "" {
+		t.Errorf("expected assigned_aqueduct cleared after recovery, got %q", item.AssignedAqueduct)
+	}
+}
+
+// TestHeartbeatRepo_OrphanRecovery_AssignFailure_ClearsDebounce verifies that
+// when the Assign reset fails, the debounce entry is cleared so the next
+// heartbeat retries the recovery rather than suppressing it permanently.
+func TestHeartbeatRepo_OrphanRecovery_AssignFailure_ClearsDebounce(t *testing.T) {
+	client := newMockClient()
+	client.assignErr = errors.New("db error")
+	runner := newMockRunner(client)
+
+	item := &cistern.Droplet{
+		ID:                "orphan-assign-fail",
+		CurrentCataractae: "implement",
+		Status:            "in_progress",
+		Assignee:          "",
+	}
+	client.items[item.ID] = item
+
+	config := testConfig()
+	config.StallThresholdMinutes = 1
+
+	workflows := map[string]*aqueduct.Workflow{"test-repo": testWorkflow()}
+	clients := map[string]CisternClient{"test-repo": client}
+	sched := NewFromParts(config, workflows, clients, runner)
+
+	sched.heartbeatRepo(context.Background(), config.Repos[0])
+
+	// Recovery note must be written (best-effort) even when Assign fails.
+	recoveryNotes := 0
+	for _, n := range client.attached {
+		if strings.Contains(n.notes, "[scheduler:recovery]") {
+			recoveryNotes++
+		}
+	}
+	if recoveryNotes < 1 {
+		t.Errorf("expected recovery note even on Assign failure, got %d recovery notes", recoveryNotes)
+	}
+
+	// Debounce must be cleared so the next tick retries.
+	if _, armed := sched.lastStallNoted[item.ID]; armed {
+		t.Error("expected debounce cleared after Assign failure, so next tick can retry")
 	}
 }
 

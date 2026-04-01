@@ -77,7 +77,7 @@ Use --output-format json for scriptable output (session_id + text).`,
 			Title:  filterTitle,
 			Desc:   filterDescription,
 		})
-		result, err := invokeFilterNew(preset, filterTitle, filterDescription, contextBlock, "")
+		result, err := invokeFilterNew(preset, filterTitle, filterDescription, contextBlock)
 		if err != nil {
 			return err
 		}
@@ -87,15 +87,13 @@ Use --output-format json for scriptable output (session_id + text).`,
 
 // invokeFilterNew starts a new filtration session and returns the agent's text
 // response with session_id. contextBlock is prepended before the system prompt
-// so the LLM sees codebase context first. repoPath, when non-empty and the
-// preset defines AddDirFlag, is passed via --add-dir so the agent can use
-// read-only file tools to explore the repository.
-func invokeFilterNew(preset provider.ProviderPreset, title, description, contextBlock, repoPath string) (filterSessionResult, error) {
+// so the LLM sees codebase context first.
+func invokeFilterNew(preset provider.ProviderPreset, title, description, contextBlock string) (filterSessionResult, error) {
 	userPrompt := "Title: " + title
 	if description != "" {
 		userPrompt += "\nDescription: " + description
 	}
-	return callFilterAgent(preset, nil, buildFilterPrompt(contextBlock, userPrompt), repoPath)
+	return callFilterAgent(preset, nil, buildFilterPrompt(contextBlock, userPrompt), "")
 }
 
 // invokeFilterResume resumes an existing filtration session with the given message

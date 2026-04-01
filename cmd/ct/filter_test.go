@@ -195,7 +195,7 @@ func TestInvokeFilterNew_ReturnsTextAndSessionID(t *testing.T) {
 		},
 	}
 
-	result, err := invokeFilterNew(preset, "Add user auth", "JWT-based auth with refresh tokens", "", "")
+	result, err := invokeFilterNew(preset, "Add user auth", "JWT-based auth with refresh tokens", "")
 	if err != nil {
 		t.Fatalf("invokeFilterNew: unexpected error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestInvokeFilterNew_TitleOnly(t *testing.T) {
 		},
 	}
 
-	result, err := invokeFilterNew(preset, "Add user auth", "", "", "")
+	result, err := invokeFilterNew(preset, "Add user auth", "", "")
 	if err != nil {
 		t.Fatalf("invokeFilterNew title-only: unexpected error: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestInvokeFilterNew_WithContextBlock_IncludesContextInResult(t *testing.T) 
 	}
 
 	contextBlock := "=== CODEBASE CONTEXT ===\nsome schema here\n=== END CODEBASE CONTEXT ==="
-	result, err := invokeFilterNew(preset, "Add feature", "Some description", contextBlock, "")
+	result, err := invokeFilterNew(preset, "Add feature", "Some description", contextBlock)
 	if err != nil {
 		t.Fatalf("invokeFilterNew with contextBlock: unexpected error: %v", err)
 	}

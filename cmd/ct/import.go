@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/MichielDean/cistern/internal/aqueduct"
@@ -126,8 +128,11 @@ func loadTrackerConfig(providerName string) (tracker.TrackerConfig, error) {
 	cfgPath := resolveConfigPath()
 	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 	if err != nil {
-		// No config — return bare config; provider validates its own requirements.
-		return tracker.TrackerConfig{Name: providerName}, nil
+		if errors.Is(err, os.ErrNotExist) {
+			// No config file — return bare config; provider validates its own requirements.
+			return tracker.TrackerConfig{Name: providerName}, nil
+		}
+		return tracker.TrackerConfig{}, err
 	}
 	for _, tc := range cfg.Trackers {
 		if strings.EqualFold(tc.Name, providerName) {

@@ -105,6 +105,12 @@ func TestImportCmd_OverridesPriorityWhenFlagSet(t *testing.T) {
 	}
 	c.Close()
 
+	t.Cleanup(func() {
+		if f := importCmd.Flags().Lookup("priority"); f != nil {
+			f.Changed = false
+		}
+	})
+
 	out := captureStdout(t, func() {
 		importRepo = "cistern"
 		importFilter = false
@@ -247,6 +253,33 @@ repos:
 	}
 	if cfg.BaseURL != "" {
 		t.Errorf("BaseURL = %q, want empty (fallback config)", cfg.BaseURL)
+	}
+}
+
+func TestLoadTrackerConfig_ErrorsOnMalformedYAML(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(":\tinvalid: [yaml"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	_, err := loadTrackerConfig("jira")
+	if err == nil {
+		t.Fatal("expected error for malformed YAML, got nil")
+	}
+}
+
+func TestLoadTrackerConfig_ReturnsDefaultWhenConfigFileMissing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CT_CONFIG", filepath.Join(dir, "nonexistent.yaml"))
+
+	cfg, err := loadTrackerConfig("jira")
+	if err != nil {
+		t.Fatalf("expected no error when config file is missing, got: %v", err)
+	}
+	if cfg.Name != "jira" {
+		t.Errorf("Name = %q, want %q", cfg.Name, "jira")
 	}
 }
 

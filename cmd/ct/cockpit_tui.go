@@ -186,8 +186,8 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
-		// Number keys 1-9 jump directly to the indexed panel.
-		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		// Number keys 1-9 jump directly to the indexed panel (sidebar mode only).
+		if !m.panelFocused && len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
 			idx := int(s[0] - '1')
 			if idx < len(m.panels) {
 				m.cursor = idx

@@ -239,6 +239,29 @@ func TestCockpit_NumberKey_OutOfRange_NoChange(t *testing.T) {
 	}
 }
 
+// TestCockpit_NumberKey_ForwardedToPanel_WhenPanelFocused verifies that digit keys
+// are forwarded to the active panel when panelFocused=true, not intercepted by
+// the cockpit for panel switching.
+//
+// Given: panelFocused=true, cursor=0
+// When:  '2' is pressed
+// Then:  cursor remains 0 and panelFocused remains true (digit was not intercepted)
+func TestCockpit_NumberKey_ForwardedToPanel_WhenPanelFocused(t *testing.T) {
+	m := newCockpitModel("", "")
+	m.cursor = 0
+	m.panelFocused = true
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	um := updated.(cockpitModel)
+
+	if um.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (digit should not switch panels when panel focused)", um.cursor)
+	}
+	if !um.panelFocused {
+		t.Error("panelFocused = false, want true")
+	}
+}
+
 // ── tab focus toggle ─────────────────────────────────────────────────────────
 
 // TestCockpit_Tab_EnablesPanelFocus verifies that Tab from sidebar mode enables

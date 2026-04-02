@@ -1272,9 +1272,9 @@ func TestSpawn_TmuxServerDead_RecoverySucceeds(t *testing.T) {
 	}
 	execTmuxKillServer = func() { killCalled = true }
 
-	origPipePane1 := execTmuxPipePaneCmd
+	origPipePane := execTmuxPipePaneCmd
 	execTmuxPipePaneCmd = func(_, _ string) {}
-	t.Cleanup(func() { execTmuxPipePaneCmd = origPipePane1 })
+	t.Cleanup(func() { execTmuxPipePaneCmd = origPipePane })
 
 	workDir := t.TempDir()
 	s := &Session{ID: "tmux-recovery-ok", WorkDir: workDir}
@@ -1574,9 +1574,9 @@ func TestSpawn_TmuxServerDead_DoubleCheckPreventsKillingRecoveredServer(t *testi
 		execTmuxKillServer = origKill
 	})
 
-	origPipePane2 := execTmuxPipePaneCmd
+	origPipePane := execTmuxPipePaneCmd
 	execTmuxPipePaneCmd = func(_, _ string) {}
-	t.Cleanup(func() { execTmuxPipePaneCmd = origPipePane2 })
+	t.Cleanup(func() { execTmuxPipePaneCmd = origPipePane })
 
 	// The server is "dead" until execTmuxKillServer is called; after that it is
 	// "alive". This models: goroutine A's kill restarts the server, so goroutine
@@ -1772,9 +1772,9 @@ func TestSpawn_NoExistingSession_SpawnsNormally(t *testing.T) {
 	}
 	t.Cleanup(func() { execTmuxNewSession = origSpawn })
 
-	origPipePane3 := execTmuxPipePaneCmd
+	origPipePane := execTmuxPipePaneCmd
 	execTmuxPipePaneCmd = func(_, _ string) {}
-	t.Cleanup(func() { execTmuxPipePaneCmd = origPipePane3 })
+	t.Cleanup(func() { execTmuxPipePaneCmd = origPipePane })
 
 	s := &Session{
 		ID:      sessionID,

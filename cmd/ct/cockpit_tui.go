@@ -93,10 +93,10 @@ func (p dropletsPanel) SelectedDroplet() *cistern.Droplet {
 		return p.inner.detailDroplet
 	default:
 		items := p.inner.visibleItems()
-		if p.inner.cursor >= len(items) {
-			return nil
+		if p.inner.cursor < len(items) {
+			return items[p.inner.cursor]
 		}
-		return items[p.inner.cursor]
+		return nil
 	}
 }
 

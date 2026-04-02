@@ -155,10 +155,10 @@ func (m cockpitModel) Init() tea.Cmd {
 //
 // Global intercepts (handled regardless of focus mode):
 //   - ctrl+c           → quit
-//   - 1-9              → jump to panel[n-1] and activate it
 //   - tab              → toggle sidebar / panel focus
 //
 // Sidebar mode (!panelFocused):
+//   - 1-9              → jump to panel[n-1] and activate it
 //   - q / Q            → quit
 //   - up / k           → move cursor up
 //   - down / j         → move cursor down
@@ -186,22 +186,21 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
-		// Number keys 1-9 jump directly to the indexed panel (sidebar mode only).
-		if !m.panelFocused && len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
-			idx := int(s[0] - '1')
-			if idx < len(m.panels) {
-				m.cursor = idx
-				m.panelFocused = true
-			}
-			return m, nil
-		}
 		// Tab toggles between sidebar navigation and panel focus.
 		if s == "tab" {
 			m.panelFocused = !m.panelFocused
 			return m, nil
 		}
-		// Sidebar mode: arrow keys navigate the list; Enter activates; q/Q quits.
+		// Sidebar mode: number jumps, arrow navigation, Enter activates, q/Q quits.
 		if !m.panelFocused {
+			if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+				idx := int(s[0] - '1')
+				if idx < len(m.panels) {
+					m.cursor = idx
+					m.panelFocused = true
+				}
+				return m, nil
+			}
 			switch s {
 			case "q", "Q":
 				return m, tea.Quit

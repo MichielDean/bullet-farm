@@ -106,33 +106,21 @@ func (p dropletsPanel) PaletteActions(droplet *cistern.Droplet) []PaletteAction 
 	}
 	id := droplet.ID
 	return []PaletteAction{
-		{
-			Name:        "cancel",
-			Description: "cancel this droplet",
-			Run: func() tea.Cmd {
-				return func() tea.Msg { return tuiPaletteActionMsg{dropletID: id, action: actionCancel} }
-			},
-		},
-		{
-			Name:        "pool",
-			Description: "move droplet to pool",
-			Run: func() tea.Cmd {
-				return func() tea.Msg { return tuiPaletteActionMsg{dropletID: id, action: actionPool} }
-			},
-		},
-		{
-			Name:        "restart",
-			Description: "restart this droplet",
-			Run: func() tea.Cmd {
-				return func() tea.Msg { return tuiPaletteActionMsg{dropletID: id, action: actionRestart} }
-			},
-		},
-		{
-			Name:        "add note",
-			Description: "add a note to this droplet",
-			Run: func() tea.Cmd {
-				return func() tea.Msg { return tuiPaletteActionMsg{dropletID: id, action: actionAddNote} }
-			},
+		dropletPaletteAction("cancel", "cancel this droplet", id, actionCancel),
+		dropletPaletteAction("pool", "move droplet to pool", id, actionPool),
+		dropletPaletteAction("restart", "restart this droplet", id, actionRestart),
+		dropletPaletteAction("add note", "add a note to this droplet", id, actionAddNote),
+	}
+}
+
+// dropletPaletteAction constructs a PaletteAction whose Run emits a
+// tuiPaletteActionMsg for the given droplet ID and action string.
+func dropletPaletteAction(name, desc, dropletID, action string) PaletteAction {
+	return PaletteAction{
+		Name:        name,
+		Description: desc,
+		Run: func() tea.Cmd {
+			return func() tea.Msg { return tuiPaletteActionMsg{dropletID: dropletID, action: action} }
 		},
 	}
 }
@@ -561,10 +549,8 @@ func (m cockpitModel) updatePalette(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(runes) > 0 {
 			m.paletteQuery = string(runes[:len(runes)-1])
 			m.paletteFiltered = filterPaletteActions(m.paletteAll, m.paletteQuery)
-			if m.paletteCursor >= len(m.paletteFiltered) && len(m.paletteFiltered) > 0 {
-				m.paletteCursor = len(m.paletteFiltered) - 1
-			} else if len(m.paletteFiltered) == 0 {
-				m.paletteCursor = 0
+			if m.paletteCursor >= len(m.paletteFiltered) {
+				m.paletteCursor = max(0, len(m.paletteFiltered)-1)
 			}
 		}
 	default:

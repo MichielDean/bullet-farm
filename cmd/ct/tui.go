@@ -363,18 +363,12 @@ func (m tabAppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, cmd := m.openDetail(pm.dropletID)
 		if updated.detailDroplet != nil {
 			switch pm.action {
-			case actionCancel:
+			case actionCancel, actionPool:
 				updated.overlayMode = overlayConfirm
-				updated.overlayAction = actionCancel
-			case actionPool:
-				updated.overlayMode = overlayConfirm
-				updated.overlayAction = actionPool
-			case actionRestart:
+				updated.overlayAction = pm.action
+			case actionRestart, actionAddNote:
 				updated.overlayMode = overlayText
-				updated.overlayAction = actionRestart
-			case actionAddNote:
-				updated.overlayMode = overlayText
-				updated.overlayAction = actionAddNote
+				updated.overlayAction = pm.action
 			}
 		}
 		return updated, cmd

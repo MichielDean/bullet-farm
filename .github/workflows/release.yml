@@ -51,7 +51,10 @@ jobs:
         run: go vet ./...
 
       - name: Build
-        run: go build ./...
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
+          COMMIT=$(git rev-parse --short HEAD)
+          go build -ldflags "-X main.version=${TAG} -X main.commit=${COMMIT}" -o ct ./cmd/ct/
 
       - name: Test
         run: go test ./... -v

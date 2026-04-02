@@ -154,17 +154,18 @@ func (m cockpitModel) Init() tea.Cmd {
 // Update routes events to the cockpit or the active panel depending on focus mode.
 //
 // Global intercepts (handled regardless of focus mode):
-//   - q / Q / ctrl+c  → quit
+//   - ctrl+c           → quit
 //   - 1-9              → jump to panel[n-1] and activate it
 //   - tab              → toggle sidebar / panel focus
 //
 // Sidebar mode (!panelFocused):
+//   - q / Q            → quit
 //   - up / k           → move cursor up
 //   - down / j         → move cursor down
 //   - enter            → activate focused panel
 //
 // Panel mode (panelFocused):
-//   - all other messages are forwarded to the active panel.
+//   - all other messages (including q/Q) are forwarded to the active panel.
 func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -181,8 +182,8 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		s := msg.String()
-		// Global quit — always intercepted before any panel sees the key.
-		if s == "q" || s == "Q" || s == "ctrl+c" {
+		// ctrl+c always quits, regardless of focus mode.
+		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
 		// Number keys 1-9 jump directly to the indexed panel.
@@ -199,9 +200,11 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.panelFocused = !m.panelFocused
 			return m, nil
 		}
-		// Sidebar mode: arrow keys navigate the list; Enter activates.
+		// Sidebar mode: arrow keys navigate the list; Enter activates; q/Q quits.
 		if !m.panelFocused {
 			switch s {
+			case "q", "Q":
+				return m, tea.Quit
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--

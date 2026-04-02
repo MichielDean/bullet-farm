@@ -296,17 +296,39 @@ func TestCockpit_Q_Quits(t *testing.T) {
 	}
 }
 
-// TestCockpit_Q_Quits_WhenPanelFocused verifies that 'q' quits even when a panel
-// is focused (cockpit intercepts quit globally).
+// TestCockpit_Q_ForwardedToPanel_WhenPanelFocused verifies that 'q' is forwarded
+// to the active panel when panelFocused=true, so overlayText/overlayConfirm modes
+// in tabAppModel can receive 'q' as character input or dismiss dialogs.
+//
+// Given: panelFocused=true, active panel is a placeholderPanel
+// When:  'q' is pressed
+// Then:  cockpit does NOT quit; cmd is nil (placeholder ignores the key)
+func TestCockpit_Q_ForwardedToPanel_WhenPanelFocused(t *testing.T) {
+	m := newCockpitModel("", "")
+	m.panelFocused = true
+	m.panels[0] = placeholderPanel{title: "Test"}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if cmd != nil {
+		msg := cmd()
+		if msg == tea.Quit() {
+			t.Error("cmd() = tea.Quit, want nil (q must not quit when panel is focused)")
+		}
+	}
+}
+
+// TestCockpit_CtrlC_Quits_WhenPanelFocused verifies that ctrl+c always quits
+// even when a panel has focus.
 //
 // Given: panelFocused=true
-// When:  'q' is pressed
+// When:  ctrl+c is pressed
 // Then:  returned command is tea.Quit
-func TestCockpit_Q_Quits_WhenPanelFocused(t *testing.T) {
+func TestCockpit_CtrlC_Quits_WhenPanelFocused(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.panelFocused = true
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 
 	if cmd == nil {
 		t.Fatal("cmd = nil, want tea.Quit")

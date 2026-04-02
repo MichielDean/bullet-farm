@@ -1775,47 +1775,33 @@ func TestDropletsPanel_SelectedDroplet_WithData_ReturnsCursorItem(t *testing.T) 
 	}
 }
 
-// TestDropletsPanel_SelectedDroplet_DetailView_ReturnsDetailDroplet verifies
-// that when the inner model is in the Detail tab, SelectedDroplet returns the
-// open detail droplet.
+// TestDropletsPanel_SelectedDroplet_DetailAndPeekView_ReturnDetailDroplet verifies
+// that both tabDetail and tabPeek return the open detail droplet.
 //
-// Given: dropletsPanel in tabDetail with detailDroplet set
+// Given: dropletsPanel in tabDetail or tabPeek with detailDroplet set
 // When:  SelectedDroplet() is called
 // Then:  the detail droplet is returned
-func TestDropletsPanel_SelectedDroplet_DetailView_ReturnsDetailDroplet(t *testing.T) {
-	p := newDropletsPanel("", "")
-	detail := &cistern.Droplet{ID: "ci-detail"}
-	p.inner.tab = tabDetail
-	p.inner.detailDroplet = detail
-
-	got := p.SelectedDroplet()
-	if got == nil {
-		t.Fatal("SelectedDroplet() = nil, want detail droplet")
+func TestDropletsPanel_SelectedDroplet_DetailAndPeekView_ReturnDetailDroplet(t *testing.T) {
+	tests := []struct {
+		name string
+		tab  int
+		id   string
+	}{
+		{"tabDetail", tabDetail, "ci-detail"},
+		{"tabPeek", tabPeek, "ci-peek"},
 	}
-	if got.ID != "ci-detail" {
-		t.Errorf("SelectedDroplet().ID = %q, want %q", got.ID, "ci-detail")
-	}
-}
+	for _, tt := range tests {
+		p := newDropletsPanel("", "")
+		p.inner.tab = tt.tab
+		p.inner.detailDroplet = &cistern.Droplet{ID: tt.id}
 
-// TestDropletsPanel_SelectedDroplet_PeekView_ReturnsDetailDroplet verifies
-// that when the inner model is in the Peek tab, SelectedDroplet returns the
-// open detail droplet (same as the Detail tab branch).
-//
-// Given: dropletsPanel in tabPeek with detailDroplet set
-// When:  SelectedDroplet() is called
-// Then:  the detail droplet is returned
-func TestDropletsPanel_SelectedDroplet_PeekView_ReturnsDetailDroplet(t *testing.T) {
-	p := newDropletsPanel("", "")
-	detail := &cistern.Droplet{ID: "ci-peek"}
-	p.inner.tab = tabPeek
-	p.inner.detailDroplet = detail
-
-	got := p.SelectedDroplet()
-	if got == nil {
-		t.Fatal("SelectedDroplet() = nil, want detail droplet in tabPeek")
-	}
-	if got.ID != "ci-peek" {
-		t.Errorf("SelectedDroplet().ID = %q, want %q", got.ID, "ci-peek")
+		got := p.SelectedDroplet()
+		if got == nil {
+			t.Fatalf("%s: SelectedDroplet() = nil, want detail droplet", tt.name)
+		}
+		if got.ID != tt.id {
+			t.Errorf("%s: SelectedDroplet().ID = %q, want %q", tt.name, got.ID, tt.id)
+		}
 	}
 }
 
@@ -1832,30 +1818,14 @@ func TestPlaceholderPanel_SelectedDroplet_ReturnsNil(t *testing.T) {
 	}
 }
 
-// TestDropletsPanel_PaletteActions_HasRunFunctions verifies that all actions
-// returned by dropletsPanel.PaletteActions have non-nil Run functions.
+// TestDropletsPanel_PaletteActions_AllActionsHaveRequiredFields verifies that
+// all actions returned by PaletteActions have non-empty Name, Description, and
+// a non-nil Run function.
 //
 // Given: a dropletsPanel with a non-nil droplet
 // When:  PaletteActions(droplet) is called
-// Then:  every action has a non-nil Run function
-func TestDropletsPanel_PaletteActions_HasRunFunctions(t *testing.T) {
-	p := newDropletsPanel("", "")
-	d := &cistern.Droplet{ID: "ci-aaa"}
-	actions := p.PaletteActions(d)
-	for i, a := range actions {
-		if a.Run == nil {
-			t.Errorf("action[%d] %q has nil Run function", i, a.Name)
-		}
-	}
-}
-
-// TestDropletsPanel_PaletteActions_HasNameAndDescription verifies that all
-// actions returned have non-empty Name and Description fields.
-//
-// Given: a dropletsPanel with a non-nil droplet
-// When:  PaletteActions(droplet) is called
-// Then:  every action has non-empty Name and Description
-func TestDropletsPanel_PaletteActions_HasNameAndDescription(t *testing.T) {
+// Then:  every action has non-empty Name, Description, and non-nil Run
+func TestDropletsPanel_PaletteActions_AllActionsHaveRequiredFields(t *testing.T) {
 	p := newDropletsPanel("", "")
 	d := &cistern.Droplet{ID: "ci-aaa"}
 	actions := p.PaletteActions(d)
@@ -1865,6 +1835,9 @@ func TestDropletsPanel_PaletteActions_HasNameAndDescription(t *testing.T) {
 		}
 		if a.Description == "" {
 			t.Errorf("action[%d] %q has empty Description", i, a.Name)
+		}
+		if a.Run == nil {
+			t.Errorf("action[%d] %q has nil Run function", i, a.Name)
 		}
 	}
 }
@@ -1893,43 +1866,34 @@ func TestCockpit_Palette_Enter_NilRun_DoesNotPanic(t *testing.T) {
 
 // ── filterPaletteActions case-insensitivity (ci-gg7gp-lg2pu) ─────────────────
 
-// TestFilterPaletteActions_CaseInsensitive_UppercaseQueryMatchesLowercaseName
-// verifies that an uppercase query matches a lowercase action name.
-//
-// Given: actions with lowercase names ["cancel", "pool"]
-// When:  filterPaletteActions is called with query "CAN"
-// Then:  only "cancel" is returned
-func TestFilterPaletteActions_CaseInsensitive_UppercaseQueryMatchesLowercaseName(t *testing.T) {
-	actions := []PaletteAction{
-		{Name: "cancel"},
-		{Name: "pool"},
+// TestFilterPaletteActions_CaseInsensitive verifies that filterPaletteActions
+// matches action names case-insensitively in both directions.
+func TestFilterPaletteActions_CaseInsensitive(t *testing.T) {
+	tests := []struct {
+		name     string
+		actions  []PaletteAction
+		query    string
+		wantName string
+	}{
+		{
+			"uppercase query matches lowercase name",
+			[]PaletteAction{{Name: "cancel"}, {Name: "pool"}},
+			"CAN", "cancel",
+		},
+		{
+			"lowercase query matches uppercase name",
+			[]PaletteAction{{Name: "CANCEL"}, {Name: "POOL"}},
+			"can", "CANCEL",
+		},
 	}
-	got := filterPaletteActions(actions, "CAN")
-	if len(got) != 1 {
-		t.Fatalf("len(got) = %d, want 1", len(got))
-	}
-	if got[0].Name != "cancel" {
-		t.Errorf("got[0].Name = %q, want %q", got[0].Name, "cancel")
-	}
-}
-
-// TestFilterPaletteActions_CaseInsensitive_LowercaseQueryMatchesUppercaseName
-// verifies that a lowercase query matches an uppercase action name.
-//
-// Given: actions with uppercase names ["CANCEL", "POOL"]
-// When:  filterPaletteActions is called with query "can"
-// Then:  only "CANCEL" is returned
-func TestFilterPaletteActions_CaseInsensitive_LowercaseQueryMatchesUppercaseName(t *testing.T) {
-	actions := []PaletteAction{
-		{Name: "CANCEL"},
-		{Name: "POOL"},
-	}
-	got := filterPaletteActions(actions, "can")
-	if len(got) != 1 {
-		t.Fatalf("len(got) = %d, want 1", len(got))
-	}
-	if got[0].Name != "CANCEL" {
-		t.Errorf("got[0].Name = %q, want %q", got[0].Name, "CANCEL")
+	for _, tt := range tests {
+		got := filterPaletteActions(tt.actions, tt.query)
+		if len(got) != 1 {
+			t.Fatalf("%s: len(got) = %d, want 1", tt.name, len(got))
+		}
+		if got[0].Name != tt.wantName {
+			t.Errorf("%s: got[0].Name = %q, want %q", tt.name, got[0].Name, tt.wantName)
+		}
 	}
 }
 
@@ -2013,44 +1977,32 @@ func TestCockpit_Palette_Backspace_EmptyQuery_IsNoOp(t *testing.T) {
 
 // ── Palette arrow-key navigation (ci-gg7gp-q3k6g) ────────────────────────────
 
-// TestCockpit_Palette_DownArrow_MovesSelectionDown verifies that pressing the
-// down arrow key in the palette advances the paletteCursor.
+// TestCockpit_Palette_ArrowKeys_Navigate verifies that the up and down arrow
+// keys move the palette cursor, consistent with the j/k bindings.
 //
-// Given: palette open with 2 actions, paletteCursor=0
-// When:  down arrow is pressed
-// Then:  paletteCursor=1
-func TestCockpit_Palette_DownArrow_MovesSelectionDown(t *testing.T) {
-	actions := []PaletteAction{
-		{Name: "alpha"},
-		{Name: "beta"},
+// Given: palette open with 2 actions
+// When:  down arrow is pressed from cursor=0 (or up arrow from cursor=1)
+// Then:  cursor advances or retreats by 1
+func TestCockpit_Palette_ArrowKeys_Navigate(t *testing.T) {
+	actions := []PaletteAction{{Name: "alpha"}, {Name: "beta"}}
+	tests := []struct {
+		name       string
+		key        tea.KeyMsg
+		initCursor int
+		wantCursor int
+	}{
+		{"down arrow moves down", tea.KeyMsg{Type: tea.KeyDown}, 0, 1},
+		{"up arrow moves up", tea.KeyMsg{Type: tea.KeyUp}, 1, 0},
 	}
-	m := newPaletteTestCockpit(actions, &cistern.Droplet{ID: "ci-aaa"}).openPalette()
+	for _, tt := range tests {
+		m := newPaletteTestCockpit(actions, &cistern.Droplet{ID: "ci-aaa"}).openPalette()
+		m.paletteCursor = tt.initCursor
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	um := updated.(cockpitModel)
-	if um.paletteCursor != 1 {
-		t.Errorf("paletteCursor = %d, want 1", um.paletteCursor)
-	}
-}
-
-// TestCockpit_Palette_UpArrow_MovesSelectionUp verifies that pressing the
-// up arrow key in the palette moves the cursor up.
-//
-// Given: palette open with 2 actions, paletteCursor=1
-// When:  up arrow is pressed
-// Then:  paletteCursor=0
-func TestCockpit_Palette_UpArrow_MovesSelectionUp(t *testing.T) {
-	actions := []PaletteAction{
-		{Name: "alpha"},
-		{Name: "beta"},
-	}
-	m := newPaletteTestCockpit(actions, &cistern.Droplet{ID: "ci-aaa"}).openPalette()
-	m.paletteCursor = 1
-
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	um := updated.(cockpitModel)
-	if um.paletteCursor != 0 {
-		t.Errorf("paletteCursor = %d, want 0", um.paletteCursor)
+		updated, _ := m.Update(tt.key)
+		um := updated.(cockpitModel)
+		if um.paletteCursor != tt.wantCursor {
+			t.Errorf("%s: paletteCursor = %d, want %d", tt.name, um.paletteCursor, tt.wantCursor)
+		}
 	}
 }
 

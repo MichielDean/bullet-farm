@@ -132,11 +132,7 @@ func (r *integrationRunner) Spawn(_ context.Context, req castellarius.Cataractae
 	// Determine FAKEAGENT_MODE for this spawn (spawnModes overrides extraEnv).
 	mode := ""
 	if len(r.spawnModes) > 0 {
-		idx := n
-		if idx >= len(r.spawnModes) {
-			idx = len(r.spawnModes) - 1
-		}
-		mode = r.spawnModes[idx]
+		mode = r.spawnModes[min(n, len(r.spawnModes)-1)]
 	}
 	if mode == "" {
 		mode = r.extraEnv["FAKEAGENT_MODE"]
@@ -252,11 +248,12 @@ func intConfig(prefix string) aqueduct.AqueductConfig {
 // short poll and heartbeat intervals to keep test runtime under 30s.
 // prefix must match the value embedded in the repo name via intConfig.
 func newIntScheduler(client *cistern.Client, runner castellarius.CataractaeRunner, prefix string) *castellarius.Castellarius {
-	repoName := prefix + "-myrepo"
+	cfg := intConfig(prefix)
+	repoName := cfg.Repos[0].Name
 	workflows := map[string]*aqueduct.Workflow{repoName: intWorkflow()}
 	clients := map[string]castellarius.CisternClient{repoName: client}
 
-	return castellarius.NewFromParts(intConfig(prefix), workflows, clients, runner,
+	return castellarius.NewFromParts(cfg, workflows, clients, runner,
 		castellarius.WithPollInterval(500*time.Millisecond),
 		castellarius.WithHeartbeatInterval(time.Second),
 		castellarius.WithDrainTimeout(3*time.Second),

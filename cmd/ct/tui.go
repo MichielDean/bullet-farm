@@ -300,12 +300,6 @@ func (m tabAppModel) execMultiActionCmd(action string, values []string) tea.Cmd 
 			// values: [title, priority, complexity, description]
 			// Each field is optional — skip empty/invalid values.
 			title := strings.TrimSpace(valAt(values, 0))
-			if title != "" {
-				if err := c.UpdateTitle(selectedID, title); err != nil {
-					execErr = err
-					break
-				}
-			}
 			fields := cistern.EditDropletFields{}
 			if p, err := strconv.Atoi(strings.TrimSpace(valAt(values, 1))); err == nil && p > 0 {
 				fields.Priority = &p
@@ -316,7 +310,27 @@ func (m tabAppModel) execMultiActionCmd(action string, values []string) tea.Cmd 
 			if desc := strings.TrimSpace(valAt(values, 3)); desc != "" {
 				fields.Description = &desc
 			}
-			if fields.Description != nil || fields.Priority != nil || fields.Complexity != nil {
+			hasEditFields := fields.Description != nil || fields.Priority != nil || fields.Complexity != nil
+			// Guard: EditDroplet rejects in_progress/delivered droplets. Check
+			// status before touching anything so no partial update occurs.
+			if hasEditFields {
+				item, err := c.Get(selectedID)
+				if err != nil {
+					execErr = err
+					break
+				}
+				if item.Status != "open" && item.Status != "pooled" {
+					execErr = fmt.Errorf("droplet %s is %s — cannot edit a droplet that has been picked up", selectedID, item.Status)
+					break
+				}
+			}
+			if title != "" {
+				if err := c.UpdateTitle(selectedID, title); err != nil {
+					execErr = err
+					break
+				}
+			}
+			if hasEditFields {
 				execErr = c.EditDroplet(selectedID, fields)
 			}
 		case actionResolveIssue:
@@ -713,6 +727,8 @@ func (m tabAppModel) updateDroplets(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.overlayMode != overlayNone {
 			return m.handleOverlayKey(msg)
 		}
+		// Clear any prior action error on the next keypress.
+		m.overlayErr = ""
 		items := m.visibleItems()
 		switch msg.String() {
 		case "q", "Q", "ctrl+c":

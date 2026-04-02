@@ -3477,3 +3477,193 @@ func TestTabApp_Detail_V_Key_TextOverlay_WithEvidence_DispatchesIssueCmd(t *test
 		t.Error("expected non-nil cmd after enter with evidence text, got nil")
 	}
 }
+
+// ── execMultiActionCmd: resolve/reject issue (palette path) ──────────────────
+
+// TestExecMultiActionCmd_ResolveIssue_ResolvesIssue verifies that
+// execMultiActionCmd with actionResolveIssue marks the targeted issue as resolved.
+//
+// Given: a real cistern DB with a droplet and an open issue
+// When:  execMultiActionCmd with actionResolveIssue and [issueID, evidence] is executed
+// Then:  tuiActionResultMsg.err is nil and the issue status is "resolved"
+func TestExecMultiActionCmd_ResolveIssue_ResolvesIssue(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iss, err := c.AddIssue(id, "test-flagger", "found a problem")
+	c.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTabAppModel("", dbPath)
+	m.selectedID = id
+	cmd := m.execMultiActionCmd(actionResolveIssue, []string{iss.ID, "all fixed"})
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err != nil {
+		t.Errorf("err = %v, want nil", am.err)
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	issues, err := c2.ListIssues(id, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].Status != "resolved" {
+		t.Errorf("issue status = %q (after resolve), want %q", issues[0].Status, "resolved")
+	}
+}
+
+// TestExecMultiActionCmd_RejectIssue_RejectsIssue verifies that
+// execMultiActionCmd with actionRejectIssue marks the targeted issue as unresolved.
+//
+// Given: a real cistern DB with a droplet and an open issue
+// When:  execMultiActionCmd with actionRejectIssue and [issueID, evidence] is executed
+// Then:  tuiActionResultMsg.err is nil and the issue status is "unresolved"
+func TestExecMultiActionCmd_RejectIssue_RejectsIssue(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	iss, err := c.AddIssue(id, "test-flagger", "found a problem")
+	c.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := newTabAppModel("", dbPath)
+	m.selectedID = id
+	cmd := m.execMultiActionCmd(actionRejectIssue, []string{iss.ID, "still an issue"})
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err != nil {
+		t.Errorf("err = %v, want nil", am.err)
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	issues, err := c2.ListIssues(id, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].Status != "unresolved" {
+		t.Errorf("issue status = %q (after reject), want %q", issues[0].Status, "unresolved")
+	}
+}
+
+// TestExecMultiActionCmd_ResolveIssue_EmptyID_ReturnsError verifies that
+// execMultiActionCmd returns an error when no issue ID is provided.
+//
+// Given: a real cistern DB
+// When:  execMultiActionCmd with actionResolveIssue and ["", ""] is executed
+// Then:  tuiActionResultMsg.err is non-nil
+func TestExecMultiActionCmd_ResolveIssue_EmptyID_ReturnsError(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	m := newTabAppModel("", dbPath)
+	m.selectedID = id
+	cmd := m.execMultiActionCmd(actionResolveIssue, []string{"", ""})
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err == nil {
+		t.Error("expected error for empty issue ID, got nil")
+	}
+}
+
+// ── updateDroplets: overlayErr cleared on keypress ────────────────────────────
+
+// TestUpdateDroplets_KeyPress_ClearsOverlayErr verifies that pressing a key in
+// the Droplets tab (with no overlay active) clears a prior overlayErr.
+//
+// Given: a model on the Droplets tab with overlayErr set and no overlay active
+// When:  a key is pressed
+// Then:  overlayErr is ""
+func TestUpdateDroplets_KeyPress_ClearsOverlayErr(t *testing.T) {
+	m := newTabAppModel("", "")
+	m.data = &DashboardData{}
+	m.tab = tabDroplets
+	m.overlayMode = overlayNone
+	m.overlayErr = "something went wrong"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	um := updated.(tabAppModel)
+
+	if um.overlayErr != "" {
+		t.Errorf("overlayErr = %q after keypress, want empty string", um.overlayErr)
+	}
+}
+
+// ── execMultiActionCmd: actionEditMeta partial-update guard ──────────────────
+
+// TestExecMultiActionCmd_EditMeta_InProgress_NoPartialUpdate verifies that
+// editing a droplet that is in_progress with non-title fields returns an error
+// and does NOT update the title (atomic: no partial state).
+//
+// Given: a cistern DB with a droplet whose status is in_progress
+// When:  execMultiActionCmd with actionEditMeta and [newTitle, priority, "", ""]
+// Then:  tuiActionResultMsg.err is non-nil and the title is unchanged
+func TestExecMultiActionCmd_EditMeta_InProgress_NoPartialUpdate(t *testing.T) {
+	dbPath, id := newTestDBWithDroplet(t)
+
+	c, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UpdateStatus(id, "in_progress"); err != nil {
+		c.Close()
+		t.Fatal(err)
+	}
+	c.Close()
+
+	m := newTabAppModel("", dbPath)
+	m.selectedID = id
+	// Title AND priority — EditDroplet will fail for in_progress, title must not be committed.
+	cmd := m.execMultiActionCmd(actionEditMeta, []string{"new title", "3", "", ""})
+	msg := cmd()
+
+	am, ok := msg.(tuiActionResultMsg)
+	if !ok {
+		t.Fatalf("expected tuiActionResultMsg, got %T", msg)
+	}
+	if am.err == nil {
+		t.Error("expected error for in_progress droplet with edit fields, got nil")
+	}
+
+	c2, err := cistern.New(dbPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	d, err := c2.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Title == "new title" {
+		t.Error("title was updated despite error — partial update occurred")
+	}
+}

@@ -187,10 +187,7 @@ func (s *Session) spawn() error {
 		}
 	}
 
-	// Attach pipe-pane to capture PTY output to the session log. This must happen
-	// after the session exists. Unlike the former tee wrapper around stdout/stderr,
-	// pipe-pane captures everything rendered to the tmux pane — including output
-	// that the agent writes directly to the PTY device, bypassing stdout/stderr.
+	// pipe-pane must be called after the session exists.
 	if logDirReady {
 		execTmuxPipePaneCmd(s.ID, sessionLogPath)
 	}

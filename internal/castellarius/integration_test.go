@@ -56,6 +56,15 @@ func buildBinary(t *testing.T, name, pkg string) string {
 func buildFakeagent(t *testing.T) string { return buildBinary(t, "fakeagent", "./internal/testutil/fakeagent") }
 func buildCt(t *testing.T) string        { return buildBinary(t, "ct", "./cmd/ct") }
 
+// sessionPrefix returns a 6-hex-char string unique to this test, derived from
+// the SHA-256 of a t.TempDir() basename. Prepended to tmux session names so
+// test sessions cannot collide with production sessions.
+func sessionPrefix(t *testing.T) string {
+	t.Helper()
+	sum := sha256.Sum256([]byte(filepath.Base(t.TempDir())))
+	return fmt.Sprintf("%x", sum[:3]) // 3 bytes → 6 hex chars
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // integrationRunner — CataractaeRunner for integration tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,8 +93,7 @@ type integrationRunner struct {
 	sessions   []string // tmux session names for cleanup
 	spawnCount int      // incremented on each Spawn call, protected by mu
 
-	prefixOnce sync.Once
-	prefix     string // short hash prefix derived from t.TempDir() on first Spawn
+	prefix string // short hash prefix that isolates test sessions from production
 }
 
 // intShellQuote wraps s in single quotes, escaping any single quotes within.
@@ -96,20 +104,9 @@ func intShellQuote(s string) string {
 // Spawn creates a workdir, writes CONTEXT.md, and starts a tmux session running
 // fakeagent. Returns immediately (non-blocking).
 //
-// Session names are prefixed with a short hash derived from t.TempDir() so they
-// cannot collide with production sessions regardless of repo or aqueduct name.
-// The heartbeat's isTmuxAlive check uses item.Outcome to skip items that have
-// already signaled, so the prefix mismatch is safe — see heartbeatRepo.
+// Session names are prefixed with r.prefix so they cannot collide with
+// production sessions regardless of repo or aqueduct name.
 func (r *integrationRunner) Spawn(_ context.Context, req castellarius.CataractaeRequest) error {
-	// Derive a stable per-test prefix from the first t.TempDir() call (6 hex
-	// chars of the SHA-256 of its basename).  sync.Once ensures the prefix is
-	// computed exactly once and is consistent across all Spawn calls in a test.
-	r.prefixOnce.Do(func() {
-		dir := r.t.TempDir()
-		sum := sha256.Sum256([]byte(filepath.Base(dir)))
-		r.prefix = fmt.Sprintf("%x", sum[:3]) // 3 bytes → 6 hex chars
-	})
-
 	dir, err := os.MkdirTemp("", "cistern-inttest-*")
 	if err != nil {
 		return fmt.Errorf("integrationRunner: mkdir: %w", err)
@@ -307,6 +304,7 @@ func TestIntegration_HappyPath_FakeAgentDeliversDroplet(t *testing.T) {
 		ctBin:    ctPath,
 		dbPath:   dbPath,
 		logDir:   t.TempDir(),
+		prefix:   sessionPrefix(t),
 	}
 	t.Cleanup(runner.cleanup)
 
@@ -357,6 +355,7 @@ func TestIntegration_StartupRecovery_OrphanedDroplet_RedeliversDroplet(t *testin
 		ctBin:    ctPath,
 		dbPath:   dbPath,
 		logDir:   t.TempDir(),
+		prefix:   sessionPrefix(t),
 	}
 	t.Cleanup(runner.cleanup)
 
@@ -433,6 +432,7 @@ func TestIntegration_HeartbeatRecovery_DeadSession_RedeliversDroplet(t *testing.
 		ctBin:      ctPath,
 		dbPath:     dbPath,
 		spawnModes: []string{"no_signal", ""},
+		prefix:     sessionPrefix(t),
 	}
 	t.Cleanup(runner.cleanup)
 
@@ -487,6 +487,7 @@ func TestIntegration_EnvHygiene_APIKeyNotForwardedToSession(t *testing.T) {
 		ctBin:    ctPath,
 		dbPath:   dbPath,
 		logDir:   logDir,
+		prefix:   sessionPrefix(t),
 		extraEnv: map[string]string{
 			"FAKEAGENT_MODE": "env_dump", // causes fakeagent to print its env to stdout
 		},

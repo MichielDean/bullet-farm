@@ -908,3 +908,108 @@ func TestCastellariusPanel_PaletteActions_WithDroplet_StillReturnsThreeActions(t
 		t.Errorf("len(PaletteActions(droplet)) = %d, want 3", len(actions))
 	}
 }
+
+// ── fetchStatusCmd: error surfacing (issue ci-besty-a52xl) ───────────────────
+
+// TestCastellariusPanel_Update_StatusOutputMsg_WithErrorOutput_RendersError verifies
+// that an error message from fetchStatusCmd is shown in the view rather than a
+// blank panel. Before the fix, CombinedOutput errors were discarded; now they are
+// formatted into the output field and must appear in View().
+//
+// Given: a castellariusPanel that receives a castellariusStatusOutputMsg whose
+//
+//	output field starts with "Error fetching status:"
+//
+// When:  View() is called on the updated panel
+// Then:  the view contains the error text (not a blank loading screen)
+func TestCastellariusPanel_Update_StatusOutputMsg_WithErrorOutput_RendersError(t *testing.T) {
+	p := newCastellariusPanel()
+
+	updated, _ := p.Update(castellariusStatusOutputMsg{
+		output: "Error fetching status: exec: executable not found",
+		runAt:  time.Now(),
+	})
+	up := updated.(castellariusPanel)
+
+	v := up.View()
+	if !strings.Contains(v, "Error fetching status") {
+		t.Errorf("View() does not contain error text; loading cleared but view blank. got:\n%s", v)
+	}
+}
+
+// TestCastellariusPanel_Update_StatusOutputMsg_WithErrorOutput_LoadingCleared verifies
+// that even when fetchStatusCmd returns an error-formatted output, loading is cleared
+// so the panel does not remain stuck in the loading state.
+//
+// Given: a castellariusPanel (loading=true)
+// When:  a castellariusStatusOutputMsg carrying an error output is processed
+// Then:  loading = false
+func TestCastellariusPanel_Update_StatusOutputMsg_WithErrorOutput_LoadingCleared(t *testing.T) {
+	p := newCastellariusPanel()
+	p.loading = true
+
+	updated, _ := p.Update(castellariusStatusOutputMsg{
+		output: "Error fetching status: exit status 1",
+		runAt:  time.Now(),
+	})
+	up := updated.(castellariusPanel)
+
+	if up.loading {
+		t.Error("loading = true after error status output, want false")
+	}
+}
+
+// ── execActionCmd: start fallback (issue ci-besty-6mfa5) ─────────────────────
+
+// TestCastellariusPanel_ConfirmOverlay_YKey_StartAction_ExecutesAction verifies that
+// pressing 'y' with confirmAction="start" closes the overlay and returns a non-nil
+// execution command. This ensures the start code path (including its systemctl/detach
+// fallback) is reachable via the TUI confirm overlay on all platforms.
+//
+// Given: a castellariusPanel with confirmActive=true, confirmAction="start"
+// When:  'y' is pressed
+// Then:  confirmActive=false and a non-nil cmd is returned
+func TestCastellariusPanel_ConfirmOverlay_YKey_StartAction_ExecutesAction(t *testing.T) {
+	p := newCastellariusPanel()
+	p.confirmActive = true
+	p.confirmAction = "start"
+
+	updated, cmd := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	up := updated.(castellariusPanel)
+
+	if up.confirmActive {
+		t.Error("confirmActive = true after 'y' with start action, want false")
+	}
+	if cmd == nil {
+		t.Error("cmd = nil after confirming start action, want an execution command")
+	}
+}
+
+// TestCastellariusPanel_Update_CmdOutputMsg_StartSuccess_StoresOutput verifies that a
+// successful start result (as returned by execActionCmd's fallback path) is stored
+// and shown in the view.
+//
+// Given: a castellariusPanel
+// When:  castellariusCmdOutputMsg{action:"start", output:"Castellarius started (detached process).", err:nil} arrives
+// Then:  actionOutput is set and the view shows it
+func TestCastellariusPanel_Update_CmdOutputMsg_StartSuccess_StoresOutput(t *testing.T) {
+	p := newCastellariusPanel()
+	p.output = "ok\n"
+	p.loading = false
+	p.runAt = time.Now()
+
+	updated, _ := p.Update(castellariusCmdOutputMsg{
+		action: "start",
+		output: "Castellarius started (detached process).",
+		err:    nil,
+	})
+	up := updated.(castellariusPanel)
+
+	if up.actionErr {
+		t.Error("actionErr = true, want false for successful start")
+	}
+	v := up.View()
+	if !strings.Contains(v, "Castellarius started") {
+		t.Errorf("View() does not contain start success output; got:\n%s", v)
+	}
+}

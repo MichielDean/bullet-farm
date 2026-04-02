@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -77,7 +78,14 @@ func (p castellariusPanel) fetchStatusCmd() tea.Cmd {
 			exe = "ct"
 		}
 		cmd := exec.Command(exe, "castellarius", "status")
-		out, _ := cmd.CombinedOutput()
+		out, cmdErr := cmd.CombinedOutput()
+		if cmdErr != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg == "" {
+				msg = cmdErr.Error()
+			}
+			return castellariusStatusOutputMsg{output: "Error fetching status: " + msg, runAt: time.Now()}
+		}
 		return castellariusStatusOutputMsg{output: string(out), runAt: time.Now()}
 	}
 }
@@ -105,10 +113,24 @@ func (p castellariusPanel) execActionCmd() tea.Cmd {
 		)
 		switch action {
 		case "start":
-			// ct castellarius start is a blocking foreground process; delegate to
-			// systemctl so the TUI is not blocked.
-			cmd := exec.Command("systemctl", "--user", "start", "cistern-castellarius")
-			out, err = cmd.CombinedOutput()
+			// Try systemctl first (standard deployment via cistern-castellarius.service).
+			if err = exec.Command("systemctl", "--user", "start", "cistern-castellarius").Run(); err == nil {
+				out = []byte("Castellarius started.")
+				break
+			}
+			// Fall back: spawn ct castellarius start as a detached process so the TUI
+			// is not blocked (ct castellarius start is a blocking foreground process).
+			exe, exeErr := os.Executable()
+			if exeErr != nil {
+				exe = "ct"
+			}
+			c := exec.Command(exe, "castellarius", "start")
+			c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			if err = c.Start(); err != nil {
+				out = []byte(err.Error())
+			} else {
+				out = []byte("Castellarius started (detached process).")
+			}
 		default:
 			exe, exeErr := os.Executable()
 			if exeErr != nil {

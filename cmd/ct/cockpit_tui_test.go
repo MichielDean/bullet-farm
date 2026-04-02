@@ -281,21 +281,23 @@ func TestCockpit_Tab_EnablesPanelFocus(t *testing.T) {
 	}
 }
 
-// TestCockpit_Tab_ReturnsToPanelToSidebar verifies that Tab from panel mode returns
-// focus to the sidebar.
+// TestCockpit_Tab_ForwardedToPanel_WhenPanelFocused verifies that Tab is forwarded
+// to the active panel when panelFocused=true, leaving cockpit state unchanged, so
+// overlays in tabAppModel are not left in a stuck/unreachable state.
 //
-// Given: panelFocused=true
+// Given: panelFocused=true, active panel is a placeholderPanel
 // When:  Tab is pressed
-// Then:  panelFocused=false
-func TestCockpit_Tab_ReturnsToPanelToSidebar(t *testing.T) {
+// Then:  panelFocused remains true (tab was not intercepted by cockpit)
+func TestCockpit_Tab_ForwardedToPanel_WhenPanelFocused(t *testing.T) {
 	m := newCockpitModel("", "")
 	m.panelFocused = true
+	m.panels[0] = placeholderPanel{title: "Test"}
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	um := updated.(cockpitModel)
 
-	if um.panelFocused {
-		t.Error("panelFocused = true, want false after Tab from panel mode")
+	if !um.panelFocused {
+		t.Error("panelFocused = false, want true (tab should not un-focus panel when panel is focused)")
 	}
 }
 

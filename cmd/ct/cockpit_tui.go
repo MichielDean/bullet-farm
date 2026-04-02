@@ -186,9 +186,10 @@ func (m cockpitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s == "ctrl+c" {
 			return m, tea.Quit
 		}
-		// Tab toggles between sidebar navigation and panel focus.
-		if s == "tab" {
-			m.panelFocused = !m.panelFocused
+		// Tab from sidebar activates panel focus. When already panel-focused,
+		// tab falls through to the active panel (which ignores it safely).
+		if s == "tab" && !m.panelFocused {
+			m.panelFocused = true
 			return m, nil
 		}
 		// Sidebar mode: number jumps, arrow navigation, Enter activates, q/Q quits.

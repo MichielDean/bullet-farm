@@ -165,7 +165,7 @@ func (m dashboardTUIModel) openPeekOn(ch CataractaeInfo) (dashboardTUIModel, tea
 }
 
 // openInlinePeek sets up the inline capture-pane overlay for the given aqueduct.
-// Called as a fallback when tmuxAttachFunc fails; err carries the attach error.
+// Called as a fallback when openPeekAttachCmdFunc fails; err carries the attach error.
 func (m dashboardTUIModel) openInlinePeek(ch CataractaeInfo, err error) (dashboardTUIModel, tea.Cmd) {
 	session := ch.RepoName + "-" + ch.Name
 	header := fmt.Sprintf("[%s] %s — flowing %s\ntmux attach-session failed (%v) — showing capture-pane snapshot",

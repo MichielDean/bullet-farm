@@ -34,33 +34,22 @@ func checkIntegrationPrereqs(t *testing.T) {
 	}
 }
 
-// buildFakeagent compiles the fakeagent binary into a temp dir and returns its path.
+// buildBinary compiles a Go package into a temp dir binary and returns its path.
 // Go tests run with cwd = the package directory (internal/castellarius/), so the
 // module root is two levels up.
-func buildFakeagent(t *testing.T) string {
+func buildBinary(t *testing.T, name, pkg string) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "fakeagent")
-	cmd := exec.Command("go", "build", "-o", out, "./internal/testutil/fakeagent")
+	out := filepath.Join(t.TempDir(), name)
+	cmd := exec.Command("go", "build", "-o", out, pkg)
 	cmd.Dir = "../.."
 	if result, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build fakeagent: %v\n%s", err, result)
+		t.Fatalf("build %s: %v\n%s", name, err, result)
 	}
 	return out
 }
 
-// buildCt compiles the ct binary into a temp dir and returns its path.
-// Go tests run with cwd = the package directory (internal/castellarius/), so the
-// module root is two levels up.
-func buildCt(t *testing.T) string {
-	t.Helper()
-	out := filepath.Join(t.TempDir(), "ct")
-	cmd := exec.Command("go", "build", "-o", out, "./cmd/ct")
-	cmd.Dir = "../.."
-	if result, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build ct: %v\n%s", err, result)
-	}
-	return out
-}
+func buildFakeagent(t *testing.T) string { return buildBinary(t, "fakeagent", "./internal/testutil/fakeagent") }
+func buildCt(t *testing.T) string        { return buildBinary(t, "ct", "./cmd/ct") }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // integrationRunner — CataractaeRunner for integration tests

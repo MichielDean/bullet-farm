@@ -1800,6 +1800,28 @@ func TestDropletsPanel_SelectedDroplet_DetailView_ReturnsDetailDroplet(t *testin
 	}
 }
 
+// TestDropletsPanel_SelectedDroplet_PeekView_ReturnsDetailDroplet verifies
+// that when the inner model is in the Peek tab, SelectedDroplet returns the
+// open detail droplet (same as the Detail tab branch).
+//
+// Given: dropletsPanel in tabPeek with detailDroplet set
+// When:  SelectedDroplet() is called
+// Then:  the detail droplet is returned
+func TestDropletsPanel_SelectedDroplet_PeekView_ReturnsDetailDroplet(t *testing.T) {
+	p := newDropletsPanel("", "")
+	detail := &cistern.Droplet{ID: "ci-peek"}
+	p.inner.tab = tabPeek
+	p.inner.detailDroplet = detail
+
+	got := p.SelectedDroplet()
+	if got == nil {
+		t.Fatal("SelectedDroplet() = nil, want detail droplet in tabPeek")
+	}
+	if got.ID != "ci-peek" {
+		t.Errorf("SelectedDroplet().ID = %q, want %q", got.ID, "ci-peek")
+	}
+}
+
 // TestPlaceholderPanel_SelectedDroplet_ReturnsNil verifies that
 // placeholderPanel always returns nil from SelectedDroplet.
 //

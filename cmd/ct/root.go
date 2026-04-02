@@ -1,8 +1,9 @@
 package main
 
 import (
-	"path/filepath"
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -22,8 +23,12 @@ func resolveDBPath() string {
 	if dbPath != "" {
 		return dbPath
 	}
+	if env := os.Getenv("CT_DB"); env != "" {
+		return env
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "ct: cannot resolve home directory: %v\n", err)
 		os.Exit(1)
 	}
 	dir := filepath.Join(home, ".cistern")

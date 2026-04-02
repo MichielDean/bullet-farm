@@ -692,7 +692,7 @@ var castellariusRestartCmd = &cobra.Command{
 		}
 		// Fall back: stop the existing process, then spawn a detached replacement.
 		exec.Command("pkill", "-TERM", "-f", "castellarius start").Run() //nolint:errcheck
-		time.Sleep(1 * time.Second)
+		time.Sleep(time.Second)
 		exe, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("restart: cannot find executable: %w", err)

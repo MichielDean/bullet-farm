@@ -117,16 +117,16 @@ func (p castellariusPanel) execActionCmd() tea.Cmd {
 			// Try systemctl first (standard deployment via cistern-castellarius.service).
 			if err = exec.Command("systemctl", "--user", "start", "cistern-castellarius").Run(); err == nil {
 				out = []byte("Castellarius started.")
-				break
-			}
-			// Fall back: spawn ct castellarius start as a detached process so the TUI
-			// is not blocked (ct castellarius start is a blocking foreground process).
-			c := exec.Command(exe, "castellarius", "start")
-			c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-			if err = c.Start(); err != nil {
-				out = []byte(err.Error())
 			} else {
-				out = []byte("Castellarius started (detached process).")
+				// Fall back: spawn ct castellarius start as a detached process so the TUI
+				// is not blocked (ct castellarius start is a blocking foreground process).
+				c := exec.Command(exe, "castellarius", "start")
+				c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+				if err = c.Start(); err != nil {
+					out = []byte(err.Error())
+				} else {
+					out = []byte("Castellarius started (detached process).")
+				}
 			}
 		default:
 			cmd := exec.Command(exe, "castellarius", action)

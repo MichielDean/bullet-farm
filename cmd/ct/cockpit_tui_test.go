@@ -866,3 +866,43 @@ func TestJoinSideBySide_UnequalHeights_PadsLongerSidebar(t *testing.T) {
 		}
 	}
 }
+
+// ── uppercase Q quit ──────────────────────────────────────────────────────────
+
+// TestCockpit_UppercaseQ_Quits verifies that pressing 'Q' returns tea.Quit in
+// sidebar mode, matching the documented 'q / Q → quit' behaviour.
+//
+// Given: panelFocused=false
+// When:  'Q' is pressed
+// Then:  returned command is tea.Quit
+func TestCockpit_UppercaseQ_Quits(t *testing.T) {
+	m := newCockpitModel("", "")
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Q'}})
+
+	if cmd == nil {
+		t.Fatal("cmd = nil, want tea.Quit")
+	}
+	if msg := cmd(); msg != tea.Quit() {
+		t.Errorf("cmd() = %v, want tea.Quit()", msg)
+	}
+}
+
+// ── panelWidth floor ──────────────────────────────────────────────────────────
+
+// TestCockpit_PanelWidth_Floor_ClampedToMinimum verifies that panelWidth() never
+// returns less than 20 even when the terminal is too narrow to fit the sidebar.
+//
+// Given: cockpit width = 5 (narrower than the sidebar alone)
+// When:  panelWidth() is called
+// Then:  20 is returned (the clamped minimum)
+func TestCockpit_PanelWidth_Floor_ClampedToMinimum(t *testing.T) {
+	m := newCockpitModel("", "")
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 5, Height: 40})
+	um := updated.(cockpitModel)
+
+	got := um.panelWidth()
+	if got != 20 {
+		t.Errorf("panelWidth() = %d, want 20 (floor) for terminal width 5", got)
+	}
+}

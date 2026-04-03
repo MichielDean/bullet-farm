@@ -54,6 +54,10 @@ type Droplet struct {
 	// Format: 'provider:key' (e.g. 'jira:DPF-456', 'linear:LIN-789').
 	// Empty string means no external reference (NULL in DB).
 	ExternalRef string `json:"external_ref,omitempty"`
+	// LastHeartbeatAt is the most recent time the agent called `ct droplet heartbeat`.
+	// Zero value means no heartbeat has been emitted yet. Used by the stall detector
+	// to distinguish alive-but-slow agents from genuinely stuck or dead ones.
+	LastHeartbeatAt time.Time `json:"last_heartbeat_at,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -494,6 +498,22 @@ func (c *Client) SetExternalRef(id, ref string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("cistern: set external_ref %s: %w", id, err)
+	}
+	return checkRowsAffected(res, id)
+}
+
+// Heartbeat records the current time as the agent's most recent activity
+// timestamp. Called by agents via `ct droplet heartbeat <id>` every 60 seconds
+// while working. The stall detector uses this timestamp to distinguish alive
+// (heartbeating) agents from genuinely stuck or dead ones.
+func (c *Client) Heartbeat(id string) error {
+	now := time.Now().UTC()
+	res, err := c.db.Exec(
+		`UPDATE droplets SET last_heartbeat_at = ? WHERE id = ?`,
+		now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("cistern: heartbeat %s: %w", id, err)
 	}
 	return checkRowsAffected(res, id)
 }

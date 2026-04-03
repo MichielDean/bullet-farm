@@ -606,13 +606,7 @@ func claudeAliveUnderPIDIn(panePIDStr, procRoot string) bool {
 		return false
 	}
 
-	procDir, err := os.Open(procRoot)
-	if err != nil {
-		return false
-	}
-	defer procDir.Close()
-
-	entries, err := procDir.Readdirnames(-1)
+	entries, err := os.ReadDir(procRoot)
 	if err != nil {
 		return false
 	}
@@ -624,16 +618,17 @@ func claudeAliveUnderPIDIn(panePIDStr, procRoot string) bool {
 	infos := make(map[string]procInfo, len(entries))
 
 	for _, entry := range entries {
-		if !isProcPIDEntry(entry) {
+		name := entry.Name()
+		if !isProcPIDEntry(name) {
 			continue
 		}
-		statusData, err := os.ReadFile(filepath.Join(procRoot, entry, "status"))
+		statusData, err := os.ReadFile(filepath.Join(procRoot, name, "status"))
 		if err != nil {
 			continue
 		}
 		ppid := parsePPid(string(statusData))
-		cmdlineData, _ := os.ReadFile(filepath.Join(procRoot, entry, "cmdline"))
-		infos[entry] = procInfo{ppid: ppid, cmdline: string(cmdlineData)}
+		cmdlineData, _ := os.ReadFile(filepath.Join(procRoot, name, "cmdline"))
+		infos[name] = procInfo{ppid: ppid, cmdline: string(cmdlineData)}
 	}
 
 	// Build parent → children map.
@@ -690,7 +685,7 @@ func isClaudeCmdline(cmdline string) bool {
 	if cmdline == "" {
 		return false
 	}
-	argv0 := strings.SplitN(cmdline, "\x00", 2)[0]
+	argv0, _, _ := strings.Cut(cmdline, "\x00")
 	if argv0 == "" {
 		return false
 	}

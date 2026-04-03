@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Aqueduct: restore Opus for reviewer and security-review stages (ci-gi4mq)
+
+Restored the Opus model for reviewer and security-review cataractae, which require adversarial multi-hop reasoning across the full codebase to catch complex violations. Additionally upgraded the delivery stage from Haiku to Sonnet to handle edge cases like merge conflicts and rebase failures.
+
+**Changes:**
+- **reviewer stage**: upgraded from Sonnet to Opus — adversarial multi-hop reasoning across full codebase required; Sonnet misses 6-hop inference chains like wrapper regressions
+- **security-review stage**: upgraded from Sonnet to Opus — attack chain tracing requires strong working memory to trace upstream through call chains
+- **delivery stage**: upgraded from Haiku to Sonnet — delivery failure modes (merge conflicts, CI failures, rebase issues) require real reasoning; Haiku handles the happy path but fails on edge cases
+- **docs stage**: fixed to Haiku in cmd/ct/assets/aqueduct/aqueduct.yaml (was incorrectly set to Sonnet) — mechanical copy-editing task requires no deep reasoning
+
+**Rationale**: Cost optimization in PR #376 was incorrect for adversarial stages. A regression that survives reviewer costs far more than the saved Opus tokens. The prior zombie respawn loop burned the weekly Claude budget in 3 days, proving regression cost > Opus savings. Delivery edge cases also justify Sonnet.
+
+**Configuration files updated:**
+- `aqueduct/aqueduct.yaml` — reviewer, security-review, and delivery stages
+- `cmd/ct/assets/aqueduct/aqueduct.yaml` — reviewer, security-review, delivery, and docs stages
+
+**Impact**: The aqueduct pipeline now uses the correct model tier for each reasoning domain, reducing regression rate and delivery failures while maintaining cost-effectiveness for mechanical stages.
+
 ### Remove ct audit command (ci-cv5jf)
 
 Deleted the `ct audit run` command. The audit agent provided little practical value: it hallucinated findings for wrong codebases, filed them under incorrect prefixes, and results required extensive manual triage that defeated the purpose of automation.

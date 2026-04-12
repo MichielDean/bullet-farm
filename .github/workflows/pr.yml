@@ -8,32 +8,7 @@ on:
   pull_request:
 
 jobs:
-  changes:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
-    outputs:
-      installer: ${{ steps.filter.outputs.installer }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-      - uses: dorny/paths-filter@de90cc6fb386094072d7aa1b8e640a2e97630c81 # v3.0.2
-        id: filter
-        with:
-          filters: |
-            installer:
-              - 'cmd/ct/doctor.go'
-              - 'cmd/ct/init.go'
-              - 'cmd/ct/assets/start-castellarius.sh'
-              - 'start-castellarius.sh'
-              - 'run-installer-tests.sh'
-              - 'test/installer/**'
-              - 'test/docker/**'
-              - 'tests/installer/**'
-              - 'internal/testutil/fakeagent/**'
-
   build:
-    needs: changes
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
     steps:
@@ -85,8 +60,7 @@ jobs:
           done
 
   installer-tests:
-    needs: changes
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.changes.outputs.installer == 'true'
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
 
     steps:
@@ -107,19 +81,46 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Check if installer files changed
+        id: installer_changed
+        run: |
+          BASE="${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "origin/${BASE}...HEAD" -- \
+            'cmd/ct/doctor.go' \
+            'cmd/ct/init.go' \
+            'cmd/ct/assets/start-castellarius.sh' \
+            'start-castellarius.sh' \
+            'run-installer-tests.sh' \
+            'test/installer/' \
+            'test/docker/' \
+            'tests/installer/' \
+            'internal/testutil/fakeagent/' \
+            || true)
+          if [ -z "${CHANGED}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No installer-related files changed — skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Installer files changed:"
+            echo "${CHANGED}"
+          fi
+
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        if: steps.installer_changed.outputs.skip != 'true'
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Build Go binaries
+        if: steps.installer_changed.outputs.skip != 'true'
         run: go build ./...
 
       - name: Run installer tests
+        if: steps.installer_changed.outputs.skip != 'true'
         run: ./run-installer-tests.sh
 
       - name: Upload container logs
-        if: failure()
+        if: failure() && steps.installer_changed.outputs.skip != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: installer-test-logs
@@ -140,8 +141,7 @@ jobs:
           done
 
   installer-integration-tests:
-    needs: changes
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.changes.outputs.installer == 'true'
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
 
@@ -167,10 +167,31 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check if installer files changed
+        id: installer_changed
+        run: |
+          BASE="${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "origin/${BASE}...HEAD" -- \
+            '**/doctor.go' \
+            '**/init.go' \
+            '**/start-castellarius.sh' \
+            'tests/installer/' \
+            || true)
+          if [ -z "${CHANGED}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No installer-related files changed — skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Installer files changed:"
+            echo "${CHANGED}"
+          fi
+
       - name: Build installer test image
+        if: steps.installer_changed.outputs.skip != 'true'
         run: CISTERN_TEST_IMAGE="${IMAGE_TAG}" bash tests/installer/build.sh
 
       - name: Run installer integration tests
+        if: steps.installer_changed.outputs.skip != 'true'
         run: |
           docker run \
             --privileged \
@@ -233,12 +254,16 @@ jobs:
           exit ${TEST_EXIT_CODE}
 
       - name: Clean up test container and image
-        if: always()
+        if: always() && steps.installer_changed.outputs.skip != 'true'
         run: |
           docker stop "${CONTAINER_NAME}" 2>/dev/null || true
           docker rm "${CONTAINER_NAME}" 2>/dev/null || true
           docker rmi "${IMAGE_TAG}" 2>/dev/null || true
           rm -f "/tmp/installer-test-output-${GITHUB_RUN_ID}.txt"
+
+      - name: Clean up runner _update and _diag
+        if: always()
+        run: |
           RUNNER_ROOT="$(realpath "$GITHUB_WORKSPACE/../../..")"
           for dir in _update _diag; do
             TARGET="${RUNNER_ROOT}/${dir}"

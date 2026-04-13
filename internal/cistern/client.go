@@ -1008,17 +1008,16 @@ func (c *Client) ListRecentEvents(limit int) ([]RecentEvent, error) {
 	return events, rows.Err()
 }
 
-// DropletChange represents a status, stage, or note change event for a single droplet.
+// DropletChange represents a note or event change for a single droplet.
 // It is used by the tail command to stream events to stdout.
 type DropletChange struct {
 	Time  time.Time `json:"time"`
-	Kind  string    `json:"kind"`  // "status", "note", or "event"
-	Value string    `json:"value"` // new status, note content, or event payload
+	Kind  string    `json:"kind"`  // "note" or "event"
+	Value string    `json:"value"` // note content or event payload
 }
 
 // GetDropletChanges returns up to limit recent changes for a specific droplet,
-// ordered oldest-first. Changes come from three sources:
-//   - status transitions (tracked via the droplets.updated_at + current status fields)
+// ordered oldest-first. Changes come from two sources:
 //   - cataractae notes (content and cataractae_name)
 //   - events table (event_type + payload)
 func (c *Client) GetDropletChanges(id string, limit int) ([]DropletChange, error) {

@@ -18,6 +18,8 @@ var (
 	tailFollow bool
 )
 
+const tailMaxChanges = 10000
+
 var dropletTailCmd = &cobra.Command{
 	Use:   "tail <id>",
 	Short: "Stream droplet status change events in real time",
@@ -46,8 +48,7 @@ Output modes:
 		}
 		defer c.Close()
 
-		item, err := c.Get(id)
-		if err != nil {
+		if _, err := c.Get(id); err != nil {
 			return err
 		}
 
@@ -73,15 +74,11 @@ Output modes:
 			printChange(ch)
 		}
 
-		terminalStatuses := map[string]bool{"delivered": true, "pooled": true, "cancelled": true}
-		if terminalStatuses[item.Status] && !tailFollow {
-			return nil
-		}
-
 		if !tailFollow {
 			return nil
 		}
 
+		terminalStatuses := map[string]bool{"delivered": true, "pooled": true, "cancelled": true}
 		seenCount := len(changes)
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -101,7 +98,7 @@ Output modes:
 					continue
 				}
 
-				allChanges, err := c.GetDropletChanges(id, 10000)
+				allChanges, err := c.GetDropletChanges(id, tailMaxChanges)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "error polling changes: %v\n", err)
 					continue

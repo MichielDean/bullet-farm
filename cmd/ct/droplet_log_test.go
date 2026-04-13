@@ -11,7 +11,7 @@ import (
 	"github.com/MichielDean/cistern/internal/cistern"
 )
 
-func setupLogTestDB(t *testing.T) (*cistern.Client, string) {
+func setupLogTestDB(t *testing.T) *cistern.Client {
 	t.Helper()
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")
@@ -21,7 +21,7 @@ func setupLogTestDB(t *testing.T) (*cistern.Client, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
-	return c, db
+	return c
 }
 
 func runLogCapture(t *testing.T, id string) (string, error) {
@@ -32,7 +32,7 @@ func runLogCapture(t *testing.T, id string) (string, error) {
 }
 
 func TestDropletLog_ShowsCreationAndNotes(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Log task", "do something", 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestDropletLog_ShowsCreationAndNotes(t *testing.T) {
 }
 
 func TestDropletLog_ShowsPoolEvent(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Pool task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestDropletLog_ShowsPoolEvent(t *testing.T) {
 }
 
 func TestDropletLog_ShowsStageAssignment(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Stage task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestDropletLog_ShowsStageAssignment(t *testing.T) {
 }
 
 func TestDropletLog_ShowsHeader(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Header task", "desc", 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestDropletLog_ShowsHeader(t *testing.T) {
 }
 
 func TestDropletLog_ChronologicalOrder(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Order task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestDropletLog_ChronologicalOrder(t *testing.T) {
 }
 
 func TestDropletLog_NonexistentDroplet(t *testing.T) {
-	_, _ = setupLogTestDB(t)
+	_ = setupLogTestDB(t)
 
 	_, err := runLogCapture(t, "nonexistent-id")
 	if err == nil {
@@ -153,7 +153,7 @@ func TestDropletLog_NonexistentDroplet(t *testing.T) {
 }
 
 func TestDropletLog_EmptyDroplet(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Empty task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -173,14 +173,15 @@ func TestDropletLog_EmptyDroplet(t *testing.T) {
 }
 
 func TestDropletLog_JsonFormat(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	logFmt = "json"
+	t.Cleanup(func() { logFmt = "text" })
+
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Json log task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.AddNote(item.ID, "implement", "wrote code")
-
-	logFmt = "json"
 
 	var buf bytes.Buffer
 	err = runLog(&buf, item.ID)
@@ -218,13 +219,15 @@ func TestDropletLog_JsonFormat(t *testing.T) {
 }
 
 func TestDropletLog_InvalidFormat(t *testing.T) {
-	c, _ := setupLogTestDB(t)
+	logFmt = "xml"
+	t.Cleanup(func() { logFmt = "text" })
+
+	c := setupLogTestDB(t)
 	item, err := c.Add("myrepo", "Format task", "", 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	logFmt = "xml"
 	_, err = runLogCapture(t, item.ID)
 	if err == nil {
 		t.Error("expected error for invalid format")

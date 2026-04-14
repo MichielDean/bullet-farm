@@ -47,4 +47,6 @@ Examples:
 
 func init() {
 	dropletCancelCmd.Flags().StringVar(&cancelReason, "reason", "", "reason for cancellation (required)")
+	dropletCancelCmd.Flags().StringVar(&cancelReason, "notes", "", "deprecated: use --reason instead")
+	dropletCancelCmd.Flags().MarkDeprecated("notes", "use --reason instead")
 }

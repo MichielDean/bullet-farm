@@ -206,8 +206,8 @@ ct droplet recirculate <id> --to <stage> # Recirculate to specific stage
 ct droplet pool <id>                    # Pooled — cannot currently proceed
 ct droplet pool <id> --notes "..."      # Include reason (e.g., "awaiting API key")
 
-ct droplet cancel <id>                   # Cancel — won't be implemented
-ct droplet cancel <id> --notes "..."     # Include reason (e.g., "superseded by X")
+ct droplet cancel <id>                    # Cancel — won't be implemented
+ct droplet cancel <id> --reason "..."     # Include reason (e.g., "superseded by X")
 
 ct droplet note <id> "..."               # Add a narrative note (for summaries only)
 ```

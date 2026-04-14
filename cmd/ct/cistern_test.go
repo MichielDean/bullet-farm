@@ -759,6 +759,41 @@ func TestDropletCancel_NotFound(t *testing.T) {
 	}
 }
 
+func TestDropletCancel_NotesAliasBackwardCompat(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "test.db")
+	t.Setenv("CT_DB", db)
+
+	c, err := cistern.New(db, "ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := c.Add("repo", "Old feature", "", 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	cancelReason = "backward compat reason"
+	defer func() { cancelReason = "" }()
+	if err := dropletCancelCmd.ParseFlags([]string{"--notes", "backward compat reason"}); err != nil {
+		t.Fatalf("failed to parse --notes flag: %v", err)
+	}
+	if err := dropletCancelCmd.RunE(dropletCancelCmd, []string{item.ID}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	c2, _ := cistern.New(db, "")
+	defer c2.Close()
+	got, err := c2.Get(item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "cancelled" {
+		t.Errorf("status = %q, want %q", got.Status, "cancelled")
+	}
+}
+
 func TestDropletList_HidesCancelledByDefault(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "test.db")

@@ -774,11 +774,10 @@ func TestDropletCancel_NotesAliasBackwardCompat(t *testing.T) {
 	}
 	c.Close()
 
-	cancelReason = "backward compat reason"
-	defer func() { cancelReason = "" }()
 	if err := dropletCancelCmd.ParseFlags([]string{"--notes", "backward compat reason"}); err != nil {
 		t.Fatalf("failed to parse --notes flag: %v", err)
 	}
+	defer func() { cancelReason = "" }()
 	if err := dropletCancelCmd.RunE(dropletCancelCmd, []string{item.ID}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

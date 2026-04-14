@@ -675,14 +675,15 @@ func (c *Client) Pool(id, reason string) error {
 
 // Cancel marks a droplet as cancelled. Cancelled droplets are excluded from the
 // dispatch queue and from default list views. They can still be retrieved with
-// List(repo, "cancelled"). It clears assignee, outcome, and assigned_aqueduct
-// atomically so no ghost assignments linger. A scheduler note with timestamp is
-// recorded, and the reason (if non-empty) is included. The cancel is recorded
-// as an event in the events table for the audit trail.
+// List(repo, "cancelled"). It clears outcome and assigned_aqueduct atomically
+// so no ghost assignments linger. The assignee is preserved so the scheduler's
+// external-cancel pool-release path can find and free the slot. A scheduler
+// note with timestamp is recorded, and the reason (if non-empty) is included.
+// The cancel is recorded as an event in the events table for the audit trail.
 func (c *Client) Cancel(id, reason string) error {
 	now := time.Now().UTC()
 	res, err := c.db.Exec(
-		`UPDATE droplets SET status = 'cancelled', assignee = '', outcome = NULL, assigned_aqueduct = '', updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
+		`UPDATE droplets SET status = 'cancelled', outcome = NULL, assigned_aqueduct = '', updated_at = ? WHERE id = ? AND status NOT IN ('delivered', 'cancelled')`,
 		now, id,
 	)
 	if err != nil {

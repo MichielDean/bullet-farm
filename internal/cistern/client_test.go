@@ -1421,7 +1421,7 @@ func TestCancel_EmptyReason_WritesSchedulerNote(t *testing.T) {
 	}
 }
 
-func TestCancel_ClearsAssignee(t *testing.T) {
+func TestCancel_PreservesAssignee(t *testing.T) {
 	c := testClient(t)
 	item, _ := c.Add("myrepo", "Obsolete task", "", 1, 2)
 	c.Assign(item.ID, "worker-1", "implement")
@@ -1442,8 +1442,8 @@ func TestCancel_ClearsAssignee(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Assignee != "" {
-		t.Errorf("Assignee after Cancel = %q, want empty string", got.Assignee)
+	if got.Assignee != "worker-1" {
+		t.Errorf("Assignee after Cancel = %q, want %q (preserved for scheduler pool-release)", got.Assignee, "worker-1")
 	}
 }
 

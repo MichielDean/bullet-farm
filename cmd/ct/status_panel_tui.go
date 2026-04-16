@@ -168,8 +168,8 @@ func (p statusPanel) View() string {
 			if ch.DropletID != "" {
 				elapsed := formatElapsed(ch.Elapsed)
 				stageAge := ""
-				if ch.StageElapsed > 0 {
-					stageAge = " " + formatElapsed(ch.StageElapsed)
+				if se := formatElapsed(ch.StageElapsed); se != "" && se != "0s" {
+					stageAge = " (stage " + se + ")"
 				}
 				var progress string
 				if ch.CataractaeIndex > 0 && ch.TotalCataractae > 0 {

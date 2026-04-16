@@ -396,8 +396,8 @@ func renderAqueductRow(ch CataractaeInfo, termWidth int) string {
 	if ch.DropletID != "" {
 		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		stageAge := ""
-		if ch.StageElapsed > 0 {
-			stageAge = " " + formatElapsed(ch.StageElapsed)
+		if se := formatElapsed(ch.StageElapsed); se != "" && se != "0s" {
+			stageAge = " (stage " + se + ")"
 		}
 		content := fmt.Sprintf(" ≈ ≈  %s  %s%s  %s  ≈ ≈ ", ch.DropletID, formatElapsed(ch.Elapsed), stageAge, bar)
 		waterInner = padOrTruncCenter(content, chanW)
@@ -569,8 +569,8 @@ func renderFlowGraphRow(ch CataractaeInfo) (graphLine, infoLine string) {
 	if activeCol >= 0 {
 		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		stageAge := ""
-		if ch.StageElapsed > 0 {
-			stageAge = " " + formatElapsed(ch.StageElapsed)
+		if se := formatElapsed(ch.StageElapsed); se != "" && se != "0s" {
+			stageAge = " (stage " + se + ")"
 		}
 		infoLine = strings.Repeat(" ", activeCol) + "↑ " + ch.Name + " · " + ch.DropletID + "  " + formatElapsed(ch.Elapsed) + stageAge + "  " + bar
 	}

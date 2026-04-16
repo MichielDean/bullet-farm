@@ -479,7 +479,9 @@ var statusCmd = &cobra.Command{
 						elapsed := formatElapsed(time.Since(item.UpdatedAt))
 						stageAge := ""
 						if !item.StageDispatchedAt.IsZero() {
-							stageAge = " " + formatElapsed(time.Since(item.StageDispatchedAt))
+							if se := formatElapsed(time.Since(item.StageDispatchedAt)); se != "" && se != "0s" {
+								stageAge = " (stage " + se + ")"
+							}
 						}
 						stage := item.CurrentCataractae
 						idx := cataractaeIndexInWorkflow(stage, steps)

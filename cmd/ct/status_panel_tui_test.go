@@ -624,8 +624,8 @@ func TestStatusPanel_View_StageElapsed_ShowsStageAge(t *testing.T) {
 		FetchedAt: time.Now(),
 	}
 	v := p.View()
-	if !strings.Contains(v, "3m") {
-		t.Errorf("View() should contain stage age '3m'; output:\n%s", v)
+	if !strings.Contains(v, "(stage 3m") {
+		t.Errorf("View() should contain stage age '(stage 3m'; output:\n%s", v)
 	}
 }
 
@@ -657,8 +657,37 @@ func TestStatusPanel_View_StageElapsedZero_NoExtraAgeDisplay(t *testing.T) {
 		t.Errorf("View() should contain droplet ID; output:\n%s", v)
 	}
 	for _, line := range strings.Split(v, "\n") {
-		if strings.Contains(line, "ci-nostage01") && strings.Contains(line, " 0s") {
-			t.Errorf("Droplet row should not show standalone '0s' stage age when StageElapsed=0; line:\n%s", line)
+		if strings.Contains(line, "ci-nostage01") && (strings.Contains(line, " 0s") || strings.Contains(line, "(stage")) {
+			t.Errorf("Droplet row should not show standalone '0s' or '(stage' when StageElapsed=0; line:\n%s", line)
 		}
+	}
+}
+
+// TestStatusPanel_View_StageElapsedSubSecond_OmitsStageAge verifies that when
+// StageElapsed is > 0 but < 1s (formats to "0s"), no stage age is shown.
+//
+// Given: a statusPanel with StageElapsed=500ms (formats to "0s")
+// When:  View() is called
+// Then:  output does NOT show "(stage"
+func TestStatusPanel_View_StageElapsedSubSecond_OmitsStageAge(t *testing.T) {
+	p := newStatusPanel("", "")
+	p.data = &DashboardData{
+		FlowingCount: 1,
+		Cataractae: []CataractaeInfo{
+			{
+				Name:            "virgo",
+				DropletID:       "ci-sub06",
+				Step:            "implement",
+				CataractaeIndex: 1,
+				TotalCataractae: 3,
+				Elapsed:         5 * time.Minute,
+				StageElapsed:    100 * time.Millisecond,
+			},
+		},
+		FetchedAt: time.Now(),
+	}
+	v := p.View()
+	if strings.Contains(v, "(stage") {
+		t.Errorf("View() should not show '(stage' when StageElapsed formats to '0s'; output:\n%s", v)
 	}
 }

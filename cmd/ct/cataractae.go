@@ -380,7 +380,9 @@ var cataractaeStatusCmd = &cobra.Command{
 					elapsed := int(time.Since(item.UpdatedAt).Minutes())
 					stageAge := "—"
 					if !item.StageDispatchedAt.IsZero() {
-						stageAge = formatElapsed(time.Since(item.StageDispatchedAt))
+						if se := formatElapsed(time.Since(item.StageDispatchedAt)); se != "" && se != "0s" {
+							stageAge = "stage " + se
+						}
 					}
 					fmt.Fprintf(tw, "  %s\t%-22s\t← %s\t(%s)\t%s\t%dm\n",
 						marker, step.Name, item.ID, item.Assignee, stageAge, elapsed)

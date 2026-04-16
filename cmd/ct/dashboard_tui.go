@@ -170,8 +170,8 @@ func (m dashboardTUIModel) openPeekOn(ch CataractaeInfo) (dashboardTUIModel, tea
 func (m dashboardTUIModel) openInlinePeek(ch CataractaeInfo, err error) (dashboardTUIModel, tea.Cmd) {
 	session := ch.RepoName + "-" + ch.Name
 	stageSuffix := ""
-	if ch.StageElapsed > 0 {
-		stageSuffix = " (stage " + formatElapsed(ch.StageElapsed) + ")"
+	if se := formatElapsed(ch.StageElapsed); se != "" && se != "0s" {
+		stageSuffix = " (stage " + se + ")"
 	}
 	header := fmt.Sprintf("[%s] %s — flowing %s%s\ntmux attach-session failed (%v) — showing capture-pane snapshot",
 		ch.DropletID, ch.Step, formatElapsed(ch.Elapsed), stageSuffix, err)
@@ -600,7 +600,7 @@ func (m dashboardTUIModel) viewAqueductProgress(ch CataractaeInfo) string {
 				parts = append(parts, elapsed)
 			}
 			if stageElapsed != "" && stageElapsed != "0s" {
-				parts = append(parts, stageElapsed)
+				parts = append(parts, "(stage "+stageElapsed+")")
 			}
 			if len(parts) > 0 {
 				lbl = s + " " + strings.Join(parts, " ")
@@ -861,8 +861,8 @@ func (m dashboardTUIModel) tuiFlowGraphRow(ch CataractaeInfo) (graphLine, infoLi
 		bar := progressBar(ch.CataractaeIndex, ch.TotalCataractae, 8)
 		elapsed := formatElapsed(ch.Elapsed)
 		stageAge := ""
-		if ch.StageElapsed > 0 {
-			stageAge = " " + formatElapsed(ch.StageElapsed)
+		if se := formatElapsed(ch.StageElapsed); se != "" && se != "0s" {
+			stageAge = " (stage " + se + ")"
 		}
 		infoLine = strings.Repeat(" ", activeVisualCol) +
 			"↑ " +

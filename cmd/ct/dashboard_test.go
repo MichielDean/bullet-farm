@@ -1086,8 +1086,8 @@ func TestViewAqueductProgress_StageElapsedShownAppended(t *testing.T) {
 	if !strings.Contains(stripped, "10m") {
 		t.Errorf("viewAqueductProgress should contain overall elapsed '10m', got:\n%s", stripped)
 	}
-	if !strings.Contains(stripped, "2m 14s") {
-		t.Errorf("viewAqueductProgress should contain stage elapsed '2m 14s' when StageElapsed is set, got:\n%s", stripped)
+	if !strings.Contains(stripped, "2m 14s") && !strings.Contains(stripped, "(stage 2m 14s)") {
+		t.Errorf("viewAqueductProgress should contain stage elapsed '(stage 2m 14s)' when StageElapsed is set, got:\n%s", stripped)
 	}
 }
 
@@ -1111,11 +1111,36 @@ func TestViewAqueductProgress_StageElapsedZero_OmitsStageAge(t *testing.T) {
 	}
 	result := m.viewAqueductProgress(ch)
 	stripped := stripANSITest(result)
-	if strings.Contains(stripped, " 0s") {
-		t.Errorf("viewAqueductProgress should not show standalone '0s' stage age when StageElapsed=0, got:\n%s", stripped)
+	if strings.Contains(stripped, " 0s") || strings.Contains(stripped, "(stage") {
+		t.Errorf("viewAqueductProgress should not show standalone '0s' or '(stage' when StageElapsed=0, got:\n%s", stripped)
 	}
 	if !strings.Contains(stripped, "5m 30s") {
 		t.Errorf("viewAqueductProgress should contain overall elapsed '5m 30s', got:\n%s", stripped)
+	}
+}
+
+// TestViewAqueductProgress_StageElapsedSubSecond_OmitsStageAge verifies that
+// viewAqueductProgress does not show "(stage 0s)" when StageElapsed is > 0 but < 1s.
+//
+// Given: an aqueduct with Elapsed=5m and StageElapsed=500ms (formats to "0s")
+// When:  viewAqueductProgress is called
+// Then:  the label row contains overall elapsed but no "(stage" label
+func TestViewAqueductProgress_StageElapsedSubSecond_OmitsStageAge(t *testing.T) {
+	m := newDashboardTUIModel("", "")
+	ch := CataractaeInfo{
+		Name:            "virgo",
+		DropletID:       "ci-sub03",
+		Step:            "review",
+		Steps:           []string{"implement", "review", "deliver"},
+		Elapsed:         5 * time.Minute,
+		StageElapsed:    100 * time.Millisecond,
+		TotalCataractae: 3,
+		CataractaeIndex: 2,
+	}
+	result := m.viewAqueductProgress(ch)
+	stripped := stripANSITest(result)
+	if strings.Contains(stripped, "(stage") {
+		t.Errorf("viewAqueductProgress should not show '(stage' when StageElapsed formats to '0s', got:\n%s", stripped)
 	}
 }
 
@@ -1239,8 +1264,8 @@ func TestRenderAqueductRow_StageElapsed_Shown(t *testing.T) {
 	}
 	out := renderAqueductRow(ch, 120)
 	stripped := stripANSITest(out)
-	if !strings.Contains(stripped, "2m 14s") {
-		t.Errorf("renderAqueductRow should contain stage elapsed '2m 14s' when StageElapsed is set, got:\n%s", stripped)
+	if !strings.Contains(stripped, "(stage 2m 14s)") {
+		t.Errorf("renderAqueductRow should contain stage elapsed '(stage 2m 14s)' when StageElapsed is set, got:\n%s", stripped)
 	}
 }
 
@@ -1264,8 +1289,33 @@ func TestRenderAqueductRow_StageElapsedZero_OmitsStageAge(t *testing.T) {
 	out := renderAqueductRow(ch, 120)
 	stripped := stripANSITest(out)
 	// "5m 30s" is the overall elapsed; there should be no separate "0s" token.
-	if strings.Contains(stripped, " 0s ") {
-		t.Errorf("renderAqueductRow should not show standalone '0s' stage age when StageElapsed=0, got:\n%s", stripped)
+	if strings.Contains(stripped, " 0s ") || strings.Contains(stripped, "(stage") {
+		t.Errorf("renderAqueductRow should not show standalone '0s' or '(stage' when StageElapsed=0, got:\n%s", stripped)
+	}
+}
+
+// TestRenderAqueductRow_StageElapsedSubSecond_OmitsStageAge verifies that
+// renderAqueductRow does not show "0s" when StageElapsed is > 0 but < 1s
+// (formatElapsed rounds sub-second durations to "0s").
+//
+// Given: an aqueduct with StageElapsed=500ms (formats to "0s")
+// When:  renderAqueductRow is called
+// Then:  the output does NOT contain "(stage" or standalone "0s"
+func TestRenderAqueductRow_StageElapsedSubSecond_OmitsStageAge(t *testing.T) {
+	ch := CataractaeInfo{
+		Name:            "virgo",
+		DropletID:       "ci-sub01",
+		Step:            "implement",
+		Steps:           []string{"implement", "review", "qa"},
+		Elapsed:         5 * time.Minute,
+		StageElapsed:    100 * time.Millisecond,
+		CataractaeIndex: 1,
+		TotalCataractae: 3,
+	}
+	out := renderAqueductRow(ch, 120)
+	stripped := stripANSITest(out)
+	if strings.Contains(stripped, "(stage") {
+		t.Errorf("renderAqueductRow should not show '(stage' when StageElapsed formats to '0s', got:\n%s", stripped)
 	}
 }
 
@@ -1287,8 +1337,8 @@ func TestRenderFlowGraphRow_StageElapsed_Shown(t *testing.T) {
 		TotalCataractae: 3,
 	}
 	_, infoLine := renderFlowGraphRow(ch)
-	if !strings.Contains(infoLine, "2m 14s") {
-		t.Errorf("renderFlowGraphRow info line should contain stage elapsed '2m 14s' when StageElapsed is set, got:\n%s", infoLine)
+	if !strings.Contains(infoLine, "(stage 2m 14s)") {
+		t.Errorf("renderFlowGraphRow info line should contain stage elapsed '(stage 2m 14s)' when StageElapsed is set, got:\n%s", infoLine)
 	}
 }
 
@@ -1310,11 +1360,34 @@ func TestRenderFlowGraphRow_StageElapsedZero_OmitsStageAge(t *testing.T) {
 		TotalCataractae: 3,
 	}
 	_, infoLine := renderFlowGraphRow(ch)
-	if strings.Contains(infoLine, " 0s ") {
-		t.Errorf("renderFlowGraphRow info line should not show standalone '0s' stage age when StageElapsed=0, got:\n%s", infoLine)
+	if strings.Contains(infoLine, " 0s ") || strings.Contains(infoLine, "(stage") {
+		t.Errorf("renderFlowGraphRow info line should not show standalone '0s' or '(stage' when StageElapsed=0, got:\n%s", infoLine)
 	}
 	if !strings.Contains(infoLine, "5m 30s") {
 		t.Errorf("renderFlowGraphRow info line should contain overall elapsed '5m 30s', got:\n%s", infoLine)
+	}
+}
+
+// TestRenderFlowGraphRow_StageElapsedSubSecond_OmitsStageAge verifies that
+// renderFlowGraphRow does not show "0s" when StageElapsed is > 0 but < 1s.
+//
+// Given: an aqueduct with StageElapsed=500ms (formats to "0s")
+// When:  renderFlowGraphRow is called
+// Then:  the info line does NOT contain "(stage" or standalone "0s"
+func TestRenderFlowGraphRow_StageElapsedSubSecond_OmitsStageAge(t *testing.T) {
+	ch := CataractaeInfo{
+		Name:            "virgo",
+		DropletID:       "ci-sub02",
+		Step:            "review",
+		Steps:           []string{"implement", "review", "qa"},
+		Elapsed:         5 * time.Minute,
+		StageElapsed:    100 * time.Millisecond,
+		CataractaeIndex: 2,
+		TotalCataractae: 3,
+	}
+	_, infoLine := renderFlowGraphRow(ch)
+	if strings.Contains(infoLine, "(stage") {
+		t.Errorf("renderFlowGraphRow should not show '(stage' when StageElapsed formats to '0s', got:\n%s", infoLine)
 	}
 }
 

@@ -1215,7 +1215,13 @@ var dropletPeekCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Printf("[%s] %s — flowing %s\n", item.ID, item.Title, formatElapsed(time.Since(item.UpdatedAt)))
+		stageSuffix := ""
+		if !item.StageDispatchedAt.IsZero() {
+			if se := formatStageElapsed(time.Since(item.StageDispatchedAt)); se != "" {
+				stageSuffix = " (stage " + se + ")"
+			}
+		}
+		fmt.Printf("[%s] %s — flowing %s%s\n", item.ID, item.Title, formatElapsed(time.Since(item.UpdatedAt)), stageSuffix)
 
 		// notesHint prints a no-session message and falls back to the last note.
 		notesHint := func() {

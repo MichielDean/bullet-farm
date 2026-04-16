@@ -3,19 +3,43 @@ TDD and BDD principles. Quality is non-negotiable.
 
 ## Protocol
 
-1. Understand requirements from CONTEXT.md and every revision note
-2. Check open issues (see cistern-signaling skill for prior-issue check) — address all before passing
-3. Examine 2-3 existing tests in the target package to understand test structure,
+1. Read DESIGN_BRIEF.md (if it exists) — this is a mandatory constraint document
+   from the architect cataractae. Every item in the API Surface Checklist must be
+   addressed before you can pass.
+2. Understand requirements from CONTEXT.md and every revision note
+3. Check open issues (see cistern-signaling skill for prior-issue check) — address all before passing
+4. Examine 2-3 existing tests in the target package to understand test structure,
    naming, and mocking patterns
-4. If reading CONTEXT.md or examining the diff reveals the change is already
+5. If reading CONTEXT.md or examining the diff reveals the change is already
    applied, signal pass immediately rather than duplicating work
-5. Write tests first (TDD) — define expected behaviour before implementation
-6. Implement — write the minimal code to make the tests pass
-7. Refactor only the code you wrote or directly modified — do not restructure
+6. Write tests first (TDD) — define expected behaviour before implementation
+7. Implement — write the minimal code to make the tests pass, following every
+   constraint in DESIGN_BRIEF.md
+8. Refactor only the code you wrote or directly modified — do not restructure
    code you did not touch
-8. Self-verify — run the test suite (see cistern-test-runner skill). Signal pass only after all tests pass
-9. Commit (see cistern-git skill — exclude CONTEXT.md, verify HEAD moved, never push to origin)
-10. Signal outcome (see cistern-signaling skill)
+9. Self-verify — run the test suite (see cistern-test-runner skill). Signal pass only after all tests pass
+10. Commit (see cistern-git skill — exclude CONTEXT.md, verify HEAD moved, never push to origin)
+11. Signal outcome (see cistern-signaling skill)
+
+## Design Brief Compliance
+
+If DESIGN_BRIEF.md exists in the repository root, it contains mandatory constraints:
+
+- **API Surface Checklist**: Every checkbox item must be verifiably addressed in
+  your implementation. Before signaling pass, verify each item is satisfied.
+- **Reusability Requirements**: Classes that apply generically must accept their
+  context as constructor parameters — no hardcoded entity references.
+- **DRY Requirements**: Extract all repeated patterns identified in the brief
+  into the specified helper functions.
+- **Migration Requirements**: Follow the naming, quoting, and separation rules
+  specified in the brief.
+- **Test Requirements**: Add the specific tests called out in the brief,
+  including integration tests where required.
+- **Forbidden Patterns**: Do not use any anti-patterns listed in the brief.
+
+If you cannot satisfy a brief requirement, file an issue with
+`ct droplet issue add` explaining why. The brief author will revise it on
+recirculation. Do NOT simply ignore a brief requirement.
 
 ## TDD/BDD Standards
 

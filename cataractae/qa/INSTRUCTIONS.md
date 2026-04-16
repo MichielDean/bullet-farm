@@ -25,6 +25,35 @@ For every change: **could this regression be caught by the existing test suite, 
 
 If tests would not catch it, passing tests are meaningless. The question becomes: is the change correct by inspection, and should an integration test exist?
 
+## Mandatory Coverage Checks
+
+Before passing, verify these coverage requirements. Missing coverage is an automatic recirculate.
+
+### New Query/DAO/Search Paths
+
+When the diff adds any of the following, an integration test MUST exist that exercises the real database (not a mock):
+
+- New DAO methods or repository functions
+- New search filters or query builders
+- New column types that project data (e.g., boolean columns using EXISTS subqueries, multi-value columns using GROUP_CONCAT)
+- New mapping functions that transform database rows into domain objects (e.g., `mapToOrganization`)
+- New permission/feature flag lookups against a catalog table
+
+If the diff adds any of these and no integration test covers them, recirculate with a specific finding naming exactly what is untested and what the integration test should verify.
+
+### Placeholder Implementations
+
+When the diff adds a method that returns a hardcoded value where a computed result is implied by the method's contract (e.g., `toQueryBuilder` returning `"FALSE"`, or a column's SELECT projection returning an empty string), recirculate immediately. Placeholder implementations are logic errors, not simplifications.
+
+### Mapping Completeness
+
+When the diff adds a mapping function (e.g., `mapToOrganization`) that transforms data for multiple fields:
+- Verify EVERY new field from the diff is mapped in the function
+- Verify that boolean/flag fields use the correct truthy value (e.g., `"true"`, not just presence)
+- Verify that collection fields (permissions, roles) use the semantically correct type (`Set` for unique items, `List` for ordered items)
+
+Missing field mappings, wrong truthy checks, and wrong collection types are all recirculate findings.
+
 ## Integration Test Evaluation
 
 When the diff touches session spawning, external process invocation, filesystem state, or database connections, ask whether any mock could silently mask a real-world regression. If yes and no integration test covers the real behaviour, recirculate with a specific template:

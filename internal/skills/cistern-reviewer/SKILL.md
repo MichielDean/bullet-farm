@@ -30,6 +30,28 @@ Identify and reject:
 - **Cargo cult code**: Patterns used without understanding why (e.g., `useEffect` with wrong dependencies, `async/await` wrapped around synchronous code)
 - **Dead code**: Commented-out blocks, unreachable branches, unused imports/variables
 - **Premature abstraction AND missing abstraction**: Both are failures of judgment
+- **Placeholder/stub implementations**: Any method that returns a hardcoded value (`"FALSE"`, `""`, `0`, `null`, `NotImplementedException`) where the method's contract implies a computed result. This is always a bug — the author either forgot to implement it or intended to do it later. If the method is a `toQueryBuilder`, `toString`, `hashCode`, `equals`, or query-building method, a placeholder return is a logic error that will produce wrong results at runtime
+
+### Misleading Types and API Surfaces
+
+A type or class that creates a wrong mental model is a bug in readability. Flag:
+- A data class or wrapper that presents as a database column or framework primitive but is just a string/number wrapper — a developer reading only the type name will assume it has the behavior of the thing it mimics
+- Constants defined inside a schema/DDL definition object (e.g., a `Table` or `Entity` class) — business constants and schema definitions have different lifecycles and should live in separate objects
+- A type whose name implies one thing but whose constructor or fields reveal it is something else entirely (e.g., `PermissionColumnName` that is not a column, just a string wrapper masquerading as one)
+
+### Over-Coupling
+
+Abstractions that over-couple to a specific table, module, or context when the pattern is generic. Flag:
+- A class or function that takes a hardcoded import or reference to a specific table (e.g., `import OrganizationTable.id`) when the same pattern applies to multiple tables — the reference should be a constructor parameter
+- A utility that only works for one entity when it could trivially work for all entities with a parameter — this forces duplication when the next entity needs the same feature
+- A method or column class that hardcodes its outer context instead of receiving it — generic patterns should have generic interfaces
+
+### Repeated Inline Expressions (DRY)
+
+When the same expression is repeated more than 2-3 times, it is a copy-paste artifact that should be extracted. Flag:
+- The same boolean extraction pattern (e.g., `perms[SOME_CONSTANT]?.contains("true") ?: false`) repeated across many call sites — extract a helper
+- The same mapping/transformation inline in multiple places — extract once, call everywhere
+- Unlike structural abstraction (which can be premature), extracting a repeated inline expression is always correct: it reduces copy-paste errors, makes the intent clearer, and centralizes the change point
 
 ### Structural Contempt
 
@@ -51,6 +73,9 @@ Code organization reveals thinking. Flag:
 - Every `any` type in TypeScript is a bug waiting to happen
 - Every missing `await` is a race condition
 - Every "temporary" solution is permanent
+- Every method that returns a hardcoded value where a computed result is expected is a missing implementation, not a simplification
+- Every type that looks like a framework primitive but isn't one will mislead the next developer
+- Every hardcoded reference to a specific table or module, in a class that could apply generically, is coupling that forces duplication
 
 ### Language-Specific Red Flags
 
@@ -90,6 +115,9 @@ Code organization reveals thinking. Flag:
 - Raw string interpolation in queries (SQL injection risk)
 - Missing indexes on frequently queried columns
 - Unbounded queries without LIMIT
+- Unquoted identifiers in DML/DDL (e.g., `SELECT o.id` instead of `` SELECT o.`id` ``) — risk of reserved word conflicts and cross-dialect breakage
+- Migration files that bundle CREATE TABLE and INSERT of reference data into a single migration — separate them: schema changes should be independently auditable and rollback-safe
+- Reference data INSERT statements with placeholder or minimal descriptions (e.g., `'CPS feature enabled'`) — migration descriptions serve as documentation and should be meaningful
 
 ## When Uncertain
 

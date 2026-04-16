@@ -14,6 +14,12 @@ description: Role-specific signaling permissions for Cistern cataractae. Defines
 
 ## Role Permissions
 
+### Architect
+- **Pass**: design brief written, committed, and addressing all checklist categories
+- **Recirculate**: brief cannot be completed (e.g., requirements are ambiguous and cannot be resolved from the codebase alone)
+- **Pool**: blocked by external dependency after investigation
+- **FORBIDDEN**: recirculate to skip investigation — if the codebase has the answer, find it
+
 ### Implementer
 - **Pass**: implementation committed, tests pass, open issues addressed
 - **Pool**: blocked by external dependency after 3 attempts

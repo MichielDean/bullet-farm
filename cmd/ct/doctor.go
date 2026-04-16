@@ -992,6 +992,9 @@ func runDoctorSkillsCheck(cfg *aqueduct.AqueductConfig) {
 		}
 		for _, step := range wf.Cataractae {
 			for _, sk := range step.Skills {
+				if sk.Name == "" {
+					continue
+				}
 				if _, exists := seen[sk.Name]; !exists {
 					seen[sk.Name] = &skillInfo{name: sk.Name, usedBySet: map[string]struct{}{}}
 				}

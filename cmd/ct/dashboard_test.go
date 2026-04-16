@@ -1724,7 +1724,7 @@ func TestFetchDashboardData_StageElapsed_UsesStageDispatchedAt(t *testing.T) {
 	c.Assign(flowing.ID, "virgo", "implement")
 	c.Close()
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	var virgo *CataractaeInfo
 	for i := range data.Cataractae {
@@ -1773,7 +1773,7 @@ func TestFetchDashboardData_StageElapsed_ZeroWhenNotDispatched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data := fetchDashboardData(cfgPath, dbPath)
+	data, _ := fetchDashboardData(cfgPath, dbPath)
 
 	var virgo *CataractaeInfo
 	for i := range data.Cataractae {

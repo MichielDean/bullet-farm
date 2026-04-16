@@ -26,6 +26,516 @@ func TestDoctorCmd_FixFlagRegistered(t *testing.T) {
 	}
 }
 
+// --- TestDoctorCmd_SkillsFlagRegistered ---
+
+func TestDoctorCmd_SkillsFlagRegistered(t *testing.T) {
+	f := doctorCmd.Flags().Lookup("skills")
+	if f == nil {
+		t.Fatal("--skills flag not registered on doctor command")
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("expected default false, got %q", f.DefValue)
+	}
+}
+
+// --- runDoctorSkillsCheck tests ---
+
+func TestRunDoctorSkillsCheck_ListsAllReferencedSkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflowWithSkills := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    skills:
+      - name: skill-a
+      - name: skill-b
+    on_pass: review
+  - name: review
+    type: agent
+    identity: reviewer
+    skills:
+      - name: skill-b
+      - name: skill-c
+    on_pass: done
+`
+	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
+	if err := os.WriteFile(wfPath, []byte(workflowWithSkills), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	// Install skill-b only.
+	if err := os.MkdirAll(filepath.Join(skillsDir, "skill-b"), 0o755); err != nil {
+		t.Fatalf("mkdir skill-b: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "skill-b", "SKILL.md"), []byte("# skill-b\n"), 0o644); err != nil {
+		t.Fatalf("write skill-b: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	if !strings.Contains(out, "skill-a") {
+		t.Error("expected skill-a in output")
+	}
+	if !strings.Contains(out, "skill-b") {
+		t.Error("expected skill-b in output")
+	}
+	if !strings.Contains(out, "skill-c") {
+		t.Error("expected skill-c in output")
+	}
+
+	if !strings.Contains(out, "✗") && !strings.Contains(out, "missing") {
+		t.Error("expected missing indicator for uninstalled skills")
+	}
+	if !strings.Contains(out, "✓") && !strings.Contains(out, "installed") {
+		t.Error("expected installed indicator for installed skills")
+	}
+}
+
+func TestRunDoctorSkillsCheck_DeduplicatesAcrossRepos(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflow := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    skills:
+      - name: shared-skill
+    on_pass: done
+`
+	wfPath1 := filepath.Join(aqueductDir, "workflow1.yaml")
+	wfPath2 := filepath.Join(aqueductDir, "workflow2.yaml")
+	if err := os.WriteFile(wfPath1, []byte(workflow), 0o644); err != nil {
+		t.Fatalf("write workflow1: %v", err)
+	}
+	if err := os.WriteFile(wfPath2, []byte(workflow), 0o644); err != nil {
+		t.Fatalf("write workflow2: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: repo1
+    url: https://github.com/example/repo1
+    workflow_path: aqueduct/workflow1.yaml
+    cataractae: 1
+    prefix: r1
+  - name: repo2
+    url: https://github.com/example/repo2
+    workflow_path: aqueduct/workflow2.yaml
+    cataractae: 1
+    prefix: r2
+max_cataractae: 2
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	// Install shared-skill.
+	if err := os.MkdirAll(filepath.Join(skillsDir, "shared-skill"), 0o755); err != nil {
+		t.Fatalf("mkdir shared-skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "shared-skill", "SKILL.md"), []byte("# shared-skill\n"), 0o644); err != nil {
+		t.Fatalf("write shared-skill: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	count := strings.Count(out, "shared-skill")
+	if count != 1 {
+		t.Errorf("expected shared-skill to appear exactly once, got %d occurrences", count)
+	}
+
+	if strings.Contains(out, "implement, implement") {
+		t.Errorf("usedBy list should be deduplicated, got duplicate cataractae names: %q", out)
+	}
+}
+
+func TestRunDoctorSkillsCheck_NoSkillsReferenced_ReportsNone(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflowNoSkills := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    on_pass: done
+`
+	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
+	if err := os.WriteFile(wfPath, []byte(workflowNoSkills), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	if !strings.Contains(out, "no skills referenced") {
+		t.Errorf("expected 'no skills referenced' message, got: %q", out)
+	}
+}
+
+func TestRunDoctorSkillsCheck_InvalidWorkflow_SkipsRepo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
+	if err := os.WriteFile(wfPath, []byte("::invalid::"), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	if !strings.Contains(out, "no skills referenced") {
+		t.Errorf("expected 'no skills referenced' for invalid workflow, got: %q", out)
+	}
+}
+
+func TestRunDoctorSkillsCheck_ShowsCataractaeThatUseSkill(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflowWithSkills := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    skills:
+      - name: skill-x
+    on_pass: review
+  - name: review
+    type: agent
+    identity: reviewer
+    skills:
+      - name: skill-x
+    on_pass: done
+`
+	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
+	if err := os.WriteFile(wfPath, []byte(workflowWithSkills), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	if !strings.Contains(out, "implement") || !strings.Contains(out, "review") {
+		t.Errorf("expected cataractae names 'implement' and 'review' in output, got: %q", out)
+	}
+}
+
+func TestRunDoctorSkills_ViaCT_CONFIG_ResolvesWorkflowPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	altDir := t.TempDir()
+	aqueductDir := filepath.Join(altDir, "aqueduct")
+	skillsDir := filepath.Join(home, ".cistern", "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflowWithSkills := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    skills:
+      - name: skill-ctconfig
+    on_pass: done
+`
+	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
+	if err := os.WriteFile(wfPath, []byte(workflowWithSkills), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
+	altCfgPath := filepath.Join(altDir, "cistern.yaml")
+	if err := os.WriteFile(altCfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write alt config: %v", err)
+	}
+
+	t.Setenv("CT_CONFIG", altCfgPath)
+	doctorSkills = true
+	t.Cleanup(func() { doctorSkills = false })
+
+	out := captureStdout(t, func() {
+		if err := runDoctor(doctorCmd, []string{}); err != nil {
+			t.Fatalf("runDoctor with --skills: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "skill-ctconfig") {
+		t.Errorf("expected skill-ctconfig in output when CT_CONFIG set via runDoctor, got: %q", out)
+	}
+}
+
+func TestRunDoctorSkills_ParseConfigError_ReturnsError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	t.Setenv("CT_CONFIG", filepath.Join(home, "nonexistent", "cistern.yaml"))
+	doctorSkills = true
+	t.Cleanup(func() { doctorSkills = false })
+
+	err := runDoctor(doctorCmd, []string{})
+	if err == nil {
+		t.Fatal("expected error when config cannot be parsed, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot parse config") {
+		t.Errorf("expected 'cannot parse config' error, got: %v", err)
+	}
+}
+
+func TestRunDoctorSkillsCheck_AbsoluteWorkflowPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	absWfDir := filepath.Join(home, "custom-workflows")
+	for _, d := range []string{skillsDir, absWfDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflow := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    skills:
+      - name: abs-path-skill
+    on_pass: done
+`
+	absWfPath := filepath.Join(absWfDir, "workflow.yaml")
+	if err := os.WriteFile(absWfPath, []byte(workflow), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := fmt.Sprintf(`repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: %s
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`, absWfPath)
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	if !strings.Contains(out, "abs-path-skill") {
+		t.Errorf("expected abs-path-skill in output with absolute workflow_path, got: %q", out)
+	}
+}
+
+func TestRunDoctorSkillsCheck_SkipsEmptySkillName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cisternDir := filepath.Join(home, ".cistern")
+	aqueductDir := filepath.Join(cisternDir, "aqueduct")
+	skillsDir := filepath.Join(cisternDir, "skills")
+	for _, d := range []string{aqueductDir, skillsDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	workflowWithEmptySkill := `name: test
+cataractae:
+  - name: implement
+    type: agent
+    identity: implementer
+    skills:
+      - name: ""
+      - name: real-skill
+    on_pass: done
+`
+	wfPath := filepath.Join(aqueductDir, "workflow.yaml")
+	if err := os.WriteFile(wfPath, []byte(workflowWithEmptySkill), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	cfgContent := `repos:
+  - name: testrepo
+    url: https://github.com/example/testrepo
+    workflow_path: aqueduct/workflow.yaml
+    cataractae: 1
+    prefix: ct
+max_cataractae: 1
+`
+	cfgPath := filepath.Join(cisternDir, "cistern.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	out := captureStdout(t, func() { runDoctorSkillsCheck(cfg) })
+
+	if !strings.Contains(out, "real-skill") {
+		t.Errorf("expected real-skill in output, got: %q", out)
+	}
+	count := strings.Count(out, "real-skill")
+	if count != 1 {
+		t.Errorf("expected real-skill exactly once, got %d occurrences", count)
+	}
+}
+
 // --- TestCheckWithFix unit tests ---
 
 func TestCheckWithFix_PassingCheck_DoesNotCallFix(t *testing.T) {

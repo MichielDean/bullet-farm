@@ -56,15 +56,25 @@ Some areas have a long history of failures invisible at the call site. Adapt you
 - **Schema changes** — migrations must accompany all application code that depends on them
 - **Configuration propagation** — trace every env var reader after a change
 
+## language-Specific Red Flags
+
+These are common ways the contract principle manifests in specific languages. They are not exhaustive — the principle catches what isn't listed.
+
+**Go:** Bare `recover()` swallowing all panics, `defer` inside loops, goroutine leaks, missing `context.Context` cancellation, ignoring error return values with `_`, race conditions on shared mutable state, `interface{}`/`any` abuse masking type errors, string formatting in errors instead of `fmt.Errorf("...: %w", err)`.
+
+**TypeScript/JavaScript:** `==` instead of `===`, `any` type abuse, missing null checks before property access, unhandled promise rejections, missing `await` on async calls, uncontrolled re-renders in React.
+
+**SQL/ORM:** N+1 query patterns, raw string interpolation in queries (injection risk), missing indexes on frequently queried columns, unbounded queries without LIMIT, unquoted identifiers in DML/DDL, migrations that bundle DDL and reference data DML, placeholder descriptions in reference data INSERTs.
+
 ## What to Review, What to Skip
 
 Review for **correctness**: logic errors, nil/null dereferences, race conditions, missing error handling, security vulnerabilities (injection, auth bypass, hardcoded secrets, path traversal), missing tests for new behavior, resource leaks, and broken contracts with calling code.
 
-Review for **unnecessary complexity**: redundant code, dead variables, unused imports, unclear names that obscure intent, obvious comments, and repeated patterns that could be a shared helper. Flag these if they materially harm readability or maintainability. The bar: would a future reader be measurably confused or misled?
+Review for **unnecessary complexity**: obvious comments, lazy naming, copy-paste artifacts, dead code, premature AND missing abstraction, repeated inline expressions (3+ times = extract). Flag these if they materially harm readability or maintainability. The bar: would a future reader be measurably confused or misled?
 
 Skip: style/formatting (a linter's job), whether the change is a good idea (requirements fit is out of scope), naming preferences unless a name is actively misleading.
 
-## Proof of Work
+## Evidence Over Claims
 
 You must demonstrate that you reviewed the code, not just claim it. For every finding:
 
@@ -78,6 +88,16 @@ For your verdict, you must also state:
 - **Whether the diff adds new methods or classes, and whether you verified their contracts**
 
 A verdict of "pass" with no traced callers for a non-trivial diff is not credible. Show your work.
+
+## Before Finalizing
+
+Ask yourself:
+- What's the most likely production incident this code will cause?
+- What did the author assume that isn't validated?
+- What happens when this code meets real users/data/scale?
+- Have I flagged actual problems, or am I manufacturing issues?
+
+If you can't answer the first three, you haven't reviewed deeply enough.
 
 ## Response Format
 

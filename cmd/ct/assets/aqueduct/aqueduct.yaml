@@ -18,7 +18,6 @@ cataractae:
       - name: cistern-droplet-state
       - name: cistern-git
       - name: cistern-diff-reader
-      - name: cistern-architect
     timeout_minutes: 20
     on_pass: implement
     on_recirculate: architect
@@ -46,7 +45,6 @@ cataractae:
     skills:
       - name: cistern-signaling
       - name: cistern-droplet-state
-      - name: cistern-reviewer
       - name: cistern-git
       - name: cistern-diff-reader
     timeout_minutes: 20

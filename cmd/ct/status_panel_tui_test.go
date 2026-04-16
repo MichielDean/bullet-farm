@@ -656,4 +656,9 @@ func TestStatusPanel_View_StageElapsedZero_NoExtraAgeDisplay(t *testing.T) {
 	if strings.Count(v, "ci-nostage01") < 1 {
 		t.Errorf("View() should contain droplet ID; output:\n%s", v)
 	}
+	for _, line := range strings.Split(v, "\n") {
+		if strings.Contains(line, "ci-nostage01") && strings.Contains(line, " 0s") {
+			t.Errorf("Droplet row should not show standalone '0s' stage age when StageElapsed=0; line:\n%s", line)
+		}
+	}
 }

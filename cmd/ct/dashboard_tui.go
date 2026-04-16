@@ -596,10 +596,11 @@ func (m dashboardTUIModel) viewAqueductProgress(ch CataractaeInfo) string {
 		lbl := s
 		if i == activeIdx {
 			parts := []string{}
+			if elapsed != "" && elapsed != "0s" {
+				parts = append(parts, elapsed)
+			}
 			if stageElapsed != "" && stageElapsed != "0s" {
 				parts = append(parts, stageElapsed)
-			} else if elapsed != "" && elapsed != "0s" {
-				parts = append(parts, elapsed)
 			}
 			if len(parts) > 0 {
 				lbl = s + " " + strings.Join(parts, " ")

@@ -1063,6 +1063,62 @@ func TestViewAqueductProgress_SluiceGates(t *testing.T) {
 	}
 }
 
+// TestViewAqueductProgress_StageElapsedShownAppended verifies that viewAqueductProgress
+// shows both overall elapsed AND stage elapsed (appended), not replacing elapsed with stage.
+//
+// Given: an aqueduct with Elapsed=10m and StageElapsed=2m 14s
+// When:  viewAqueductProgress is called
+// Then:  the label row contains both '10m' and '2m 14s'
+func TestViewAqueductProgress_StageElapsedShownAppended(t *testing.T) {
+	m := newDashboardTUIModel("", "")
+	ch := CataractaeInfo{
+		Name:            "virgo",
+		DropletID:       "ci-abc12",
+		Step:            "implement",
+		Steps:           []string{"implement", "review", "deliver"},
+		Elapsed:         10 * time.Minute,
+		StageElapsed:    2*time.Minute + 14*time.Second,
+		TotalCataractae: 3,
+		CataractaeIndex: 1,
+	}
+	result := m.viewAqueductProgress(ch)
+	stripped := stripANSITest(result)
+	if !strings.Contains(stripped, "10m") {
+		t.Errorf("viewAqueductProgress should contain overall elapsed '10m', got:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "2m 14s") {
+		t.Errorf("viewAqueductProgress should contain stage elapsed '2m 14s' when StageElapsed is set, got:\n%s", stripped)
+	}
+}
+
+// TestViewAqueductProgress_StageElapsedZero_OmitsStageAge verifies that viewAqueductProgress
+// does not show a standalone "0s" stage age when StageElapsed is 0, but still shows overall elapsed.
+//
+// Given: an aqueduct with Elapsed=5m 30s and StageElapsed=0
+// When:  viewAqueductProgress is called
+// Then:  the label row contains overall elapsed but no standalone "0s"
+func TestViewAqueductProgress_StageElapsedZero_OmitsStageAge(t *testing.T) {
+	m := newDashboardTUIModel("", "")
+	ch := CataractaeInfo{
+		Name:            "virgo",
+		DropletID:       "ci-abc12",
+		Step:            "review",
+		Steps:           []string{"implement", "review", "deliver"},
+		Elapsed:         5*time.Minute + 30*time.Second,
+		StageElapsed:    0,
+		TotalCataractae: 3,
+		CataractaeIndex: 2,
+	}
+	result := m.viewAqueductProgress(ch)
+	stripped := stripANSITest(result)
+	if strings.Contains(stripped, " 0s") {
+		t.Errorf("viewAqueductProgress should not show standalone '0s' stage age when StageElapsed=0, got:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "5m 30s") {
+		t.Errorf("viewAqueductProgress should contain overall elapsed '5m 30s', got:\n%s", stripped)
+	}
+}
+
 // --- viewIdleAqueductRow tests ---
 
 func TestViewIdleAqueductRow_ShowsName(t *testing.T) {

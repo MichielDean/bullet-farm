@@ -205,6 +205,47 @@ func TestStatusIntervalZeroReturnsError(t *testing.T) {
 	}
 }
 
+func TestStatusJSONOutput_ReturnsErrorWhenConfigMissing(t *testing.T) {
+	t.Setenv("CT_CONFIG", "/nonexistent/cistern.yaml")
+	t.Setenv("CT_DB", "/nonexistent/cistern.db")
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	err := statusCmd.RunE(statusCmd, nil)
+	if err == nil {
+		t.Fatal("expected error when config is missing, got nil")
+	}
+}
+
+func TestStatusJSONOutput_ReturnsErrorWhenDBUnreadable(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "cistern.yaml")
+	cfgContent := "repos:\n  - name: test\n    repo: /tmp/test\n    workers:\n      - name: w1\n"
+	os.WriteFile(cfgPath, []byte(cfgContent), 0644)
+	t.Setenv("CT_CONFIG", cfgPath)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "unreadable.db")
+	os.WriteFile(dbPath, []byte("not a database"), 0444)
+	t.Setenv("CT_DB", dbPath)
+
+	origJSON := statusJSON
+	origWatch := statusWatch
+	defer func() { statusJSON = origJSON; statusWatch = origWatch }()
+
+	statusJSON = true
+	statusWatch = false
+
+	err := statusCmd.RunE(statusCmd, nil)
+	if err == nil {
+		t.Fatal("expected error when DB is unreadable, got nil")
+	}
+}
+
 func TestStatusIntervalNegativeReturnsError(t *testing.T) {
 	origInterval := statusInterval
 	defer func() { statusInterval = origInterval }()

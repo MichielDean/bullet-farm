@@ -384,7 +384,10 @@ var statusCmd = &cobra.Command{
 		dbPath := resolveDBPath()
 
 		if statusJSON {
-			data := fetchDashboardData(cfgPath, dbPath)
+			data, err := fetchDashboardData(cfgPath, dbPath)
+			if err != nil {
+				return fmt.Errorf("fetching status: %w", err)
+			}
 			out, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
 				return fmt.Errorf("marshal JSON: %w", err)

@@ -60,6 +60,17 @@ const wsMaxClientPayload = 4096
 // ptyReadBufSize is the read buffer for forwarding PTY output to WebSocket.
 const ptyReadBufSize = 4096
 
+// Field length limits for input validation.
+const (
+	maxTitleLen       = 256
+	maxRepoLen        = 128
+	maxDescriptionLen = 4096
+	maxContentLen     = 65536
+	maxDependsOnLen   = 128
+	maxNotesLen       = 65536
+	maxReasonLen      = 65536
+)
+
 // apiMaxBodyBytes is the maximum request body size accepted by API endpoints.
 // Prevents unbounded memory consumption from large payloads.
 const apiMaxBodyBytes = 1 << 20 // 1 MiB
@@ -1150,8 +1161,14 @@ func defaultAllowedOrigins() []string {
 // apiAuthMiddleware rejects requests that lack a valid Bearer token when
 // an API key is configured. When no key is configured, all requests pass through.
 // Uses constant-time comparison to prevent timing side-channel attacks.
+// CORS preflight (OPTIONS) requests are always allowed through, since browsers
+// send them without Authorization headers and the CORS middleware must respond.
 func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
 		auth := r.Header.Get("Authorization")
 		if auth == "" {
 			writeAPIError(w, http.StatusUnauthorized, "authorization required")
@@ -1313,20 +1330,20 @@ func handleCreateDroplet(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "title is required")
 			return
 		}
-		if len(req.Title) > 256 {
-			writeAPIError(w, http.StatusBadRequest, "title exceeds maximum length (256)")
+		if len(req.Title) > maxTitleLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("title exceeds maximum length (%d)", maxTitleLen))
 			return
 		}
 		if req.Repo == "" {
 			writeAPIError(w, http.StatusBadRequest, "repo is required")
 			return
 		}
-		if len(req.Repo) > 128 {
-			writeAPIError(w, http.StatusBadRequest, "repo exceeds maximum length (128)")
+		if len(req.Repo) > maxRepoLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("repo exceeds maximum length (%d)", maxRepoLen))
 			return
 		}
-		if len(req.Description) > 4096 {
-			writeAPIError(w, http.StatusBadRequest, "description exceeds maximum length (4096)")
+		if len(req.Description) > maxDescriptionLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("description exceeds maximum length (%d)", maxDescriptionLen))
 			return
 		}
 		if req.Complexity < 1 || req.Complexity > 3 {
@@ -1358,6 +1375,14 @@ func handleEditDroplet(dbPath string) http.HandlerFunc {
 		id := r.PathValue("id")
 		var req editDropletRequest
 		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.Title != nil && len(*req.Title) > maxTitleLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("title exceeds maximum length (%d)", maxTitleLen))
+			return
+		}
+		if req.Description != nil && len(*req.Description) > maxDescriptionLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("description exceeds maximum length (%d)", maxDescriptionLen))
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1394,8 +1419,8 @@ func handleRenameDroplet(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "title is required")
 			return
 		}
-		if len(req.Title) > 256 {
-			writeAPIError(w, http.StatusBadRequest, "title exceeds maximum length (256)")
+		if len(req.Title) > maxTitleLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("title exceeds maximum length (%d)", maxTitleLen))
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1517,6 +1542,10 @@ func handlePassDroplet(dbPath string) http.HandlerFunc {
 		if !decodeJSONOptional(w, r, &req) {
 			return
 		}
+		if len(req.Notes) > maxNotesLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("notes exceeds maximum length (%d)", maxNotesLen))
+			return
+		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			if req.Notes != "" {
 				if err := c.AddNote(id, "manual", req.Notes); err != nil {
@@ -1538,6 +1567,10 @@ func handleRecirculateDroplet(dbPath string) http.HandlerFunc {
 		id := r.PathValue("id")
 		var req signalRequest
 		if !decodeJSONOptional(w, r, &req) {
+			return
+		}
+		if len(req.Notes) > maxNotesLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("notes exceeds maximum length (%d)", maxNotesLen))
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1565,6 +1598,10 @@ func handlePoolDroplet(dbPath string) http.HandlerFunc {
 		id := r.PathValue("id")
 		var req signalRequest
 		if !decodeJSONOptional(w, r, &req) {
+			return
+		}
+		if len(req.Notes) > maxNotesLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("notes exceeds maximum length (%d)", maxNotesLen))
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1618,6 +1655,10 @@ func handleCancelDroplet(dbPath string) http.HandlerFunc {
 		id := r.PathValue("id")
 		var req cancelRequest
 		if !decodeJSONOptional(w, r, &req) {
+			return
+		}
+		if len(req.Reason) > maxReasonLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("reason exceeds maximum length (%d)", maxReasonLen))
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1726,8 +1767,8 @@ func handleAddNote(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "content is required")
 			return
 		}
-		if len(req.Content) > 65536 {
-			writeAPIError(w, http.StatusBadRequest, "content exceeds maximum length (65536)")
+		if len(req.Content) > maxContentLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("content exceeds maximum length (%d)", maxContentLen))
 			return
 		}
 		name := req.Cataractae
@@ -1788,8 +1829,8 @@ func handleAddIssue(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "description is required")
 			return
 		}
-		if len(req.Description) > 65536 {
-			writeAPIError(w, http.StatusBadRequest, "description exceeds maximum length (65536)")
+		if len(req.Description) > maxContentLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("description exceeds maximum length (%d)", maxContentLen))
 			return
 		}
 		flaggedBy := req.FlaggedBy
@@ -1882,8 +1923,8 @@ func handleAddDependency(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "depends_on is required")
 			return
 		}
-		if len(req.DependsOn) > 128 {
-			writeAPIError(w, http.StatusBadRequest, "depends_on exceeds maximum length (128)")
+		if len(req.DependsOn) > maxDependsOnLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("depends_on exceeds maximum length (%d)", maxDependsOnLen))
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {

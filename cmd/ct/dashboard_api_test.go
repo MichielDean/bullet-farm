@@ -2103,3 +2103,108 @@ func TestAPI_CsvSanitizeCell(t *testing.T) {
 		}
 	}
 }
+
+func TestAPI_CORS_Preflight_WithAuth(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	mux := newDashboardMux(cfgPath, tempDB(t))
+	req := httptest.NewRequest(http.MethodOptions, "/api/droplets", nil)
+	req.Header.Set("Origin", "http://localhost:5737")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("OPTIONS with auth: status = %d, want 204 (preflight must bypass auth)", w.Code)
+	}
+	origin := w.Header().Get("Access-Control-Allow-Origin")
+	if origin != "http://localhost:5737" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want 'http://localhost:5737'", origin)
+	}
+}
+
+func TestAPI_InputLimit_EditDropletTitleTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Original", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longTitle := strings.Repeat("a", 257)
+	body := fmt.Sprintf(`{"title":"%s"}`, longTitle)
+	req := httptest.NewRequest(http.MethodPatch, "/api/droplets/"+d.ID, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("PATCH edit with long title: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_EditDropletDescriptionTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Original", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longDesc := strings.Repeat("a", 4097)
+	body := fmt.Sprintf(`{"description":"%s"}`, longDesc)
+	req := httptest.NewRequest(http.MethodPatch, "/api/droplets/"+d.ID, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("PATCH edit with long description: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_PassDropletNotesTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longNotes := strings.Repeat("n", 65537)
+	body := fmt.Sprintf(`{"notes":"%s"}`, longNotes)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/pass", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("pass with long notes: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_CancelDropletReasonTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.GetReady("myrepo")
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longReason := strings.Repeat("r", 65537)
+	body := fmt.Sprintf(`{"reason":"%s"}`, longReason)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/cancel", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("cancel with long reason: status = %d, want 400", w.Code)
+	}
+}

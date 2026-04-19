@@ -6,7 +6,6 @@ import type { DashboardData, CataractaeInfo, FlowActivity, Droplet } from '../ap
 export function Dashboard() {
   const { data, error } = useDashboard();
   const [peekAqueduct, setPeekAqueduct] = useState<string | null>(null);
-  const [, setSelectedDroplet] = useState<string | null>(null);
 
   const activityMap = useMemo(() => {
     const map: Record<string, FlowActivity> = {};
@@ -46,10 +45,9 @@ export function Dashboard() {
         flowingIds={flowingIds}
         activityMap={activityMap}
         onPeek={setPeekAqueduct}
-        onSelect={setSelectedDroplet}
       />
 
-      <SummarySection data={data} onSelect={setSelectedDroplet} />
+      <SummarySection data={data} />
 
       {peekAqueduct && (
         <PeekPanel aqueductName={peekAqueduct} onClose={() => setPeekAqueduct(null)} />
@@ -63,13 +61,11 @@ function AqueductSection({
   flowingIds,
   activityMap,
   onPeek,
-  onSelect,
 }: {
   cataractae: CataractaeInfo[];
   flowingIds: Set<string>;
   activityMap: Record<string, FlowActivity>;
   onPeek: (name: string) => void;
-  onSelect: (id: string) => void;
 }) {
   const active = cataractae.filter(c => c.droplet_id && flowingIds.has(c.droplet_id));
   const idle = cataractae.filter(c => !c.droplet_id);
@@ -86,7 +82,6 @@ function AqueductSection({
               activity={activityMap[cat.droplet_id || '']}
               isFlowing={true}
               onPeek={onPeek}
-              onSelect={onSelect}
             />
           ))}
         </div>
@@ -99,7 +94,6 @@ function AqueductSection({
               cataractae={cat}
               isFlowing={false}
               onPeek={onPeek}
-              onSelect={onSelect}
             />
           ))}
         </div>
@@ -110,18 +104,16 @@ function AqueductSection({
 
 function SummarySection({
   data,
-  onSelect,
 }: {
   data: DashboardData;
-  onSelect: (id: string) => void;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <CisternCountCard data={data} />
-      <QueueSection items={data.cistern_items} blockedByMap={data.blocked_by_map} onSelect={onSelect} />
-      <PooledSection items={data.pooled_items} onSelect={onSelect} />
-      <UnassignedSection items={data.unassigned_items} onSelect={onSelect} />
-      <RecentSection items={data.recent_items} onSelect={onSelect} />
+      <QueueSection items={data.cistern_items} blockedByMap={data.blocked_by_map} />
+      <PooledSection items={data.pooled_items} />
+      <UnassignedSection items={data.unassigned_items} />
+      <RecentSection items={data.recent_items} />
     </div>
   );
 }
@@ -163,11 +155,9 @@ function CisternCountCard({ data }: { data: DashboardData }) {
 function QueueSection({
   items,
   blockedByMap,
-  onSelect,
 }: {
   items: Droplet[];
   blockedByMap: Record<string, string>;
-  onSelect: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -177,7 +167,7 @@ function QueueSection({
       </h3>
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {items.map((d) => (
-          <DropletRow key={d.id} droplet={d} blockedBy={blockedByMap[d.id]} onClick={onSelect} />
+          <DropletRow key={d.id} droplet={d} blockedBy={blockedByMap[d.id]} />
         ))}
       </div>
     </div>
@@ -186,10 +176,8 @@ function QueueSection({
 
 function PooledSection({
   items,
-  onSelect,
 }: {
   items: Droplet[];
-  onSelect: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -199,7 +187,7 @@ function PooledSection({
       </h3>
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {items.map((d) => (
-          <DropletRow key={d.id} droplet={d} onClick={onSelect} />
+          <DropletRow key={d.id} droplet={d} />
         ))}
       </div>
     </div>
@@ -208,10 +196,8 @@ function PooledSection({
 
 function UnassignedSection({
   items,
-  onSelect,
 }: {
   items: Droplet[];
-  onSelect: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -221,7 +207,7 @@ function UnassignedSection({
       </h3>
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {items.map((d) => (
-          <DropletRow key={d.id} droplet={d} onClick={onSelect} />
+          <DropletRow key={d.id} droplet={d} />
         ))}
       </div>
     </div>
@@ -230,10 +216,8 @@ function UnassignedSection({
 
 function RecentSection({
   items,
-  onSelect,
 }: {
   items: Droplet[];
-  onSelect: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -243,7 +227,7 @@ function RecentSection({
       </h3>
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {items.slice(0, 5).map((d) => (
-          <DropletRow key={d.id} droplet={d} onClick={onSelect} />
+          <DropletRow key={d.id} droplet={d} />
         ))}
       </div>
     </div>

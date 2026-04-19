@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppLayout } from './App';
 import { Dashboard } from './pages/Dashboard';
+import { PlaceholderPage } from './pages/Placeholder';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -22,6 +23,11 @@ const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <Dashboard /> },
+      { path: 'droplets', element: <PlaceholderPage title="Droplets" /> },
+      { path: 'castellarius', element: <PlaceholderPage title="Castellarius" /> },
+      { path: 'doctor', element: <PlaceholderPage title="Doctor" /> },
+      { path: 'logs', element: <PlaceholderPage title="Logs" /> },
+      { path: 'repos', element: <PlaceholderPage title="Repos / Skills" /> },
     ],
   },
 ]);

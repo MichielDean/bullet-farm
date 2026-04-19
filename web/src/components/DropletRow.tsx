@@ -4,7 +4,7 @@ import { StatusBadge } from './StatusBadge';
 interface DropletRowProps {
   droplet: Droplet;
   blockedBy?: string;
-  onClick: (id: string) => void;
+  onClick?: (id: string) => void;
 }
 
 export function DropletRow({ droplet, blockedBy, onClick }: DropletRowProps) {
@@ -12,7 +12,7 @@ export function DropletRow({ droplet, blockedBy, onClick }: DropletRowProps) {
 
   return (
     <button
-      onClick={() => onClick(droplet.id)}
+      onClick={onClick ? () => onClick(droplet.id) : undefined}
       className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-cistern-border/20 transition-colors text-left"
     >
       <StatusBadge status={droplet.status} />

@@ -7,10 +7,9 @@ interface AqueductArchProps {
   activity?: FlowActivity;
   isFlowing: boolean;
   onPeek: (name: string) => void;
-  onSelect: (dropletId: string) => void;
 }
 
-export function AqueductArch({ cataractae, activity, isFlowing, onPeek, onSelect }: AqueductArchProps) {
+export function AqueductArch({ cataractae, activity, isFlowing, onPeek }: AqueductArchProps) {
   const [elapsed, setElapsed] = useState(formatElapsed(cataractae.elapsed));
   const startTimeRef = useRef(Date.now() - cataractae.elapsed / 1e6);
 
@@ -39,7 +38,7 @@ export function AqueductArch({ cataractae, activity, isFlowing, onPeek, onSelect
           ? 'border-cistern-accent/40 bg-cistern-surface/80 hover:border-cistern-accent pulse-glow'
           : 'border-cistern-border bg-cistern-surface/40 opacity-60 hover:opacity-80'
       }`}
-      onClick={() => cataractae.droplet_id && onSelect(cataractae.droplet_id)}
+      onClick={() => {}}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">

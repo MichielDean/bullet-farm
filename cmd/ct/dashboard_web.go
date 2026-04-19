@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -124,6 +126,22 @@ func parsePeekLines(r *http.Request) int {
 		}
 	}
 	return defaultPeekLines
+}
+
+// isValidAqueductName validates that an aqueduct name contains only
+// alphanumeric characters, hyphens, and underscores — characters safe for
+// use in tmux session names. Rejects names containing tmux metacharacters
+// (colon, dot, shell operators) that could enable tmux injection.
+func isValidAqueductName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, ch := range name {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // wsAcceptKey computes Sec-WebSocket-Accept per RFC 6455 §4.2.2.
@@ -758,6 +776,9 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	if apiKey == "" && cfg != nil {
 		apiKey = cfg.DashboardAPIKey
 	}
+	if apiKey == "" {
+		log.Println("warning: no dashboard_api_key configured; all endpoints are unauthenticated")
+	}
 
 	// Build allowed origins list for CORS.
 	var allowedOrigins []string
@@ -807,6 +828,10 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 			return
 		}
 		name := r.PathValue("name")
+		if !isValidAqueductName(name) {
+			http.Error(w, "invalid aqueduct name", http.StatusBadRequest)
+			return
+		}
 		lines := parsePeekLines(r)
 		sess, ok := lookupAqueductSession(dbPath, name)
 		capturer := defaultCapturer
@@ -827,6 +852,10 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	// WS /ws/aqueducts/{name}/peek — live streaming peek (poll every 500ms, send diffs).
 	mux.HandleFunc("/ws/aqueducts/{name}/peek", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
+		if !isValidAqueductName(name) {
+			http.Error(w, "invalid aqueduct name", http.StatusBadRequest)
+			return
+		}
 		lines := parsePeekLines(r)
 
 		conn, brw, err := wsUpgrade(w, r)
@@ -1029,19 +1058,37 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	// SSE for droplet detail
 	apiMux.HandleFunc("GET /api/droplets/{id}/events", handleDropletEvents(cfgPath, dbPath))
 
-	// Wrap the API mux with auth, CORS, and body-size middleware.
+	// Wrap the API mux with CORS and body-size middleware.
+	// Auth is applied to the entire mux below so that pre-existing endpoints
+	// (/api/dashboard, /ws/tui, etc.) are also protected.
 	var apiHandler http.Handler = apiMux
 	apiHandler = corsMiddleware(apiHandler, allowedOrigins)
-	if apiKey != "" {
-		apiHandler = apiAuthMiddleware(apiHandler, apiKey)
-	}
 	apiHandler = apiBodyLimitMiddleware(apiHandler)
 	mux.Handle("/api/", apiHandler)
 
-	return mux
+	var handler http.Handler = mux
+	if apiKey != "" {
+		handler = apiAuthMiddleware(handler, apiKey)
+	}
+
+	return handler
 }
 
 // ── API handler helpers ──
+
+// csvSanitizeCell prevents CSV formula injection by prefixing cells that
+// start with dangerous characters (=, +, -, @, tab, carriage return) with
+// a single-quote prefix, which Excel and Sheets interpret as a literal string.
+func csvSanitizeCell(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
 
 // apiClient opens a cistern.Client for the given dbPath and calls f.
 // It writes the error response if the client cannot be opened or f returns an error.
@@ -1102,6 +1149,7 @@ func defaultAllowedOrigins() []string {
 
 // apiAuthMiddleware rejects requests that lack a valid Bearer token when
 // an API key is configured. When no key is configured, all requests pass through.
+// Uses constant-time comparison to prevent timing side-channel attacks.
 func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -1110,7 +1158,7 @@ func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 			return
 		}
 		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || strings.TrimPrefix(auth, prefix) != apiKey {
+		if !strings.HasPrefix(auth, prefix) || subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, prefix)), []byte(apiKey)) != 1 {
 			writeAPIError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
@@ -1159,10 +1207,17 @@ func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
 }
 
 // decodeJSON decodes a JSON request body into dst. Returns true on success.
-// Writes 400 and returns false on failure.
+// Writes 400 and returns false on failure. Error messages are sanitized to
+// avoid leaking Go internal type information.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		msg := "invalid JSON"
+		if err == io.EOF {
+			msg = "request body is empty"
+		} else if !strings.HasPrefix(err.Error(), "invalid character") && !strings.HasPrefix(err.Error(), "json:") {
+			msg = "invalid JSON: " + err.Error()
+		}
+		writeAPIError(w, http.StatusBadRequest, msg)
 		return false
 	}
 	return true
@@ -1176,7 +1231,11 @@ func decodeJSONOptional(w http.ResponseWriter, r *http.Request, dst any) bool {
 		if err == io.EOF {
 			return true
 		}
-		writeAPIError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		msg := "invalid JSON"
+		if !strings.HasPrefix(err.Error(), "invalid character") && !strings.HasPrefix(err.Error(), "json:") {
+			msg = "invalid JSON: " + err.Error()
+		}
+		writeAPIError(w, http.StatusBadRequest, msg)
 		return false
 	}
 	return true
@@ -1398,9 +1457,9 @@ func handleExportDroplets(dbPath string) http.HandlerFunc {
 				}
 				for _, item := range items {
 					if err := cw.Write([]string{
-						item.ID, item.Repo, item.Title, item.Description,
+						csvSanitizeCell(item.ID), csvSanitizeCell(item.Repo), csvSanitizeCell(item.Title), csvSanitizeCell(item.Description),
 						strconv.Itoa(item.Priority), strconv.Itoa(item.Complexity),
-						item.Status, item.Assignee, item.CurrentCataractae, item.Outcome,
+						csvSanitizeCell(item.Status), csvSanitizeCell(item.Assignee), csvSanitizeCell(item.CurrentCataractae), csvSanitizeCell(item.Outcome),
 						item.CreatedAt.Format(time.RFC3339), item.UpdatedAt.Format(time.RFC3339),
 					}); err != nil {
 						return err
@@ -1605,7 +1664,7 @@ func handleApproveDroplet(dbPath string) http.HandlerFunc {
 				return err
 			}
 			if item.CurrentCataractae != "human" {
-				writeAPIError(w, http.StatusBadRequest, "droplet is not awaiting human approval (cataractae: "+item.CurrentCataractae+")")
+				writeAPIError(w, http.StatusBadRequest, "droplet is not awaiting human approval")
 				return nil
 			}
 			// Empty worker is intentional: Assign(id, "", step) clears the assignee
@@ -1864,6 +1923,9 @@ func handleDropletLog(dbPath string) http.HandlerFunc {
 		if v := r.URL.Query().Get("limit"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				limit = n
+				if limit > 1000 {
+					limit = 1000
+				}
 			}
 		}
 		format := r.URL.Query().Get("format")
@@ -1901,6 +1963,9 @@ func handleDropletChanges(dbPath string) http.HandlerFunc {
 		if v := r.URL.Query().Get("limit"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
 				limit = n
+				if limit > 1000 {
+					limit = 1000
+				}
 			}
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1965,7 +2030,7 @@ func handleDoctor(cfgPath string) http.HandlerFunc {
 		_ = r.URL.Query().Get("fix") // fix param accepted but not applied via API
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "cannot parse config: "+err.Error())
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		type repoInfo struct {
@@ -1989,7 +2054,7 @@ func handleGetRepos(cfgPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "cannot parse config: "+err.Error())
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		type repoInfo struct {
@@ -2010,7 +2075,7 @@ func handleGetSkills() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entries, err := skills.ListInstalled()
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "cannot list skills: "+err.Error())
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		writeAPIJSON(w, http.StatusOK, entries)
@@ -2031,11 +2096,8 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 		}
 		defer atomic.AddInt64(&currentSSEConnections, -1)
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
-
+		// Validate droplet existence and flusher support before setting SSE headers,
+		// so error responses use clean Content-Type instead of text/event-stream.
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			writeAPIError(w, http.StatusInternalServerError, "streaming unsupported")
@@ -2044,7 +2106,7 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 
 		c, err := cistern.New(dbPath, "")
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, err.Error())
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		defer c.Close()
@@ -2054,16 +2116,20 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 			if isNotFoundError(err) {
 				writeAPIError(w, http.StatusNotFound, err.Error())
 			} else {
-				writeAPIError(w, http.StatusInternalServerError, err.Error())
+				writeAPIError(w, http.StatusInternalServerError, "internal error")
 			}
 			return
 		}
 
-		{
-			b, _ := json.Marshal(d)
-			fmt.Fprintf(w, "data: %s\n\n", b)
-			flusher.Flush()
-		}
+		// All validation passed — now set SSE headers and begin streaming.
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+		b, _ := json.Marshal(d)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+		flusher.Flush()
 
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()

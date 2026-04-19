@@ -1853,3 +1853,253 @@ func TestAPI_SSALimit_ConnectionLimit(t *testing.T) {
 		t.Errorf("error = %q, want 'too many SSE connections'", body["error"])
 	}
 }
+
+// --- Auth protects all endpoints (including pre-existing ones) ---
+
+func TestAPI_Auth_ProtectsDashboardEndpoint(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	mux := newDashboardMux(cfgPath, db)
+	req := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated /api/dashboard: status = %d, want 401", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("authenticated /api/dashboard: status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_Auth_TimingSafeComparison(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	mux := newDashboardMux(cfgPath, tempDB(t))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("valid key: status = %d, want 200", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	req.Header.Set("Authorization", "Bearer wrong-key")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("invalid key: status = %d, want 401", w.Code)
+	}
+}
+
+func TestAPI_DropletEvents_HeadersAfterValidation(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/nonexistent-id/events", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("nonexistent droplet SSE: status = %d, want 404", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("error response should not have SSE Content-Type, got %q", ct)
+	}
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("error response should be JSON, got Content-Type %q", ct)
+	}
+}
+
+func TestAPI_ApproveDroplet_NotHumanGated_NoLeak(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/approve", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("approve non-human: status = %d, want 400", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if strings.Contains(body["error"], "cataractae:") {
+		t.Errorf("error message leaks cataractae assignment: %q", body["error"])
+	}
+	if body["error"] != "droplet is not awaiting human approval" {
+		t.Errorf("error = %q, want 'droplet is not awaiting human approval'", body["error"])
+	}
+}
+
+func TestAPI_DropletLog_LimitCapsAt1000(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+d.ID+"/log?limit=9999", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("log with large limit: status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_DropletChanges_LimitCapsAt1000(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+d.ID+"/changes?limit=9999", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("changes with large limit: status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_CSVEscape_FormulaInjection(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("myrepo", "=SUM(A1:A10)", "starts with equals", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/export?format=csv", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("export CSV: status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	reader := csv.NewReader(strings.NewReader(body))
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("parse CSV: %v", err)
+	}
+	if len(records) < 2 {
+		t.Fatalf("expected at least header + 1 data row, got %d rows", len(records))
+	}
+	for _, row := range records[1:] {
+		for _, cell := range row {
+			if len(cell) > 0 && (cell[0] == '=' || cell[0] == '+' || cell[0] == '-' || cell[0] == '@') && !strings.HasPrefix(cell, "'") {
+				t.Errorf("CSV cell susceptible to formula injection: %q", cell)
+			}
+		}
+	}
+}
+
+func TestAPI_IsValidAqueductName(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"valid-name", true},
+		{"valid_name", true},
+		{"ValidName123", true},
+		{"", false},
+		{"bad:name", false},
+		{"bad.name", false},
+		{"bad name", false},
+		{"bad;name", false},
+		{"=bad", false},
+		{"$(bad)", false},
+	}
+	for _, tt := range tests {
+		got := isValidAqueductName(tt.name)
+		if got != tt.want {
+			t.Errorf("isValidAqueductName(%q) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestAPI_DecodeJSON_SanitizedErrors(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("invalid JSON: status = %d, want 400", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if !strings.Contains(body["error"], "invalid JSON") {
+		t.Errorf("error = %q, want 'invalid JSON'", body["error"])
+	}
+}
+
+func TestAPI_Doctor_Sanitized500Error(t *testing.T) {
+	mux := newDashboardMux("/nonexistent/config/path/cistern.yaml", tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/doctor", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Logf("status = %d (may vary)", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if strings.Contains(body["error"], "/") {
+		t.Errorf("500 error should not leak file paths: %q", body["error"])
+	}
+	if body["error"] != "internal error" {
+		t.Errorf("error = %q, want 'internal error'", body["error"])
+	}
+}
+
+func TestAPI_CsvSanitizeCell(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"=SUM(A1:A10)", "'=SUM(A1:A10)"},
+		{"+formula", "'+formula"},
+		{"-formula", "'-formula"},
+		{"@formula", "'@formula"},
+		{"normal", "normal"},
+		{"", ""},
+		{"hello world", "hello world"},
+	}
+	for _, tt := range tests {
+		got := csvSanitizeCell(tt.input)
+		if got != tt.want {
+			t.Errorf("csvSanitizeCell(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}

@@ -78,6 +78,18 @@ describe('useDashboardEvents', () => {
     expect(EventSource).toHaveBeenCalledTimes(2);
   });
 
+  it('does not reconnect after unmount', () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useDashboardEvents());
+
+    unmount();
+
+    vi.advanceTimersByTime(3000);
+    vi.useRealTimers();
+
+    expect(EventSource).toHaveBeenCalledTimes(1);
+  });
+
   it('does not connect when disabled', () => {
     renderHook(() => useDashboardEvents({ enabled: false }));
     expect(EventSource).not.toHaveBeenCalled();

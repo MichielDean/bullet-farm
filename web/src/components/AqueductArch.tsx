@@ -15,6 +15,11 @@ export function AqueductArch({ cataractae, activity, isFlowing, onPeek, onSelect
   const startTimeRef = useRef(Date.now() - cataractae.elapsed / 1e6);
 
   useEffect(() => {
+    startTimeRef.current = Date.now() - cataractae.elapsed / 1e6;
+    setElapsed(formatElapsed(cataractae.elapsed));
+  }, [cataractae.elapsed]);
+
+  useEffect(() => {
     if (!isFlowing) return;
     const interval = setInterval(() => {
       const currentElapsed = Date.now() - startTimeRef.current;

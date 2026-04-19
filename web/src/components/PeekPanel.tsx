@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+const MAX_BUFFER_SIZE = 50 * 1024;
 
 interface PeekPanelProps {
   aqueductName: string;
@@ -10,25 +12,38 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
   const [connected, setConnected] = useState(false);
   const terminalRef = useRef<HTMLPreElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const mountedRef = useRef(true);
+
+  const appendOutput = useCallback((chunk: string) => {
+    setOutput((prev) => {
+      const next = prev + chunk;
+      if (next.length > MAX_BUFFER_SIZE) {
+        return next.slice(next.length - MAX_BUFFER_SIZE);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/aqueducts/${encodeURIComponent(aqueductName)}/peek`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
+    ws.onopen = () => { if (mountedRef.current) setConnected(true); };
     ws.onmessage = (e) => {
-      setOutput((prev) => prev + e.data);
+      if (mountedRef.current) appendOutput(e.data as string);
     };
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    ws.onclose = () => { if (mountedRef.current) setConnected(false); };
+    ws.onerror = () => { if (mountedRef.current) setConnected(false); };
 
     return () => {
+      mountedRef.current = false;
       ws.close();
       wsRef.current = null;
     };
-  }, [aqueductName]);
+  }, [aqueductName, appendOutput]);
 
   useEffect(() => {
     if (terminalRef.current) {

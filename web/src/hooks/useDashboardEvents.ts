@@ -14,6 +14,14 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
   const [error, setError] = useState<Error | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const mountedRef = useRef(true);
+  const onDataRef = useRef(onData);
+  const onErrorRef = useRef(onError);
+  const enabledRef = useRef(enabled);
+
+  useEffect(() => { onDataRef.current = onData; }, [onData]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
   const connect = useCallback(() => {
     if (esRef.current) {
@@ -23,39 +31,44 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
     const es = new EventSource('/api/dashboard/events');
 
     es.onopen = () => {
+      if (!mountedRef.current) return;
       setConnected(true);
       setError(null);
     };
 
     es.onmessage = (e) => {
+      if (!mountedRef.current) return;
       try {
         const parsed: DashboardData = JSON.parse(e.data);
         setData(parsed);
-        onData?.(parsed);
+        onDataRef.current?.(parsed);
       } catch {
-        // ignore non-JSON messages
       }
     };
 
     es.onerror = () => {
+      if (!mountedRef.current) return;
       setConnected(false);
       const err = new Error('SSE connection lost');
       setError(err);
-      onError?.(err);
+      onErrorRef.current?.(err);
       es.close();
       esRef.current = null;
-      if (enabled) {
+      if (enabledRef.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = setTimeout(() => {
-          connect();
+          if (mountedRef.current) {
+            connect();
+          }
         }, 3000);
       }
     };
 
     esRef.current = es;
-  }, [onData, onError, enabled]);
+  }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (!enabled) {
       if (esRef.current) {
         esRef.current.close();
@@ -65,6 +78,7 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
     }
     connect();
     return () => {
+      mountedRef.current = false;
       clearTimeout(reconnectTimer.current);
       if (esRef.current) {
         esRef.current.close();

@@ -1849,13 +1849,12 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 		}
 		defer c.Close()
 
-		_, err = c.Get(id)
+		d, err := c.Get(id)
 		if err != nil {
 			http.Error(w, "droplet not found", http.StatusNotFound)
 			return
 		}
 
-		d, _ := c.Get(id)
 		if d != nil {
 			b, _ := json.Marshal(d)
 			fmt.Fprintf(w, "data: %s\n\n", b)

@@ -811,9 +811,7 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
-	// Serve the React SPA under /app/. The spaHandler serves static assets
-	// from /app/assets/ and index.html for all other /app/ routes.
-	spa := newSPAHandler()
+	spa := newSPAHandler(apiKey)
 	mux.Handle("/app/", spa)
 	mux.HandleFunc("/app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/", http.StatusMovedPermanently)
@@ -1171,19 +1169,32 @@ func defaultAllowedOrigins() []string {
 // Uses constant-time comparison to prevent timing side-channel attacks.
 // CORS preflight (OPTIONS) requests are always allowed through, since browsers
 // send them without Authorization headers and the CORS middleware must respond.
+// SPA static assets (/app/) are exempted so the login page can render without auth.
+// SSE and WebSocket connections cannot set custom headers, so they may pass the
+// token as a "token" query parameter instead of the Authorization header.
 func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Exempt SPA static routes so the login page can load without auth.
+		if strings.HasPrefix(r.URL.Path, "/app/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if r.Method == http.MethodOptions {
 			next.ServeHTTP(w, r)
 			return
 		}
+		token := ""
 		auth := r.Header.Get("Authorization")
-		if auth == "" {
+		if strings.HasPrefix(auth, "Bearer ") {
+			token = strings.TrimPrefix(auth, "Bearer ")
+		} else {
+			token = r.URL.Query().Get("token")
+		}
+		if token == "" {
 			writeAPIError(w, http.StatusUnauthorized, "authorization required")
 			return
 		}
-		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, prefix)), []byte(apiKey)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(apiKey)) != 1 {
 			writeAPIError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}

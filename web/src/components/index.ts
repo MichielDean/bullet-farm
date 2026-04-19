@@ -4,3 +4,4 @@ export { StatusBadge } from './StatusBadge';
 export { AqueductArch } from './AqueductArch';
 export { DropletRow } from './DropletRow';
 export { PeekPanel } from './PeekPanel';
+export { LoginPage } from './LoginPage';

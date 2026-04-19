@@ -1,0 +1,95 @@
+import { useState, useEffect, useCallback } from 'react';
+
+const STORAGE_KEY = 'cistern_api_key';
+
+function isAuthRequired(): boolean {
+  const meta = document.querySelector('meta[name="cistern-auth"]');
+  return meta?.getAttribute('content') === 'required';
+}
+
+function getStoredKey(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeKey(key: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, key);
+  } catch {
+    // localStorage unavailable; key kept in memory only
+  }
+}
+
+function clearStoredKey(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+export function useAuth() {
+  const [required] = useState(() => isAuthRequired());
+  const [key, setKey] = useState<string | null>(() => {
+    if (!isAuthRequired()) return null;
+    return getStoredKey();
+  });
+  const [authenticated, setAuthenticated] = useState(false);
+
+  useEffect(() => {
+    if (!required) {
+      setAuthenticated(true);
+      return;
+    }
+    if (key) {
+      verifyKey(key).then((ok) => {
+        if (ok) {
+          setAuthenticated(true);
+        } else {
+          setKey(null);
+          clearStoredKey();
+          setAuthenticated(false);
+        }
+      });
+    }
+  }, [required, key]);
+
+  const login = useCallback((apiKey: string) => {
+    storeKey(apiKey);
+    setKey(apiKey);
+  }, []);
+
+  const logout = useCallback(() => {
+    clearStoredKey();
+    setKey(null);
+    setAuthenticated(false);
+  }, []);
+
+  return { required, key, authenticated, login, logout };
+}
+
+async function verifyKey(apiKey: string): Promise<boolean> {
+  try {
+    const resp = await fetch('/api/dashboard', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const apiKey = getStoredKey();
+  if (!apiKey) return {};
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
+export function getAuthParams(): string {
+  const apiKey = getStoredKey();
+  if (!apiKey) return '';
+  return `token=${encodeURIComponent(apiKey)}`;
+}

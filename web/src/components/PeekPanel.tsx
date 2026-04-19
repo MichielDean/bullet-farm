@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getAuthParams } from '../hooks/useAuth';
 
 const MAX_BUFFER_SIZE = 50 * 1024;
 
@@ -27,7 +28,8 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
   useEffect(() => {
     mountedRef.current = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/aqueducts/${encodeURIComponent(aqueductName)}/peek`;
+    const authParams = getAuthParams();
+    const wsUrl = `${protocol}//${window.location.host}/ws/aqueducts/${encodeURIComponent(aqueductName)}/peek${authParams ? '?' + authParams : ''}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"strings"
 )
 
 //go:embed assets/web
@@ -16,7 +17,7 @@ type spaHandler struct {
 	assetsFileServer http.Handler
 }
 
-func newSPAHandler() *spaHandler {
+func newSPAHandler(apiKey string) *spaHandler {
 	webSub, err := fs.Sub(webAssets, "assets/web")
 	if err != nil {
 		panic("embedded web assets not found: " + err.Error())
@@ -26,6 +27,14 @@ func newSPAHandler() *spaHandler {
 	idx, err := fs.ReadFile(webSub, "index.html")
 	if err != nil {
 		panic("embedded web index.html not found: " + err.Error())
+	}
+
+	// If an API key is configured, inject a meta tag so the frontend knows
+	// authentication is required. This must happen at build-time since the
+	// embedded FS is read-only.
+	if apiKey != "" {
+		authMeta := `<meta name="cistern-auth" content="required" />`
+		idx = []byte(strings.Replace(string(idx), "</head>", authMeta+"\n  </head>", 1))
 	}
 
 	assetsSub, err := fs.Sub(webSub, "assets")
@@ -44,6 +53,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Serve static assets under /app/assets/
 	if len(path) >= len("/app/assets/") && path[:len("/app/assets/")] == "/app/assets/" {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		h.assetsFileServer.ServeHTTP(w, r)
 		return
 	}
@@ -51,5 +61,9 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// All other /app/ routes serve index.html for client-side routing.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self'; font-src 'self'")
 	w.Write(h.indexHTML) //nolint:errcheck
 }

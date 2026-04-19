@@ -52,6 +52,13 @@ describe('useDashboardEvents', () => {
     expect(EventSource).toHaveBeenCalledWith('/api/dashboard/events');
   });
 
+  it('includes auth token in SSE URL when key is stored', () => {
+    localStorage.setItem('cistern_api_key', 'test-key');
+    renderHook(() => useDashboardEvents());
+    expect(EventSource).toHaveBeenCalledWith('/api/dashboard/events?token=test-key');
+    localStorage.clear();
+  });
+
   it('receives dashboard data from SSE messages', () => {
     const { result } = renderHook(() => useDashboardEvents());
 

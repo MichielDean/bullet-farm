@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DashboardData } from '../api/types';
+import { getAuthParams } from './useAuth';
 
 interface UseDashboardEventsOptions {
   onData?: (data: DashboardData) => void;
@@ -28,7 +29,9 @@ export function useDashboardEvents(options: UseDashboardEventsOptions = {}) {
       esRef.current.close();
     }
 
-    const es = new EventSource('/api/dashboard/events');
+    const authParams = getAuthParams();
+    const url = authParams ? `/api/dashboard/events?${authParams}` : '/api/dashboard/events';
+    const es = new EventSource(url);
 
     es.onopen = () => {
       if (!mountedRef.current) return;

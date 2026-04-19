@@ -3,8 +3,16 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardProvider, useDashboard } from './context/DashboardContext';
+import { useAuth } from './hooks/useAuth';
+import { LoginPage } from './components/LoginPage';
 
 export function AppLayout() {
+  const { required, authenticated, login } = useAuth();
+
+  if (required && !authenticated) {
+    return <LoginPage onLogin={login} />;
+  }
+
   return (
     <DashboardProvider>
       <AppLayoutInner />

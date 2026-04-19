@@ -718,7 +718,7 @@ func TestAPI_RemoveDependency_Success(t *testing.T) {
 
 // --- History/Log ---
 
-func TestAPI_GetDropletLog_ReturnsEvents(t *testing.T) {
+func TestAPI_GetDropletLog_ReturnsTimeline(t *testing.T) {
 	db := tempDB(t)
 	c, err := cistern.New(db, "mr")
 	if err != nil {
@@ -735,6 +735,13 @@ func TestAPI_GetDropletLog_ReturnsEvents(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var changes []cistern.DropletChange
+	if err := json.NewDecoder(w.Body).Decode(&changes); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(changes) == 0 {
+		t.Errorf("expected at least 1 change entry, got 0")
 	}
 }
 
@@ -817,7 +824,7 @@ func TestAPI_ExportCSV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Add("myrepo", "Export CSV", "", 1, 2)
+	c.Add("myrepo", "Export CSV", "a description", 1, 2)
 	c.Close()
 
 	mux := newDashboardMux(tempCfg(t), db)
@@ -831,6 +838,17 @@ func TestAPI_ExportCSV(t *testing.T) {
 	ct := w.Header().Get("Content-Type")
 	if !strings.Contains(ct, "text/csv") {
 		t.Errorf("Content-Type = %q, want text/csv", ct)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "id,repo,title,description,priority") {
+		t.Errorf("CSV missing header row, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Export CSV") {
+		t.Errorf("CSV missing data row, got:\n%s", body)
+	}
+	lines := strings.Count(body, "\n")
+	if lines < 2 {
+		t.Errorf("expected at least header + 1 data row, got %d lines", lines)
 	}
 }
 
@@ -846,6 +864,18 @@ func TestAPI_Purge_Success(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_Purge_EmptyOlderThan(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := `{"older_than":"","dry_run":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/purge", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for empty older_than", w.Code)
 	}
 }
 
@@ -942,6 +972,103 @@ func TestAPI_CORS_HeadersOnGetRequest(t *testing.T) {
 	}
 }
 
+// --- Error case tests ---
+
+func TestAPI_GetDropletByID_NonexistentID(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/nonexistent-id-12345", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for nonexistent droplet", w.Code)
+	}
+}
+
+func TestAPI_EditDroplet_NonexistentID(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := `{"title":"Updated"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/droplets/nonexistent-id-12345", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for edit of nonexistent droplet", w.Code)
+	}
+}
+
+func TestAPI_PassDroplet_NonexistentID(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := `{"notes":"done"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/nonexistent-id-12345/pass", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for pass of nonexistent droplet", w.Code)
+	}
+}
+
+func TestAPI_ApproveDroplet_NotHumanGated(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	// Not assigning to "human" — default is not human-gated
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/approve", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for approving non-human-gated droplet", w.Code)
+	}
+}
+
+func TestAPI_Purge_InvalidDuration(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := `{"older_than":"not-a-duration","dry_run":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/purge", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for invalid older_than", w.Code)
+	}
+}
+
+func TestAPI_ExportWithRepoFilter(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("repo-a", "Drop A", "", 1, 2)
+	c.Add("repo-b", "Drop B", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/export?repo=repo-a&format=json", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var droplets []*cistern.Droplet
+	if err := json.NewDecoder(w.Body).Decode(&droplets); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(droplets) != 1 {
+		t.Errorf("expected 1 droplet with repo filter, got %d", len(droplets))
+	}
+	if droplets[0].Repo != "repo-a" {
+		t.Errorf("expected repo-a, got %s", droplets[0].Repo)
+	}
+}
+
 // --- SSE event stream ---
 
 func TestAPI_DropletEvents_SSE(t *testing.T) {
@@ -965,5 +1092,16 @@ func TestAPI_DropletEvents_SSE(t *testing.T) {
 	ct := w.Header().Get("Content-Type")
 	if !strings.Contains(ct, "text/event-stream") {
 		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+}
+
+func TestAPI_DropletEvents_NonexistentDroplet(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/nonexistent-id-99999/events", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 for nonexistent droplet SSE", w.Code)
 	}
 }

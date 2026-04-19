@@ -1064,10 +1064,6 @@ func handleGetDroplets(dbPath string) http.HandlerFunc {
 		repo := r.URL.Query().Get("repo")
 		status := r.URL.Query().Get("status")
 		apiClient(dbPath, w, func(c *cistern.Client) error {
-			if status == "" {
-				// Cancelled droplets are excluded unless explicitly requested.
-				status = ""
-			}
 			items, err := c.List(repo, status)
 			if err != nil {
 				return err
@@ -1223,11 +1219,18 @@ func handleExportDroplets(dbPath string) http.HandlerFunc {
 		if format == "" {
 			format = "json"
 		}
+		repo := r.URL.Query().Get("repo")
 		query := r.URL.Query().Get("query")
 		status := r.URL.Query().Get("status")
 		priority, _ := strconv.Atoi(r.URL.Query().Get("priority"))
 		apiClient(dbPath, w, func(c *cistern.Client) error {
-			items, err := c.Search(query, status, priority)
+			var items []*cistern.Droplet
+			var err error
+			if repo != "" && query == "" && status == "" && priority == 0 {
+				items, err = c.List(repo, "")
+			} else {
+				items, err = c.Search(query, status, priority)
+			}
 			if err != nil {
 				return err
 			}
@@ -1238,14 +1241,18 @@ func handleExportDroplets(dbPath string) http.HandlerFunc {
 			case "csv":
 				w.Header().Set("Content-Type", "text/csv")
 				cw := csv.NewWriter(w)
-				_ = cw.Write([]string{"id", "repo", "title", "description", "priority", "complexity", "status", "assignee", "current_cataractae", "outcome", "created_at", "updated_at"})
+				if err := cw.Write([]string{"id", "repo", "title", "description", "priority", "complexity", "status", "assignee", "current_cataractae", "outcome", "created_at", "updated_at"}); err != nil {
+					return err
+				}
 				for _, item := range items {
-					_ = cw.Write([]string{
+					if err := cw.Write([]string{
 						item.ID, item.Repo, item.Title, item.Description,
 						strconv.Itoa(item.Priority), strconv.Itoa(item.Complexity),
 						item.Status, item.Assignee, item.CurrentCataractae, item.Outcome,
 						item.CreatedAt.Format(time.RFC3339), item.UpdatedAt.Format(time.RFC3339),
-					})
+					}); err != nil {
+						return err
+					}
 				}
 				cw.Flush()
 				return cw.Error()
@@ -1300,7 +1307,9 @@ func handlePassDroplet(dbPath string) http.HandlerFunc {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			if req.Notes != "" {
-				_ = c.AddNote(id, "manual", req.Notes)
+				if err := c.AddNote(id, "manual", req.Notes); err != nil {
+					return err
+				}
 			}
 			if err := c.SetOutcome(id, "pass"); err != nil {
 				return err
@@ -1319,7 +1328,9 @@ func handleRecirculateDroplet(dbPath string) http.HandlerFunc {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			if req.Notes != "" {
-				_ = c.AddNote(id, "manual", "♻ "+req.Notes)
+				if err := c.AddNote(id, "manual", "♻ "+req.Notes); err != nil {
+					return err
+				}
 			}
 			outcome := "recirculate"
 			if req.To != "" {
@@ -1342,7 +1353,9 @@ func handlePoolDroplet(dbPath string) http.HandlerFunc {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		apiClient(dbPath, w, func(c *cistern.Client) error {
 			if req.Notes != "" {
-				_ = c.AddNote(id, "manual", req.Notes)
+				if err := c.AddNote(id, "manual", req.Notes); err != nil {
+					return err
+				}
 			}
 			if err := c.Pool(id, req.Notes); err != nil {
 				return err
@@ -1436,6 +1449,8 @@ func handleApproveDroplet(dbPath string) http.HandlerFunc {
 				writeAPIError(w, http.StatusBadRequest, "droplet is not awaiting human approval (cataractae: "+item.CurrentCataractae+")")
 				return nil
 			}
+			// Empty worker is intentional: Assign(id, "", step) clears the assignee
+			// and marks the droplet for the scheduler to pick up at the given step.
 			if err := c.Assign(id, "", "delivery"); err != nil {
 				return err
 			}
@@ -1668,12 +1683,21 @@ func handleRemoveDependency(dbPath string) http.HandlerFunc {
 func handleDropletLog(dbPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		limit := 100
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
-			notes, err := c.GetNotes(id)
+			changes, err := c.GetDropletChanges(id, limit)
 			if err != nil {
 				return err
 			}
-			writeAPIJSON(w, http.StatusOK, notes)
+			if changes == nil {
+				changes = []cistern.DropletChange{}
+			}
+			writeAPIJSON(w, http.StatusOK, changes)
 			return nil
 		})
 	}
@@ -1818,26 +1842,20 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 			return
 		}
 
-		// Verify the droplet exists.
 		c, err := cistern.New(dbPath, "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		defer c.Close()
+
 		_, err = c.Get(id)
-		c.Close()
 		if err != nil {
 			http.Error(w, "droplet not found", http.StatusNotFound)
 			return
 		}
 
-		// Send initial state.
-		c2, err := cistern.New(dbPath, "")
-		if err != nil {
-			return
-		}
-		d, _ := c2.Get(id)
-		c2.Close()
+		d, _ := c.Get(id)
 		if d != nil {
 			b, _ := json.Marshal(d)
 			fmt.Fprintf(w, "data: %s\n\n", b)
@@ -1851,12 +1869,7 @@ func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 			case <-r.Context().Done():
 				return
 			case <-ticker.C:
-				c3, err := cistern.New(dbPath, "")
-				if err != nil {
-					continue
-				}
-				d, _ := c3.Get(id)
-				c3.Close()
+				d, _ := c.Get(id)
 				if d != nil {
 					b, _ := json.Marshal(d)
 					fmt.Fprintf(w, "data: %s\n\n", b)

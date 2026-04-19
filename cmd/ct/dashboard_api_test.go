@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -967,7 +968,7 @@ func TestAPI_GetSkills(t *testing.T) {
 func TestAPI_CORS_Preflight(t *testing.T) {
 	mux := newDashboardMux(tempCfg(t), tempDB(t))
 	req := httptest.NewRequest(http.MethodOptions, "/api/droplets", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Origin", "http://localhost:5737")
 	req.Header.Set("Access-Control-Request-Method", "GET")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -976,21 +977,42 @@ func TestAPI_CORS_Preflight(t *testing.T) {
 		t.Errorf("OPTIONS status = %d, want 204", w.Code)
 	}
 	allowOrigin := w.Header().Get("Access-Control-Allow-Origin")
-	if allowOrigin != "*" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want '*'", allowOrigin)
+	if allowOrigin != "http://localhost:5737" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want 'http://localhost:5737'", allowOrigin)
+	}
+	allowHeaders := w.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(allowHeaders, "Authorization") {
+		t.Errorf("Access-Control-Allow-Headers = %q, want to contain 'Authorization'", allowHeaders)
+	}
+	allowCreds := w.Header().Get("Access-Control-Allow-Credentials")
+	if allowCreds != "true" {
+		t.Errorf("Access-Control-Allow-Credentials = %q, want 'true'", allowCreds)
+	}
+}
+
+func TestAPI_CORS_RejectedOrigin(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	allowOrigin := w.Header().Get("Access-Control-Allow-Origin")
+	if allowOrigin != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want empty for rejected origin", allowOrigin)
 	}
 }
 
 func TestAPI_CORS_HeadersOnGetRequest(t *testing.T) {
 	mux := newDashboardMux(tempCfg(t), tempDB(t))
 	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Origin", "http://localhost:5737")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	allowOrigin := w.Header().Get("Access-Control-Allow-Origin")
-	if allowOrigin != "*" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want '*'", allowOrigin)
+	if allowOrigin != "http://localhost:5737" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want 'http://localhost:5737'", allowOrigin)
 	}
 }
 
@@ -1529,5 +1551,305 @@ func TestAPI_AddIssue_NonexistentDroplet(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("add issue to nonexistent droplet: status = %d, want 404", w.Code)
+	}
+}
+
+// --- Security tests ---
+
+func TestAPI_Auth_RequiredWhenConfigured(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	mux := newDashboardMux(cfgPath, tempDB(t))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated request: status = %d, want 401", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "authorization required" {
+		t.Errorf("error = %q, want 'authorization required'", body["error"])
+	}
+}
+
+func TestAPI_Auth_ValidBearer(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Add("myrepo", "Auth Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(cfgPath, db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	req.Header.Set("Authorization", "Bearer "+testKey)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("authenticated request: status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_Auth_InvalidBearer(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	mux := newDashboardMux(cfgPath, tempDB(t))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	req.Header.Set("Authorization", "Bearer wrong-key")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("invalid key: status = %d, want 401", w.Code)
+	}
+}
+
+func TestAPI_Auth_NoAuthWhenUnconfigured(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("no API key configured: status = %d, want 200 (auth should be off)", w.Code)
+	}
+}
+
+func TestAPI_Auth_EnvOverridesConfig(t *testing.T) {
+	t.Setenv("CISTERN_DASHBOARD_API_KEY", "env-key-override")
+	cfgPath := tempCfgWithAPIKey(t, "config-key")
+	mux := newDashboardMux(cfgPath, tempDB(t))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.Header.Set("Authorization", "Bearer env-key-override")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("env key should override config: status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_Auth_CastellariusProtected(t *testing.T) {
+	const testKey = "test-secret-key-12345"
+	cfgPath := tempCfgWithAPIKey(t, testKey)
+	mux := newDashboardMux(cfgPath, tempDB(t))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/castellarius/start", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated castellarius start: status = %d, want 401", w.Code)
+	}
+}
+
+func TestAPI_CORS_RejectedOriginDoesNotGetHeaders(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	origin := w.Header().Get("Access-Control-Allow-Origin")
+	if origin != "" {
+		t.Errorf("CORS origin for evil site = %q, want empty", origin)
+	}
+}
+
+func TestAPI_CORS_PreflightRejectionStillReturns204(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodOptions, "/api/droplets", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("OPTIONS status = %d, want 204 (preflight always responds)", w.Code)
+	}
+	origin := w.Header().Get("Access-Control-Allow-Origin")
+	if origin != "" {
+		t.Errorf("evil origin should not get CORS header, got %q", origin)
+	}
+}
+
+func TestAPI_BodyLimit_RejectsOversizedPayload(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	bigBody := strings.Repeat("x", 2*1024*1024)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets", strings.NewReader(bigBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversized body: status = %d, want 400 or 413", w.Code)
+	}
+}
+
+func TestAPI_Sanitize_500ErrorMessage(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), "/nonexistent/path/to/db.sqlite")
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Logf("status = %d (may vary)", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if strings.Contains(body["error"], "/") {
+		t.Errorf("500 error message should not leak paths: %q", body["error"])
+	}
+}
+
+func TestAPI_InputLimit_CreateDropletTitleTooLong(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	longTitle := strings.Repeat("a", 257)
+	body := fmt.Sprintf(`{"repo":"myrepo","title":"%s"}`, longTitle)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("long title: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_CreateDropletRepoTooLong(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	longRepo := strings.Repeat("b", 129)
+	body := fmt.Sprintf(`{"repo":"%s","title":"test"}`, longRepo)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("long repo: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_CreateDropletDescriptionTooLong(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	longDesc := strings.Repeat("d", 4097)
+	body := fmt.Sprintf(`{"repo":"myrepo","title":"test","description":"%s"}`, longDesc)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("long description: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_RenameTitleTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Original", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longTitle := strings.Repeat("a", 257)
+	body := fmt.Sprintf(`{"title":"%s"}`, longTitle)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/rename", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("rename with long title: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_AddNoteContentTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longContent := strings.Repeat("n", 65537)
+	body := fmt.Sprintf(`{"cataractae":"implementer","content":"%s"}`, longContent)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/notes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("add note with long content: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_AddIssueDescriptionTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longDesc := strings.Repeat("i", 65537)
+	body := fmt.Sprintf(`{"flagged_by":"reviewer","description":"%s"}`, longDesc)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/issues", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("add issue with long description: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_InputLimit_AddDependencyDepTooLong(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+	longDep := strings.Repeat("d", 129)
+	body := fmt.Sprintf(`{"depends_on":"%s"}`, longDep)
+	req := httptest.NewRequest(http.MethodPost, "/api/droplets/"+d.ID+"/dependencies", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("add dep with long depends_on: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_SSALimit_ConnectionLimit(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ := c.Add("myrepo", "Test", "", 1, 2)
+	c.Close()
+
+	original := currentSSEConnections
+	defer func() { currentSSEConnections = original }()
+	atomic.StoreInt64(&currentSSEConnections, maxSSEConnections)
+
+	mux := newDashboardMux(tempCfg(t), db)
+	req := httptest.NewRequest(http.MethodGet, "/api/droplets/"+d.ID+"/events", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("SSE at connection limit: status = %d, want 503", w.Code)
+	}
+	var body map[string]string
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if !strings.Contains(body["error"], "too many") {
+		t.Errorf("error = %q, want 'too many SSE connections'", body["error"])
 	}
 }

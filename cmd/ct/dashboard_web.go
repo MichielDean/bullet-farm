@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -56,6 +57,17 @@ const wsMaxClientPayload = 4096
 
 // ptyReadBufSize is the read buffer for forwarding PTY output to WebSocket.
 const ptyReadBufSize = 4096
+
+// apiMaxBodyBytes is the maximum request body size accepted by API endpoints.
+// Prevents unbounded memory consumption from large payloads.
+const apiMaxBodyBytes = 1 << 20 // 1 MiB
+
+// maxSSEConnections limits the number of simultaneous SSE client connections
+// per server to prevent resource exhaustion.
+const maxSSEConnections = 64
+
+// currentSSEConnections tracks the number of active SSE connections.
+var currentSSEConnections int64
 
 // dashboardDefaultFontFamily is the CSS font-family fallback used when
 // dashboard_font_family is not set in cistern.yaml.
@@ -723,11 +735,16 @@ func newDashboardMuxInternal(cfgPath, dbPath string, tui *DashboardTUI) http.Han
 // newDashboardMuxInternalWith returns an http.Handler for the web dashboard with custom
 // fetcher and refresh intervals. Exposed for testing.
 func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetcher func(cfg, db string) (*DashboardData, error), fastInterval, slowInterval time.Duration) http.Handler {
-	// Read dashboard_font_family fresh at server start so a cistern.yaml edit
+	// Read dashboard config fresh at server start so a cistern.yaml edit
 	// followed by restarting ct dashboard --web takes effect without recompiling.
 	// This is the supported update path: edit cistern.yaml, restart the server.
+	var cfg *aqueduct.AqueductConfig
+	if parsedCfg, err := aqueduct.ParseAqueductConfig(cfgPath); err == nil {
+		cfg = parsedCfg
+	}
+
 	fontFamily := dashboardDefaultFontFamily
-	if cfg, err := aqueduct.ParseAqueductConfig(cfgPath); err == nil && cfg.DashboardFontFamily != "" {
+	if cfg != nil && cfg.DashboardFontFamily != "" {
 		// Use json.Marshal to produce a fully JS-safe escaped string (handles
 		// backslash, double-quote, newlines, </script> sequences, and Unicode
 		// line/paragraph separators). Trim the surrounding JSON quotes since the
@@ -735,6 +752,22 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 		b, _ := json.Marshal(cfg.DashboardFontFamily)
 		fontFamily = string(b[1 : len(b)-1])
 	}
+
+	// Resolve API key: env var takes precedence over config file.
+	apiKey := os.Getenv("CISTERN_DASHBOARD_API_KEY")
+	if apiKey == "" && cfg != nil {
+		apiKey = cfg.DashboardAPIKey
+	}
+
+	// Build allowed origins list for CORS.
+	var allowedOrigins []string
+	if cfg != nil {
+		allowedOrigins = cfg.DashboardAllowedOrigins
+	}
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = defaultAllowedOrigins()
+	}
+
 	html := strings.Replace(dashboardHTML, "__DASHBOARD_FONT_FAMILY__", fontFamily, 1)
 
 	mux := http.NewServeMux()
@@ -996,8 +1029,14 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	// SSE for droplet detail
 	apiMux.HandleFunc("GET /api/droplets/{id}/events", handleDropletEvents(cfgPath, dbPath))
 
-	// Wrap the API mux with CORS middleware.
-	mux.Handle("/api/", corsMiddleware(apiMux))
+	// Wrap the API mux with auth, CORS, and body-size middleware.
+	var apiHandler http.Handler = apiMux
+	apiHandler = corsMiddleware(apiHandler, allowedOrigins)
+	if apiKey != "" {
+		apiHandler = apiAuthMiddleware(apiHandler, apiKey)
+	}
+	apiHandler = apiBodyLimitMiddleware(apiHandler)
+	mux.Handle("/api/", apiHandler)
 
 	return mux
 }
@@ -1007,10 +1046,11 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 // apiClient opens a cistern.Client for the given dbPath and calls f.
 // It writes the error response if the client cannot be opened or f returns an error.
 // "Not found" errors from cistern.Client are mapped to 404; all others to 500.
+// Internal error details are sanitized before being sent to the client.
 func apiClient(dbPath string, w http.ResponseWriter, f func(*cistern.Client) error) {
 	c, err := cistern.New(dbPath, "")
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	defer c.Close()
@@ -1018,7 +1058,7 @@ func apiClient(dbPath string, w http.ResponseWriter, f func(*cistern.Client) err
 		if isNotFoundError(err) {
 			writeAPIError(w, http.StatusNotFound, err.Error())
 		} else {
-			writeAPIError(w, http.StatusInternalServerError, err.Error())
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
 		}
 	}
 }
@@ -1037,19 +1077,79 @@ func writeAPIJSON(w http.ResponseWriter, code int, v any) {
 }
 
 // writeAPIError writes a JSON error response.
+// For 500 Internal Server Error responses, the message is sanitized to
+// "internal error" to avoid leaking database paths, SQL statements, or
+// other internal details. Other status codes pass the message through verbatim.
 func writeAPIError(w http.ResponseWriter, code int, msg string) {
+	if code == http.StatusInternalServerError {
+		msg = "internal error"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
 }
 
-// corsMiddleware wraps an http.Handler with CORS headers for local development.
-// It also handles preflight OPTIONS requests.
-func corsMiddleware(next http.Handler) http.Handler {
+// defaultAllowedOrigins returns the default CORS origin list used when
+// dashboard_allowed_origins is not configured. Accepts localhost variants
+// and the loopback address on the default dashboard port (5737).
+func defaultAllowedOrigins() []string {
+	return []string{
+		"http://localhost:5737",
+		"http://127.0.0.1:5737",
+		"http://[::1]:5737",
+	}
+}
+
+// apiAuthMiddleware rejects requests that lack a valid Bearer token when
+// an API key is configured. When no key is configured, all requests pass through.
+func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			writeAPIError(w, http.StatusUnauthorized, "authorization required")
+			return
+		}
+		const prefix = "Bearer "
+		if !strings.HasPrefix(auth, prefix) || strings.TrimPrefix(auth, prefix) != apiKey {
+			writeAPIError(w, http.StatusUnauthorized, "invalid API key")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// apiBodyLimitMiddleware wraps requests with an http.MaxBytesReader to prevent
+// unbounded memory consumption from large request bodies.
+func apiBodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, apiMaxBodyBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// corsMiddleware wraps an http.Handler with CORS headers.
+// Only origins in allowedOrigins are permitted; others receive no
+// Access-Control-Allow-Origin header, which browsers interpret as a rejection.
+// Preflight OPTIONS requests are handled directly.
+func corsMiddleware(next http.Handler, allowedOrigins []string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		matched := ""
+		for _, ao := range allowedOrigins {
+			if strings.EqualFold(origin, ao) {
+				matched = ao
+				break
+			}
+		}
+		if matched != "" {
+			w.Header().Set("Access-Control-Allow-Origin", matched)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -1154,8 +1254,20 @@ func handleCreateDroplet(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "title is required")
 			return
 		}
+		if len(req.Title) > 256 {
+			writeAPIError(w, http.StatusBadRequest, "title exceeds maximum length (256)")
+			return
+		}
 		if req.Repo == "" {
 			writeAPIError(w, http.StatusBadRequest, "repo is required")
+			return
+		}
+		if len(req.Repo) > 128 {
+			writeAPIError(w, http.StatusBadRequest, "repo exceeds maximum length (128)")
+			return
+		}
+		if len(req.Description) > 4096 {
+			writeAPIError(w, http.StatusBadRequest, "description exceeds maximum length (4096)")
 			return
 		}
 		if req.Complexity < 1 || req.Complexity > 3 {
@@ -1221,6 +1333,10 @@ func handleRenameDroplet(dbPath string) http.HandlerFunc {
 		}
 		if req.Title == "" {
 			writeAPIError(w, http.StatusBadRequest, "title is required")
+			return
+		}
+		if len(req.Title) > 256 {
+			writeAPIError(w, http.StatusBadRequest, "title exceeds maximum length (256)")
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1551,6 +1667,10 @@ func handleAddNote(dbPath string) http.HandlerFunc {
 			writeAPIError(w, http.StatusBadRequest, "content is required")
 			return
 		}
+		if len(req.Content) > 65536 {
+			writeAPIError(w, http.StatusBadRequest, "content exceeds maximum length (65536)")
+			return
+		}
 		name := req.Cataractae
 		if name == "" {
 			name = "manual"
@@ -1607,6 +1727,10 @@ func handleAddIssue(dbPath string) http.HandlerFunc {
 		}
 		if req.Description == "" {
 			writeAPIError(w, http.StatusBadRequest, "description is required")
+			return
+		}
+		if len(req.Description) > 65536 {
+			writeAPIError(w, http.StatusBadRequest, "description exceeds maximum length (65536)")
 			return
 		}
 		flaggedBy := req.FlaggedBy
@@ -1697,6 +1821,10 @@ func handleAddDependency(dbPath string) http.HandlerFunc {
 		}
 		if req.DependsOn == "" {
 			writeAPIError(w, http.StatusBadRequest, "depends_on is required")
+			return
+		}
+		if len(req.DependsOn) > 128 {
+			writeAPIError(w, http.StatusBadRequest, "depends_on exceeds maximum length (128)")
 			return
 		}
 		apiClient(dbPath, w, func(c *cistern.Client) error {
@@ -1894,6 +2022,15 @@ func handleGetSkills() http.HandlerFunc {
 func handleDropletEvents(cfgPath, dbPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+
+		// Limit concurrent SSE connections to prevent resource exhaustion.
+		if atomic.AddInt64(&currentSSEConnections, 1) > maxSSEConnections {
+			atomic.AddInt64(&currentSSEConnections, -1)
+			writeAPIError(w, http.StatusServiceUnavailable, "too many SSE connections")
+			return
+		}
+		defer atomic.AddInt64(&currentSSEConnections, -1)
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")

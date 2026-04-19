@@ -23,10 +23,10 @@ var defaultJiraPriorityMap = map[string]int{
 }
 
 type jiraProvider struct {
-	cfg          TrackerConfig
-	client       *http.Client
-	httpTimeout  time.Duration
-	priorityMap  map[string]int
+	cfg         TrackerConfig
+	client      *http.Client
+	httpTimeout time.Duration
+	priorityMap map[string]int
 }
 
 func newJiraProvider(cfg TrackerConfig) (TrackerProvider, error) {

@@ -158,7 +158,7 @@ func applyMigration(db *sql.DB, m migrationEntry) error {
 }
 
 // splitStatements splits a migration SQL file into individual statements,
-// preserving quoted strings (including '' escapes) and ignoring comments.
+// preserving quoted strings (including ” escapes) and ignoring comments.
 func splitStatements(sql string) []string {
 	var statements []string
 	var current strings.Builder

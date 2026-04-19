@@ -87,13 +87,13 @@ func Install(name, url string) error {
 	if err := validateName(name); err != nil {
 		return err
 	}
-		dest := LocalPath(name)
-		if _, err := os.Stat(dest); err != nil {
-			// Not on disk yet — download it.
-			if err := DefaultFetcher.download(dest, url); err != nil {
-				return err
-			}
+	dest := LocalPath(name)
+	if _, err := os.Stat(dest); err != nil {
+		// Not on disk yet — download it.
+		if err := DefaultFetcher.download(dest, url); err != nil {
+			return err
 		}
+	}
 	// Always record in manifest (idempotent — upserts by name).
 	return saveManifestEntry(ManifestEntry{
 		Name:        name,

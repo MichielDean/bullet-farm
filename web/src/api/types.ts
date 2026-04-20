@@ -174,7 +174,6 @@ export interface LogEntry {
 
 export interface LogSourceInfo {
   name: string;
-  path: string;
   size_bytes: number;
   last_modified: string;
 }

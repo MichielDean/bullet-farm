@@ -2297,12 +2297,43 @@ func handleGetSkills() http.HandlerFunc {
 
 // ── Log handlers ──
 
-func logFilePath(cfgPath, source string) string {
+const maxLogLines = 5000
+
+// isValidLogSource checks that source is a safe, non-traversal log file name.
+// Only alphanumeric, hyphens, and underscores are allowed. No dots, slashes,
+// or other characters that could enable path traversal.
+func isValidLogSource(source string) bool {
+	if source == "" || source == "castellarius" {
+		return true
+	}
+	if len(source) > 64 {
+		return false
+	}
+	for _, ch := range source {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func logFilePath(cfgPath, source string) (string, error) {
+	if !isValidLogSource(source) {
+		return "", fmt.Errorf("invalid log source: %q", source)
+	}
 	home, _ := os.UserHomeDir()
 	if source == "" || source == "castellarius" {
-		return filepath.Join(home, ".cistern", "castellarius.log")
+		return filepath.Join(home, ".cistern", "castellarius.log"), nil
 	}
-	return filepath.Join(home, ".cistern", source+".log")
+	return filepath.Join(home, ".cistern", source+".log"), nil
+}
+
+// sanitizeSSEData escapes newlines in data for safe SSE transmission.
+// Per the SSE spec, data fields must not contain raw newlines.
+func sanitizeSSEData(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.ReplaceAll(s, "\n", "\\n")
 }
 
 // handleGetLogs returns the last N lines of the log file.
@@ -2314,12 +2345,21 @@ func handleGetLogs(cfgPath string) http.HandlerFunc {
 		if n, err := strconv.Atoi(linesStr); err == nil && n > 0 {
 			lines = n
 		}
+		if lines > maxLogLines {
+			lines = maxLogLines
+		}
+
 		source := r.URL.Query().Get("source")
 		if source == "" {
 			source = "castellarius"
 		}
 
-		path := logFilePath(cfgPath, source)
+		path, err := logFilePath(cfgPath, source)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		f, err := os.Open(path)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -2331,17 +2371,33 @@ func handleGetLogs(cfgPath string) http.HandlerFunc {
 		}
 		defer f.Close()
 
+		// Ring buffer approach: only keep the last `lines` entries in memory.
+		ring := make([]string, 0, lines)
 		scanner := bufio.NewScanner(f)
-		var allLines []string
+		count := 0
 		for scanner.Scan() {
-			allLines = append(allLines, scanner.Text())
+			if len(ring) < lines {
+				ring = append(ring, scanner.Text())
+			} else {
+				ring[count%lines] = scanner.Text()
+			}
+			count++
+		}
+		if err := scanner.Err(); err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
+			return
 		}
 
-		start := len(allLines) - lines
-		if start < 0 {
-			start = 0
+		var result []string
+		if count <= lines {
+			result = ring[:count]
+		} else {
+			// Ring buffer: elements need to be reordered from oldest to newest.
+			start := count % lines
+			result = make([]string, lines)
+			copy(result, ring[start:])
+			copy(result[lines-start:], ring[:start])
 		}
-		result := allLines[start:]
 		writeAPIJSON(w, http.StatusOK, result)
 	}
 }
@@ -2366,7 +2422,11 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 		if source == "" {
 			source = "castellarius"
 		}
-		path := logFilePath(cfgPath, source)
+		path, err := logFilePath(cfgPath, source)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -2403,7 +2463,7 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 				scanner := bufio.NewScanner(f)
 				for scanner.Scan() {
 					line := scanner.Text()
-					fmt.Fprintf(w, "data: %s\n\n", line)
+					fmt.Fprintf(w, "data: %s\n\n", sanitizeSSEData(line))
 				}
 				offset, _ = f.Seek(0, io.SeekCurrent)
 				f.Close()
@@ -2417,26 +2477,38 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 func handleGetLogSources(cfgPath string) http.HandlerFunc {
 	type logSourceInfo struct {
 		Name         string `json:"name"`
-		Path         string `json:"path"`
 		SizeBytes    int64  `json:"size_bytes"`
 		LastModified string `json:"last_modified"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		home, _ := os.UserHomeDir()
-		path := filepath.Join(home, ".cistern", "castellarius.log")
+		logDir := filepath.Join(home, ".cistern")
 		var sources []logSourceInfo
 
-		info, err := os.Stat(path)
-		if err == nil {
+		entries, err := os.ReadDir(logDir)
+		if err != nil {
+			writeAPIJSON(w, http.StatusOK, sources)
+			return
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".log") {
+				continue
+			}
+			name := strings.TrimSuffix(entry.Name(), ".log")
+			if !isValidLogSource(name) {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
 			sources = append(sources, logSourceInfo{
-				Name:         "castellarius",
-				Path:         path,
+				Name:         name,
 				SizeBytes:    info.Size(),
 				LastModified: info.ModTime().UTC().Format(time.RFC3339),
 			})
 		}
-
 		writeAPIJSON(w, http.StatusOK, sources)
 	}
 }

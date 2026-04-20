@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -2537,6 +2540,161 @@ func TestAPI_InputLimit_PassDropletNotesTooLong(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("pass with long notes: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_Logs_PathTraversal_SourceParam(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	traversalCases := []string{
+		"../etc/passwd",
+		"..%2Fetc%2Fpasswd",
+		"....//etc/passwd",
+		"/etc/passwd",
+		"castellarius/../../etc/passwd",
+	}
+	for _, src := range traversalCases {
+		t.Run(src, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/logs?source="+url.QueryEscape(src), nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("path traversal source=%q: status = %d, want 400", src, w.Code)
+			}
+		})
+	}
+}
+
+func TestAPI_Logs_PathTraversal_DirectSlashInSource(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?source=/etc/passwd", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("absolute path source: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_Logs_LinesUpperBound(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=999999", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("large lines param: status = %d, want 200 (capped internally)", w.Code)
+	}
+}
+
+func TestAPI_Logs_NegativeLinesParam(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempCfg(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=-1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("negative lines param: status = %d, want 200 (uses default)", w.Code)
+	}
+}
+
+func TestAPI_Logs_ZeroLinesParam(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?lines=0", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("zero lines param: status = %d, want 200 (uses default)", w.Code)
+	}
+}
+
+func TestAPI_Logs_NotFoundReturnsEmpty(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?source=nonexistent_log_that_does_not_exist", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("missing log file: status = %d, want 200", w.Code)
+	}
+	var result []string
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("missing log file: got %d lines, want 0", len(result))
+	}
+}
+
+func TestAPI_LogSources_ReturnsAvailableLogs(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	logDir := filepath.Join(home, ".cistern")
+	origLog, _ := os.Stat(filepath.Join(logDir, "castellarius.log"))
+
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/sources", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("log sources: status = %d, want 200", w.Code)
+	}
+	var sources []struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&sources); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if origLog != nil {
+		found := false
+		for _, s := range sources {
+			if s.Name == "castellarius" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("castellarius log source not found in response")
+		}
+	}
+}
+
+func TestAPI_LogSSE_PathTraversalInSource(t *testing.T) {
+	orig := currentSSEConnections
+	defer func() { currentSSEConnections = orig }()
+	atomic.StoreInt64(&currentSSEConnections, 0)
+
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/logs/events?source=..%2Fetc%2Fpasswd", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("SSE path traversal: status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_LogFilePath_ValidSource(t *testing.T) {
+	tests := []struct {
+		source string
+		valid  bool
+	}{
+		{"castellarius", true},
+		{"", true},
+		{"my-app", true},
+		{"app_123", true},
+		{"../etc/passwd", false},
+		{"/etc/passwd", false},
+		{"..", false},
+		{"a/b", false},
+		{"a\\b", false},
+		{"a b", false},
+		{"a:b", false},
+		{"a;b", false},
+		{".hidden", false},
+		{"castellarius.log", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			got := isValidLogSource(tt.source)
+			if got != tt.valid {
+				t.Errorf("isValidLogSource(%q) = %v, want %v", tt.source, got, tt.valid)
+			}
+		})
 	}
 }
 

@@ -10,6 +10,7 @@ export function RenameInput({ value, onSave, className = '' }: RenameInputProps)
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,11 +28,12 @@ export function RenameInput({ value, onSave, className = '' }: RenameInputProps)
       return;
     }
     setSaving(true);
+    setError(null);
     try {
       await onSave(trimmed);
       setEditing(false);
-    } catch {
-      setDraft(value);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed');
     } finally {
       setSaving(false);
     }
@@ -63,16 +65,20 @@ export function RenameInput({ value, onSave, className = '' }: RenameInputProps)
   }
 
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={handleSave}
-      onKeyDown={handleKeyDown}
-      disabled={saving}
-      className={`text-xl font-mono font-bold text-cistern-fg bg-cistern-bg border border-cistern-accent rounded px-2 py-1 ${className}`}
-      aria-label="Rename droplet"
-    />
+    <div>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        onChange={(e) => { setDraft(e.target.value); setError(null); }}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        disabled={saving}
+        className={`text-xl font-mono font-bold text-cistern-fg bg-cistern-bg border rounded px-2 py-1 ${error ? 'border-cistern-red' : 'border-cistern-accent'} ${className}`}
+        aria-label="Rename droplet"
+        aria-invalid={error ? 'true' : undefined}
+      />
+      {error && <div className="text-xs text-cistern-red font-mono mt-1">{error}</div>}
+    </div>
   );
 }

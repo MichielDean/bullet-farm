@@ -10,10 +10,10 @@ const FLAGGED_BY_COLORS: Record<string, string> = {
   delivery: 'bg-purple-500/20 text-purple-400',
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  open: 'bg-cistern-yellow/20 text-cistern-yellow',
-  resolved: 'bg-cistern-green/20 text-cistern-green',
-  unresolved: 'bg-cistern-red/20 text-cistern-red',
+const STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
+  open: { label: 'Open', color: 'bg-cistern-yellow/20 text-cistern-yellow' },
+  resolved: { label: 'Resolved', color: 'bg-cistern-green/20 text-cistern-green' },
+  unresolved: { label: 'Rejected', color: 'bg-cistern-red/20 text-cistern-red' },
 };
 
 interface IssueCardProps {
@@ -23,14 +23,14 @@ interface IssueCardProps {
 }
 
 export function IssueCard({ issue, onResolve, onReject }: IssueCardProps) {
-  const statusColor = STATUS_COLORS[issue.status] ?? 'bg-cistern-muted/20 text-cistern-muted';
+  const statusInfo = STATUS_DISPLAY[issue.status] ?? { label: issue.status, color: 'bg-cistern-muted/20 text-cistern-muted' };
   const flaggedByColor = FLAGGED_BY_COLORS[issue.flagged_by] ?? 'bg-cistern-muted/20 text-cistern-muted';
 
   return (
     <div className="bg-cistern-surface border border-cistern-border rounded-lg p-3">
       <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono font-medium ${statusColor}`}>
-          {issue.status}
+        <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono font-medium ${statusInfo.color}`}>
+          {statusInfo.label}
         </span>
         <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${flaggedByColor}`}>
           {issue.flagged_by}

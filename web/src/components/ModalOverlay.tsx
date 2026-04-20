@@ -9,12 +9,12 @@ interface ModalOverlayProps {
 
 export function ModalOverlay({ open, onClose, children, maxWidth = 'max-w-md' }: ModalOverlayProps) {
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       previousActiveElement.current = document.activeElement as HTMLElement;
-      const modal = document.querySelector('[data-modal-content]') as HTMLElement;
-      const firstFocusable = modal?.querySelector<HTMLElement>(
+      const firstFocusable = contentRef.current?.querySelector<HTMLElement>(
         'input, textarea, select, button:not([disabled]), [tabindex]:not([tabindex="-1"])'
       );
       firstFocusable?.focus();
@@ -44,6 +44,7 @@ export function ModalOverlay({ open, onClose, children, maxWidth = 'max-w-md' }:
       aria-modal="true"
     >
       <div
+        ref={contentRef}
         data-modal-content
         className={`bg-cistern-surface border border-cistern-border rounded-lg p-6 ${maxWidth} w-full mx-4`}
         onClick={(e) => e.stopPropagation()}

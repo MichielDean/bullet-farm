@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRepos, useSearchDroplets, createDroplet } from '../hooks/useApi';
 import { ComplexitySelector } from './ComplexitySelector';
 import type { Droplet } from '../api/types';
@@ -26,6 +26,20 @@ export function CreateDropletForm({ onSuccess, onCancel }: CreateDropletFormProp
   const [dirty, setDirty] = useState(false);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const depWrapperRef = useRef<HTMLDivElement>(null);
+
+  const handleClickOutsideDep = useCallback((e: MouseEvent) => {
+    if (depWrapperRef.current && !depWrapperRef.current.contains(e.target as Node)) {
+      setDepResults([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (depResults.length > 0) {
+      document.addEventListener('mousedown', handleClickOutsideDep);
+      return () => document.removeEventListener('mousedown', handleClickOutsideDep);
+    }
+  }, [depResults.length, handleClickOutsideDep]);
 
   useEffect(() => {
     if (!depSearch.trim()) {
@@ -165,7 +179,7 @@ export function CreateDropletForm({ onSuccess, onCancel }: CreateDropletFormProp
             ))}
           </div>
         )}
-        <div className="relative">
+        <div className="relative" ref={depWrapperRef}>
           <input
             type="text"
             value={depSearch}

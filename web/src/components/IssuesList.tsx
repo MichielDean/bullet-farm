@@ -90,8 +90,8 @@ export function IssuesList({ issues, loading, onResolve, onReject }: IssuesListP
             <IssueCard
               key={issue.id}
               issue={issue}
-              onResolve={(id) => openActionModal(issues.find((i) => i.id === id)!, 'resolve')}
-              onReject={(id) => openActionModal(issues.find((i) => i.id === id)!, 'reject')}
+              onResolve={() => openActionModal(issue, 'resolve')}
+              onReject={() => openActionModal(issue, 'reject')}
             />
           ))}
         </div>

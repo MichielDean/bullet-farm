@@ -47,4 +47,15 @@ describe('RenameInput', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it('shows error message when rename fails', async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error('Rename failed'));
+    render(<RenameInput value="Old Title" onSave={onSave} />);
+    const heading = screen.getByText('Old Title');
+    fireEvent.click(heading);
+    const input = screen.getByRole('textbox', { name: 'Rename droplet' });
+    fireEvent.change(input, { target: { value: 'New Title' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await screen.findByText('Rename failed');
+  });
 });

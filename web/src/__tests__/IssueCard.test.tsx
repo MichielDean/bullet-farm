@@ -23,15 +23,26 @@ const resolvedIssue: DropletIssue = {
   resolved_at: '2026-04-19T12:00:00Z',
 };
 
+const rejectedIssue: DropletIssue = {
+  id: 'iss-3',
+  droplet_id: 'ct-test',
+  flagged_by: 'qa',
+  flagged_at: '2026-04-17T10:00:00Z',
+  description: 'Invalid concern',
+  status: 'unresolved',
+  evidence: 'Not reproducible',
+  resolved_at: '2026-04-18T12:00:00Z',
+};
+
 describe('IssueCard', () => {
   it('renders issue description', () => {
     render(<IssueCard issue={openIssue} onResolve={vi.fn()} onReject={vi.fn()} />);
     expect(screen.getByText('Found a bug in the logic')).toBeInTheDocument();
   });
 
-  it('renders status badge', () => {
+  it('renders status badge with display label', () => {
     render(<IssueCard issue={openIssue} onResolve={vi.fn()} onReject={vi.fn()} />);
-    expect(screen.getByText('open')).toBeInTheDocument();
+    expect(screen.getByText('Open')).toBeInTheDocument();
   });
 
   it('renders flagged-by badge', () => {
@@ -68,5 +79,15 @@ describe('IssueCard', () => {
     render(<IssueCard issue={openIssue} onResolve={vi.fn()} onReject={onReject} />);
     screen.getByText('Reject').click();
     expect(onReject).toHaveBeenCalledWith('iss-1');
+  });
+
+  it('displays Rejected label for unresolved status', () => {
+    render(<IssueCard issue={rejectedIssue} onResolve={vi.fn()} onReject={vi.fn()} />);
+    expect(screen.getByText('Rejected')).toBeInTheDocument();
+  });
+
+  it('displays Resolved label for resolved status', () => {
+    render(<IssueCard issue={resolvedIssue} onResolve={vi.fn()} onReject={vi.fn()} />);
+    expect(screen.getByText('Resolved')).toBeInTheDocument();
   });
 });

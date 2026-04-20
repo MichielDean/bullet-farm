@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AppLayout } from './App';
 import { Dashboard } from './pages/Dashboard';
-import { PlaceholderPage } from './pages/Placeholder';
 import { DropletsList } from './pages/DropletsList';
 import { DropletDetail } from './pages/DropletDetail';
 import { CastellariusPage } from './pages/CastellariusPage';

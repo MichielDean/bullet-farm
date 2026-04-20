@@ -48,6 +48,7 @@ export function FilterPage() {
 
   const handleResumeSession = useCallback(async (session: FilterSession) => {
     setCurrentSession(session);
+    setLlmSessionId(session.llm_session_id || '');
     setMessages(parseFilterMessages(session.messages));
     setShowSessions(false);
   }, []);

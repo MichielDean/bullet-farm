@@ -198,6 +198,7 @@ export interface FilterSession {
   description: string;
   messages: string;
   spec_snapshot: string;
+  llm_session_id: string;
   created_at: string;
   updated_at: string;
 }

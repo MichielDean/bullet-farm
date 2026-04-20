@@ -1100,6 +1100,7 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 
 	// Import
 	apiMux.HandleFunc("POST /api/import", handleImport(cfgPath, dbPath))
+	apiMux.HandleFunc("GET /api/import/preview", handleImportPreview(cfgPath))
 
 	// SSE for droplet detail
 	apiMux.HandleFunc("GET /api/droplets/{id}/events", handleDropletEvents(cfgPath, dbPath))
@@ -3034,7 +3035,7 @@ func handleFilterNew(cfgPath, dbPath string) http.HandlerFunc {
 			messages = append(messages, cistern.FilterMessage{Role: "assistant", Content: result.Text})
 
 			msgJSON, _ := json.Marshal(messages)
-			if err := c.UpdateFilterSessionMessages(session.ID, string(msgJSON), ""); err != nil {
+			if err := c.UpdateFilterSessionMessages(session.ID, string(msgJSON), "", result.SessionID); err != nil {
 				return err
 			}
 
@@ -3080,14 +3081,9 @@ func handleFilterResume(cfgPath, dbPath string) http.HandlerFunc {
 				json.Unmarshal([]byte(session.Messages), &existingMessages) //nolint:errcheck
 			}
 
-			llmSessionID := ""
-			if len(existingMessages) > 0 {
-				for i := len(existingMessages) - 1; i >= 0; i-- {
-					if existingMessages[i].Role == "assistant" && r.Header.Get("X-LLM-Session-ID") != "" {
-						llmSessionID = r.Header.Get("X-LLM-Session-ID")
-						break
-					}
-				}
+			llmSessionID := session.LLMSessionID
+			if r.Header.Get("X-LLM-Session-ID") != "" {
+				llmSessionID = r.Header.Get("X-LLM-Session-ID")
 			}
 
 			var result filterSessionResult
@@ -3124,7 +3120,7 @@ func handleFilterResume(cfgPath, dbPath string) http.HandlerFunc {
 			existingMessages = append(existingMessages, cistern.FilterMessage{Role: "assistant", Content: result.Text})
 
 			msgJSON, _ := json.Marshal(existingMessages)
-			if err := c.UpdateFilterSessionMessages(sessionID, string(msgJSON), session.SpecSnapshot); err != nil {
+			if err := c.UpdateFilterSessionMessages(sessionID, string(msgJSON), session.SpecSnapshot, result.SessionID); err != nil {
 				return err
 			}
 
@@ -3248,3 +3244,52 @@ func handleImport(cfgPath, dbPath string) http.HandlerFunc {
 		})
 	}
 }
+
+func handleImportPreview(cfgPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		providerName := r.URL.Query().Get("provider")
+		key := r.URL.Query().Get("key")
+		if providerName == "" {
+			writeAPIError(w, http.StatusBadRequest, "provider is required")
+			return
+		}
+		if key == "" {
+			writeAPIError(w, http.StatusBadRequest, "key is required")
+			return
+		}
+
+		trackerCfg, err := loadTrackerConfig(providerName)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "tracker config: "+err.Error())
+			return
+		}
+
+		constructor, ok := tracker.Resolve(providerName)
+		if !ok {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("unknown tracker provider %q", providerName))
+			return
+		}
+		tp, err := constructor(trackerCfg)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "init tracker: "+err.Error())
+			return
+		}
+
+		issue, err := tp.FetchIssue(key)
+		if err != nil {
+			writeAPIError(w, http.StatusBadGateway, "fetch issue: "+err.Error())
+			return
+		}
+
+		writeAPIJSON(w, http.StatusOK, map[string]any{
+			"key":         issue.Key,
+			"title":       issue.Title,
+			"description": issue.Description,
+			"priority":    issue.Priority,
+			"labels":      issue.Labels,
+			"source_url":  issue.SourceURL,
+		})
+	}
+}
+
+// end of dashboard_web.go

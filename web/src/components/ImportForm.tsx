@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useRepos } from '../hooks/useApi';
-import { importIssue } from '../api/import';
+import { importIssue, fetchImportPreview } from '../api/import';
 import type { Droplet, ImportRequest } from '../api/types';
 
 const COMPLEXITY_OPTIONS = [
@@ -20,6 +20,8 @@ export function ImportForm({ onSuccess }: ImportFormProps) {
   const [repo, setRepo] = useState('');
   const [complexity, setComplexity] = useState(2);
   const [priority, setPriority] = useState(2);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
@@ -28,14 +30,16 @@ export function ImportForm({ onSuccess }: ImportFormProps) {
     if (!key.trim()) return;
     setFetching(true);
     setError(null);
-  }, [key]);
-
-  useEffect(() => {
-    if (fetching) {
-      const timer = setTimeout(() => setFetching(false), 500);
-      return () => clearTimeout(timer);
+    try {
+      const preview = await fetchImportPreview(provider, key.trim());
+      setTitle(preview.title);
+      setDescription(preview.description);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch issue preview');
+    } finally {
+      setFetching(false);
     }
-  }, [fetching]);
+  }, [provider, key]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,13 +90,27 @@ export function ImportForm({ onSuccess }: ImportFormProps) {
           <button
             type="button"
             onClick={handleFetchPreview}
-            disabled={!key.trim()}
+            disabled={fetching || !key.trim()}
             className="px-3 py-1.5 text-sm rounded border border-cistern-border text-cistern-muted hover:text-cistern-fg disabled:opacity-30"
           >
-            Fetch
+            {fetching ? 'Fetching…' : 'Fetch'}
           </button>
         </div>
       </div>
+
+      {title && (
+        <div>
+          <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Title</label>
+          <div className="bg-cistern-bg border border-cistern-border rounded px-2 py-1.5 text-sm text-cistern-fg">{title}</div>
+        </div>
+      )}
+
+      {description && (
+        <div>
+          <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Description</label>
+          <div className="bg-cistern-bg border border-cistern-border rounded px-2 py-1.5 text-sm text-cistern-fg whitespace-pre-wrap max-h-40 overflow-y-auto">{description}</div>
+        </div>
+      )}
 
       <div>
         <label className="block text-xs font-mono text-cistern-muted uppercase tracking-wider mb-1">Repo *</label>

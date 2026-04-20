@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getAuthParams } from '../hooks/useAuth';
 
 interface ExportButtonProps {
   status?: string;
@@ -15,6 +16,8 @@ export function ExportButton({ status, repo, priority }: ExportButtonProps) {
     if (status) params.set('status', status);
     if (repo) params.set('repo', repo);
     if (priority !== undefined && priority > 0) params.set('priority', String(priority));
+    const authParams = getAuthParams();
+    if (authParams) params.set('token', authParams.replace(/^token=/, ''));
     const qs = params.toString();
     return `/api/droplets/export?${qs}`;
   };

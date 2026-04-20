@@ -1315,8 +1315,9 @@ type FilterSession struct {
 	ID           string    `json:"id"`
 	Title        string    `json:"title"`
 	Description  string    `json:"description"`
-	Messages     string    `json:"messages"`      // JSON array of {role,content} objects
-	SpecSnapshot string    `json:"spec_snapshot"` // Current refined spec text
+	Messages     string    `json:"messages"`       // JSON array of {role,content} objects
+	SpecSnapshot string    `json:"spec_snapshot"`  // Current refined spec text
+	LLMSessionID string    `json:"llm_session_id"` // LLM provider conversation session ID
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -1336,8 +1337,8 @@ func (c *Client) CreateFilterSession(title, description string) (*FilterSession,
 	now := time.Now().UTC()
 	messagesJSON := "[]"
 	_, err = c.db.Exec(
-		`INSERT INTO filter_sessions (id, title, description, messages, spec_snapshot, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, '', ?, ?)`,
+		`INSERT INTO filter_sessions (id, title, description, messages, spec_snapshot, llm_session_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, '', '', ?, ?)`,
 		id, title, description, messagesJSON, now, now,
 	)
 	if err != nil {
@@ -1356,12 +1357,12 @@ func (c *Client) CreateFilterSession(title, description string) (*FilterSession,
 // GetFilterSession returns a filter session by ID.
 func (c *Client) GetFilterSession(id string) (*FilterSession, error) {
 	row := c.db.QueryRow(
-		`SELECT id, title, description, messages, COALESCE(spec_snapshot,''), created_at, updated_at
+		`SELECT id, title, description, messages, COALESCE(spec_snapshot,''), COALESCE(llm_session_id,''), created_at, updated_at
 		 FROM filter_sessions WHERE id = ?`, id,
 	)
 	var s FilterSession
 	var createdAt, updatedAt string
-	if err := row.Scan(&s.ID, &s.Title, &s.Description, &s.Messages, &s.SpecSnapshot, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&s.ID, &s.Title, &s.Description, &s.Messages, &s.SpecSnapshot, &s.LLMSessionID, &createdAt, &updatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("cistern: filter session %s not found", id)
 		}
@@ -1383,7 +1384,7 @@ func (c *Client) GetFilterSession(id string) (*FilterSession, error) {
 // ListFilterSessions returns all filter sessions ordered by most recently updated first.
 func (c *Client) ListFilterSessions() ([]FilterSession, error) {
 	rows, err := c.db.Query(
-		`SELECT id, title, description, messages, COALESCE(spec_snapshot,''), created_at, updated_at
+		`SELECT id, title, description, messages, COALESCE(spec_snapshot,''), COALESCE(llm_session_id,''), created_at, updated_at
 		 FROM filter_sessions ORDER BY updated_at DESC`,
 	)
 	if err != nil {
@@ -1395,7 +1396,7 @@ func (c *Client) ListFilterSessions() ([]FilterSession, error) {
 	for rows.Next() {
 		var s FilterSession
 		var createdAt, updatedAt string
-		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Messages, &s.SpecSnapshot, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Messages, &s.SpecSnapshot, &s.LLMSessionID, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("cistern: scan filter session: %w", err)
 		}
 		if t, err := time.Parse("2006-01-02T15:04:05Z", createdAt); err == nil {
@@ -1413,12 +1414,12 @@ func (c *Client) ListFilterSessions() ([]FilterSession, error) {
 	return sessions, rows.Err()
 }
 
-// UpdateFilterSessionMessages appends a message to the session and updates the spec snapshot.
-func (c *Client) UpdateFilterSessionMessages(id string, messages string, specSnapshot string) error {
+// UpdateFilterSessionMessages appends a message to the session and updates the spec snapshot and LLM session ID.
+func (c *Client) UpdateFilterSessionMessages(id string, messages string, specSnapshot string, llmSessionID string) error {
 	now := time.Now().UTC()
 	res, err := c.db.Exec(
-		`UPDATE filter_sessions SET messages = ?, spec_snapshot = ?, updated_at = ? WHERE id = ?`,
-		messages, specSnapshot, now, id,
+		`UPDATE filter_sessions SET messages = ?, spec_snapshot = ?, llm_session_id = ?, updated_at = ? WHERE id = ?`,
+		messages, specSnapshot, llmSessionID, now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("cistern: update filter session %s: %w", id, err)

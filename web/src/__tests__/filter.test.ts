@@ -27,6 +27,7 @@ describe('filter API', () => {
           description: '',
           messages: '[]',
           spec_snapshot: '',
+          llm_session_id: 'llm-123',
           created_at: '2026-04-20T00:00:00Z',
           updated_at: '2026-04-20T00:00:00Z',
         },
@@ -43,13 +44,14 @@ describe('filter API', () => {
   describe('listFilterSessions', () => {
     it('fetches sessions list', async () => {
       const sessions: FilterSession[] = [
-        { id: 'fs-1', title: 'Session 1', description: '', messages: '[]', spec_snapshot: '', created_at: '2026-04-20T00:00:00Z', updated_at: '2026-04-20T00:00:00Z' },
+        { id: 'fs-1', title: 'Session 1', description: '', messages: '[]', spec_snapshot: '', llm_session_id: 'llm-abc', created_at: '2026-04-20T00:00:00Z', updated_at: '2026-04-20T00:00:00Z' },
       ];
       mockFetch(sessions);
 
       const result = await listFilterSessions();
       expect(result).toHaveLength(1);
       expect(result[0].title).toBe('Session 1');
+      expect(result[0].llm_session_id).toBe('llm-abc');
     });
   });
 

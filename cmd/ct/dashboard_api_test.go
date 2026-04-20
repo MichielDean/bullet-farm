@@ -3302,7 +3302,7 @@ func TestAPI_FilterSession_CRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 	msgs := `[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`
-	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "spec text"); err != nil {
+	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "spec text", "llm-abc"); err != nil {
 		t.Fatal(err)
 	}
 	c.Close()
@@ -3406,5 +3406,36 @@ func TestAPI_Import_UnknownProvider(t *testing.T) {
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("POST /api/import (unknown provider) status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_ImportPreview_MissingFields(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"no provider", "/api/import/preview?key=PROJ-123"},
+		{"no key", "/api/import/preview?provider=jira"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := newDashboardMux(tempCfg(t), tempDB(t))
+			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("GET %s status = %d, want 400", tt.url, w.Code)
+			}
+		})
+	}
+}
+
+func TestAPI_ImportPreview_UnknownProvider(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/import/preview?provider=unknown&key=PROJ-123", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("GET /api/import/preview (unknown provider) status = %d, want 400", w.Code)
 	}
 }

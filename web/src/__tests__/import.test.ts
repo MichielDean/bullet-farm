@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { importIssue } from '../api/import';
+import { importIssue, fetchImportPreview } from '../api/import';
 import type { Droplet } from '../api/types';
 
 const mockDroplet: Droplet = {
@@ -37,5 +37,27 @@ describe('import API', () => {
     });
     expect(result.id).toBe('mr-abc1');
     expect(result.title).toBe('Jira Issue Title');
+  });
+
+  it('fetches preview via GET /api/import/preview', async () => {
+    const mockPreview = {
+      key: 'PROJ-123',
+      title: 'Preview Title',
+      description: 'Preview description',
+      priority: 2,
+      labels: ['bug'],
+      source_url: 'https://jira.example.com/browse/PROJ-123',
+    };
+    vi.spyOn(window, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockPreview),
+      text: () => Promise.resolve(JSON.stringify(mockPreview)),
+    } as Response);
+
+    const result = await fetchImportPreview('jira', 'PROJ-123');
+    expect(result.title).toBe('Preview Title');
+    expect(result.description).toBe('Preview description');
+    expect(result.key).toBe('PROJ-123');
   });
 });

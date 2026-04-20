@@ -2978,6 +2978,24 @@ func TestClient_GetFilterSession(t *testing.T) {
 	}
 }
 
+func TestClient_GetFilterSession_LLMSessionID(t *testing.T) {
+	c := testClient(t)
+	s, err := c.CreateFilterSession("LLM test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UpdateFilterSessionMessages(s.ID, "[]", "", "llm-persist-99"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.GetFilterSession(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LLMSessionID != "llm-persist-99" {
+		t.Errorf("llm_session_id = %q, want %q", got.LLMSessionID, "llm-persist-99")
+	}
+}
+
 func TestClient_ListFilterSessions(t *testing.T) {
 	c := testClient(t)
 	_, err := c.CreateFilterSession("Session 1", "")
@@ -3004,7 +3022,7 @@ func TestClient_UpdateFilterSessionMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	msgs := `[{"role":"user","content":"hello"},{"role":"assistant","content":"hi there"}]`
-	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "spec v1"); err != nil {
+	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "spec v1", "llm-sess-42"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.GetFilterSession(s.ID)
@@ -3017,11 +3035,14 @@ func TestClient_UpdateFilterSessionMessages(t *testing.T) {
 	if got.SpecSnapshot != "spec v1" {
 		t.Errorf("spec_snapshot = %q, want %q", got.SpecSnapshot, "spec v1")
 	}
+	if got.LLMSessionID != "llm-sess-42" {
+		t.Errorf("llm_session_id = %q, want %q", got.LLMSessionID, "llm-sess-42")
+	}
 }
 
 func TestClient_UpdateFilterSessionMessages_NotFound(t *testing.T) {
 	c := testClient(t)
-	err := c.UpdateFilterSessionMessages("nonexistent", "[]", "")
+	err := c.UpdateFilterSessionMessages("nonexistent", "[]", "", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent session")
 	}

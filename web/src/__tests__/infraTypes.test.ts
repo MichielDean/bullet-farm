@@ -116,7 +116,6 @@ describe('LogSourceInfo type', () => {
   it('accepts source info', () => {
     const info: LogSourceInfo = {
       name: 'castellarius',
-      path: '/home/user/.cistern/castellarius.log',
       size_bytes: 2048576,
       last_modified: '2026-04-19T12:00:00Z',
     };

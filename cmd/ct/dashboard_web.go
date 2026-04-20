@@ -2451,7 +2451,9 @@ func handleLogEvents(cfgPath string) http.HandlerFunc {
 				if err != nil {
 					continue
 				}
-				if info.Size() <= offset {
+				if info.Size() < offset {
+					offset = 0
+				} else if info.Size() == offset {
 					continue
 				}
 

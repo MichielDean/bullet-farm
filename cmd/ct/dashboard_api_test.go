@@ -2719,3 +2719,77 @@ func TestAPI_InputLimit_CancelDropletReasonTooLong(t *testing.T) {
 		t.Errorf("cancel with long reason: status = %d, want 400", w.Code)
 	}
 }
+
+func TestAPI_LogSSE_StreamResumesAfterRotation(t *testing.T) {
+	orig := currentSSEConnections
+	defer func() { currentSSEConnections = orig }()
+	atomic.StoreInt64(&currentSSEConnections, 0)
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+
+	tmpDir := t.TempDir()
+	os.Setenv("HOME", tmpDir)
+	cisternDir := filepath.Join(tmpDir, ".cistern")
+	if err := os.MkdirAll(cisternDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(cisternDir, "castellarius.log")
+
+	initialContent := "aaaaaaaaaa line-before-rotation aaaaaaaaaa\n"
+	if err := os.WriteFile(logPath, []byte(initialContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := tempCfg(t)
+	mux := newDashboardMux(cfg, tempDB(t))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/logs/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	time.Sleep(800 * time.Millisecond)
+
+	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("line-after-rotation\n")
+	f.Close()
+
+	var allData string
+	readCh := make(chan struct{})
+	go func() {
+		defer close(readCh)
+		buf := make([]byte, 8192)
+		for {
+			n, err := resp.Body.Read(buf)
+			if n > 0 {
+				allData += string(buf[:n])
+			}
+			if allData != "" && strings.Contains(allData, "line-after-rotation") {
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-readCh:
+		if !strings.Contains(allData, "line-after-rotation") {
+			t.Errorf("SSE stream did not emit data after log rotation; got: %q", allData)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out; data so far: %q", allData)
+	}
+}

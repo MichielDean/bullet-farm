@@ -2923,3 +2923,106 @@ func TestRestart_ClearsLastHeartbeatAt(t *testing.T) {
 		t.Errorf("reloaded LastHeartbeatAt = %v, want zero after restart", reloaded.LastHeartbeatAt)
 	}
 }
+
+// ── FilterSession CRUD ──
+
+func TestClient_CreateFilterSession(t *testing.T) {
+	c := testClient(t)
+	s, err := c.CreateFilterSession("My idea", "A description")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Title != "My idea" {
+		t.Errorf("title = %q, want %q", s.Title, "My idea")
+	}
+	if s.Description != "A description" {
+		t.Errorf("description = %q, want %q", s.Description, "A description")
+	}
+	if s.ID == "" {
+		t.Error("expected non-empty session ID")
+	}
+	if s.Messages != "[]" {
+		t.Errorf("messages = %q, want %q", s.Messages, "[]")
+	}
+	if s.CreatedAt.IsZero() {
+		t.Error("expected non-zero CreatedAt")
+	}
+}
+
+func TestClient_GetFilterSession_NotFound(t *testing.T) {
+	c := testClient(t)
+	_, err := c.GetFilterSession("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent session")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want 'not found'", err.Error())
+	}
+}
+
+func TestClient_GetFilterSession(t *testing.T) {
+	c := testClient(t)
+	created, err := c.CreateFilterSession("Test session", "Desc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.GetFilterSession(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "Test session" {
+		t.Errorf("title = %q, want %q", got.Title, "Test session")
+	}
+	if got.Description != "Desc" {
+		t.Errorf("description = %q, want %q", got.Description, "Desc")
+	}
+}
+
+func TestClient_ListFilterSessions(t *testing.T) {
+	c := testClient(t)
+	_, err := c.CreateFilterSession("Session 1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.CreateFilterSession("Session 2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := c.ListFilterSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 {
+		t.Errorf("expected 2 sessions, got %d", len(sessions))
+	}
+}
+
+func TestClient_UpdateFilterSessionMessages(t *testing.T) {
+	c := testClient(t)
+	s, err := c.CreateFilterSession("Update test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := `[{"role":"user","content":"hello"},{"role":"assistant","content":"hi there"}]`
+	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "spec v1"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.GetFilterSession(s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Messages != msgs {
+		t.Errorf("messages = %q, want %q", got.Messages, msgs)
+	}
+	if got.SpecSnapshot != "spec v1" {
+		t.Errorf("spec_snapshot = %q, want %q", got.SpecSnapshot, "spec v1")
+	}
+}
+
+func TestClient_UpdateFilterSessionMessages_NotFound(t *testing.T) {
+	c := testClient(t)
+	err := c.UpdateFilterSessionMessages("nonexistent", "[]", "")
+	if err == nil {
+		t.Fatal("expected error for nonexistent session")
+	}
+}

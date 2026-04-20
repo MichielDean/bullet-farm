@@ -34,6 +34,7 @@ import (
 	"github.com/MichielDean/cistern/internal/aqueduct"
 	"github.com/MichielDean/cistern/internal/cistern"
 	"github.com/MichielDean/cistern/internal/skills"
+	"github.com/MichielDean/cistern/internal/tracker"
 	"github.com/creack/pty"
 )
 
@@ -1090,6 +1091,15 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	apiMux.HandleFunc("GET /api/logs", handleGetLogs(cfgPath))
 	apiMux.HandleFunc("GET /api/logs/events", handleLogEvents(cfgPath))
 	apiMux.HandleFunc("GET /api/logs/sources", handleGetLogSources(cfgPath))
+
+	// Filter/refine sessions
+	apiMux.HandleFunc("POST /api/filter/new", handleFilterNew(cfgPath, dbPath))
+	apiMux.HandleFunc("POST /api/filter/{session_id}/resume", handleFilterResume(cfgPath, dbPath))
+	apiMux.HandleFunc("GET /api/filter/sessions", handleFilterSessions(dbPath))
+	apiMux.HandleFunc("GET /api/filter/{session_id}", handleFilterSession(dbPath))
+
+	// Import
+	apiMux.HandleFunc("POST /api/import", handleImport(cfgPath, dbPath))
 
 	// SSE for droplet detail
 	apiMux.HandleFunc("GET /api/droplets/{id}/events", handleDropletEvents(cfgPath, dbPath))
@@ -2969,3 +2979,272 @@ connect();
 </script>
 </body>
 </html>`
+
+// ── Filter session handlers ──
+
+type filterNewRequest struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+type filterResumeRequest struct {
+	Message string `json:"message"`
+}
+
+func handleFilterNew(cfgPath, dbPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req filterNewRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.Title == "" {
+			writeAPIError(w, http.StatusBadRequest, "title is required")
+			return
+		}
+		if len(req.Title) > maxTitleLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("title exceeds maximum length (%d)", maxTitleLen))
+			return
+		}
+
+		apiClient(dbPath, w, func(c *cistern.Client) error {
+			session, err := c.CreateFilterSession(req.Title, req.Description)
+			if err != nil {
+				return err
+			}
+
+			preset := resolveFilterPreset("")
+			contextBlock := gatherFilterContext(filterContextConfig{
+				DBPath: dbPath,
+				Title:  req.Title,
+				Desc:   req.Description,
+			})
+
+			userPrompt := "Title: " + req.Title
+			if req.Description != "" {
+				userPrompt += "\nDescription: " + req.Description
+			}
+
+			result, err := invokeFilterNew(preset, req.Title, req.Description, contextBlock)
+			if err != nil {
+				return err
+			}
+
+			var messages []cistern.FilterMessage
+			messages = append(messages, cistern.FilterMessage{Role: "user", Content: userPrompt})
+			messages = append(messages, cistern.FilterMessage{Role: "assistant", Content: result.Text})
+
+			msgJSON, _ := json.Marshal(messages)
+			if err := c.UpdateFilterSessionMessages(session.ID, string(msgJSON), ""); err != nil {
+				return err
+			}
+
+			session.Messages = string(msgJSON)
+
+			w.Header().Set("Content-Type", "application/json")
+			writeAPIJSON(w, http.StatusCreated, map[string]any{
+				"session_id":        session.ID,
+				"llm_session_id":    result.SessionID,
+				"session":           session,
+				"assistant_message": result.Text,
+			})
+			return nil
+		})
+	}
+}
+
+func handleFilterResume(cfgPath, dbPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID := r.PathValue("session_id")
+		var req filterResumeRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.Message == "" {
+			writeAPIError(w, http.StatusBadRequest, "message is required")
+			return
+		}
+		if len(req.Message) > maxNotesLen {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("message exceeds maximum length (%d)", maxNotesLen))
+			return
+		}
+
+		apiClient(dbPath, w, func(c *cistern.Client) error {
+			session, err := c.GetFilterSession(sessionID)
+			if err != nil {
+				return err
+			}
+
+			preset := resolveFilterPreset("")
+			var existingMessages []cistern.FilterMessage
+			if session.Messages != "" && session.Messages != "[]" {
+				json.Unmarshal([]byte(session.Messages), &existingMessages) //nolint:errcheck
+			}
+
+			llmSessionID := ""
+			if len(existingMessages) > 0 {
+				for i := len(existingMessages) - 1; i >= 0; i-- {
+					if existingMessages[i].Role == "assistant" && r.Header.Get("X-LLM-Session-ID") != "" {
+						llmSessionID = r.Header.Get("X-LLM-Session-ID")
+						break
+					}
+				}
+			}
+
+			var result filterSessionResult
+			if llmSessionID != "" {
+				result, err = invokeFilterResume(preset, llmSessionID, req.Message)
+				if err != nil {
+					return err
+				}
+			} else {
+				contextBlock := gatherFilterContext(filterContextConfig{
+					DBPath: dbPath,
+					Title:  session.Title,
+					Desc:   session.Description,
+				})
+				fullPrompt := buildFilterPrompt(contextBlock, session.Title)
+				if session.Description != "" {
+					fullPrompt += "\nDescription: " + session.Description
+				}
+				for _, msg := range existingMessages {
+					if msg.Role == "user" {
+						fullPrompt += "\n\nUser: " + msg.Content
+					} else if msg.Role == "assistant" {
+						fullPrompt += "\n\nAssistant: " + msg.Content
+					}
+				}
+				fullPrompt += "\n\nUser: " + req.Message
+				result, err = callFilterAgent(preset, nil, fullPrompt)
+				if err != nil {
+					return err
+				}
+			}
+
+			existingMessages = append(existingMessages, cistern.FilterMessage{Role: "user", Content: req.Message})
+			existingMessages = append(existingMessages, cistern.FilterMessage{Role: "assistant", Content: result.Text})
+
+			msgJSON, _ := json.Marshal(existingMessages)
+			if err := c.UpdateFilterSessionMessages(sessionID, string(msgJSON), session.SpecSnapshot); err != nil {
+				return err
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			writeAPIJSON(w, http.StatusOK, map[string]any{
+				"session_id":        sessionID,
+				"llm_session_id":    result.SessionID,
+				"assistant_message": result.Text,
+			})
+			return nil
+		})
+	}
+}
+
+func handleFilterSessions(dbPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		apiClient(dbPath, w, func(c *cistern.Client) error {
+			sessions, err := c.ListFilterSessions()
+			if err != nil {
+				return err
+			}
+			if sessions == nil {
+				sessions = []cistern.FilterSession{}
+			}
+			writeAPIJSON(w, http.StatusOK, sessions)
+			return nil
+		})
+	}
+}
+
+func handleFilterSession(dbPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID := r.PathValue("session_id")
+		apiClient(dbPath, w, func(c *cistern.Client) error {
+			session, err := c.GetFilterSession(sessionID)
+			if err != nil {
+				return err
+			}
+			writeAPIJSON(w, http.StatusOK, session)
+			return nil
+		})
+	}
+}
+
+// ── Import handler ──
+
+type importRequest struct {
+	Provider   string `json:"provider"`
+	Key        string `json:"key"`
+	Repo       string `json:"repo"`
+	Complexity int    `json:"complexity"`
+	Priority   int    `json:"priority"`
+}
+
+func handleImport(cfgPath, dbPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req importRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.Provider == "" {
+			writeAPIError(w, http.StatusBadRequest, "provider is required")
+			return
+		}
+		if req.Key == "" {
+			writeAPIError(w, http.StatusBadRequest, "key is required")
+			return
+		}
+		if req.Repo == "" {
+			writeAPIError(w, http.StatusBadRequest, "repo is required")
+			return
+		}
+
+		repo, err := resolveCanonicalRepo(req.Repo)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		trackerCfg, err := loadTrackerConfig(req.Provider)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "tracker config: "+err.Error())
+			return
+		}
+
+		constructor, ok := tracker.Resolve(req.Provider)
+		if !ok {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("unknown tracker provider %q", req.Provider))
+			return
+		}
+		tp, err := constructor(trackerCfg)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "init tracker: "+err.Error())
+			return
+		}
+
+		issue, err := tp.FetchIssue(req.Key)
+		if err != nil {
+			writeAPIError(w, http.StatusBadGateway, "fetch issue: "+err.Error())
+			return
+		}
+
+		priority := issue.Priority
+		if req.Priority > 0 {
+			priority = req.Priority
+		}
+		complexity := req.Complexity
+		if complexity < 1 || complexity > 3 {
+			complexity = 2
+		}
+
+		externalRef := req.Provider + ":" + req.Key
+
+		apiClient(dbPath, w, func(c *cistern.Client) error {
+			d, err := c.AddDroplet(repo, issue.Title, issue.Description, externalRef, priority, complexity)
+			if err != nil {
+				return err
+			}
+			writeAPIJSON(w, http.StatusCreated, d)
+			return nil
+		})
+	}
+}

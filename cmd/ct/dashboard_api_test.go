@@ -3270,3 +3270,141 @@ func TestAPI_LogSSE_ConnectionLimit(t *testing.T) {
 		t.Errorf("error = %q, want 'too many' keyword", body["error"])
 	}
 }
+
+// ── Filter session handlers ──
+
+func TestAPI_FilterSessions_ListEmpty(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/filter/sessions", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("GET /api/filter/sessions status = %d, want 200", w.Code)
+	}
+	var sessions []cistern.FilterSession
+	if err := json.NewDecoder(w.Body).Decode(&sessions); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected empty sessions list, got %d", len(sessions))
+	}
+}
+
+func TestAPI_FilterSession_CRUD(t *testing.T) {
+	db := tempDB(t)
+	c, err := cistern.New(db, "mr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := c.CreateFilterSession("Test idea", "A description")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := `[{"role":"user","content":"hello"},{"role":"assistant","content":"hi"}]`
+	if err := c.UpdateFilterSessionMessages(s.ID, msgs, "spec text"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	mux := newDashboardMux(tempCfg(t), db)
+
+	t.Run("get session", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/filter/"+s.ID, nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("GET /api/filter/%s status = %d, want 200", s.ID, w.Code)
+		}
+		var got cistern.FilterSession
+		if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got.Title != "Test idea" {
+			t.Errorf("title = %q, want %q", got.Title, "Test idea")
+		}
+		if got.SpecSnapshot != "spec text" {
+			t.Errorf("spec_snapshot = %q, want %q", got.SpecSnapshot, "spec text")
+		}
+	})
+
+	t.Run("list sessions", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/filter/sessions", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("GET /api/filter/sessions status = %d, want 200", w.Code)
+		}
+		var sessions []cistern.FilterSession
+		if err := json.NewDecoder(w.Body).Decode(&sessions); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(sessions) != 1 {
+			t.Errorf("expected 1 session, got %d", len(sessions))
+		}
+	})
+
+	t.Run("get nonexistent session", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/filter/nonexistent", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("GET /api/filter/nonexistent status = %d, want 404", w.Code)
+		}
+	})
+}
+
+func TestAPI_FilterNew_MissingTitle(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := strings.NewReader(`{"description":"no title"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/filter/new", body)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/filter/new (no title) status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_FilterResume_MissingMessage(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := strings.NewReader(`{}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/filter/sess123/resume", body)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/filter/sess123/resume (no message) status = %d, want 400", w.Code)
+	}
+}
+
+func TestAPI_Import_MissingFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"no provider", `{"key":"PROJ-123","repo":"myrepo"}`},
+		{"no key", `{"provider":"jira","repo":"myrepo"}`},
+		{"no repo", `{"provider":"jira","key":"PROJ-123"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := newDashboardMux(tempCfg(t), tempDB(t))
+			req := httptest.NewRequest(http.MethodPost, "/api/import", strings.NewReader(tt.body))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("POST /api/import status = %d, want 400", w.Code)
+			}
+		})
+	}
+}
+
+func TestAPI_Import_UnknownProvider(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	body := strings.NewReader(`{"provider":"unknown","key":"PROJ-123","repo":"myrepo"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/import", body)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("POST /api/import (unknown provider) status = %d, want 400", w.Code)
+	}
+}

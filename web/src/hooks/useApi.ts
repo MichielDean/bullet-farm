@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthHeaders } from './useAuth';
+import { getAuthHeaders, getAuthParams } from './useAuth';
 import type {
   Droplet,
   DropletListResponse,
@@ -100,11 +100,9 @@ export function useDropletNotes(id: string | null) {
       .catch((err) => { if (!cancelled && mountedRef.current) { setError(err); } })
       .finally(() => { if (!cancelled && mountedRef.current) setLoading(false); });
 
-    const authParams = new URLSearchParams();
-    const apiKey = localStorage.getItem('cistern_api_key');
-    if (apiKey) authParams.set('token', apiKey);
-    const eventUrl = authParams.toString()
-      ? `/api/droplets/${encodeURIComponent(id)}/events?${authParams.toString()}`
+    const authParams = getAuthParams();
+    const eventUrl = authParams
+      ? `/api/droplets/${encodeURIComponent(id)}/events?${authParams}`
       : `/api/droplets/${encodeURIComponent(id)}/events`;
 
     let retryCount = 0;
@@ -288,4 +286,23 @@ export async function removeDependency(id: string, depId: string): Promise<void>
   return apiFetch<void>(`/api/droplets/${encodeURIComponent(id)}/dependencies/${encodeURIComponent(depId)}`, {
     method: 'DELETE',
   });
+}
+
+export function useRepoSteps(repoName: string | null) {
+  const [steps, setSteps] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!repoName) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    apiFetch<string[]>(`/api/repos/${encodeURIComponent(repoName)}/steps`)
+      .then((res) => { if (!cancelled) { setSteps(res); setError(null); } })
+      .catch((err) => { if (!cancelled) { setError(err); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [repoName]);
+
+  return { steps, loading, error };
 }

@@ -6,6 +6,7 @@ import {
   useDropletIssues,
   useDropletDependencies,
   useDropletMutation,
+  useRepoSteps,
   addIssue,
   resolveIssue,
   rejectIssue,
@@ -19,6 +20,7 @@ import { ActionDialog } from '../components/ActionDialog';
 import { AddNoteModal } from '../components/AddNoteModal';
 import { EditMetadataModal } from '../components/EditMetadataModal';
 import { RestartModal } from '../components/RestartModal';
+import { formatAge } from '../utils/formatAge';
 import type { ActionRequest } from '../api/types';
 
 export function DropletDetail() {
@@ -45,6 +47,7 @@ export function DropletDetail() {
     refreshKey > 0 ? id ?? null : null
   );
   const currentDroplet = freshDroplet ?? droplet;
+  const { steps: pipelineSteps } = useRepoSteps(currentDroplet?.repo ?? null);
 
   const handleAction = useCallback(async (
     dropletId: string,
@@ -89,8 +92,8 @@ export function DropletDetail() {
   const isDone = d.status === 'done';
   const isClosed = d.status === 'closed';
 
-  const steps = d.current_cataractae ? [] : [];
-  const currentStepIndex = 0;
+  const steps = pipelineSteps.length > 0 ? pipelineSteps : (d.current_cataractae ? [d.current_cataractae] : []);
+  const currentStepIndex = steps.indexOf(d.current_cataractae);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
@@ -115,6 +118,8 @@ export function DropletDetail() {
             <span className="text-cistern-border">|</span>
             <span>Priority {d.priority}</span>
             {d.complexity > 0 && <><span className="text-cistern-border">|</span><span>Complexity {d.complexity}</span></>}
+            <span className="text-cistern-border">|</span><span>Created {formatAge(d.created_at)}</span>
+            {d.stage_dispatched_at && <><span className="text-cistern-border">|</span><span>Stage {formatAge(d.stage_dispatched_at)}</span></>}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -216,7 +221,7 @@ export function DropletDetail() {
         dropletId={d.id}
         showNotes={actionDialog.action === 'recirculate' || actionDialog.action === 'pool'}
         showTargetSelector={actionDialog.action === 'recirculate'}
-        steps={undefined}
+        steps={steps}
         onConfirm={handleAction}
       />
 
@@ -238,7 +243,7 @@ export function DropletDetail() {
         open={showRestartModal}
         onClose={() => setShowRestartModal(false)}
         dropletId={d.id}
-        steps={[]}
+        steps={steps}
         onRestarted={() => setRefreshKey((k) => k + 1)}
       />
     </div>

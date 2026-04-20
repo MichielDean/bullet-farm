@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -1070,6 +1071,7 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 
 	// Repos & Skills
 	apiMux.HandleFunc("GET /api/repos", handleGetRepos(cfgPath))
+	apiMux.HandleFunc("GET /api/repos/{name}/steps", handleGetRepoSteps(cfgPath))
 	apiMux.HandleFunc("GET /api/skills", handleGetSkills())
 
 	// SSE for droplet detail
@@ -2127,6 +2129,37 @@ func handleGetRepos(cfgPath string) http.HandlerFunc {
 			repos = append(repos, repoInfo{Name: r.Name, URL: r.URL})
 		}
 		writeAPIJSON(w, http.StatusOK, repos)
+	}
+}
+
+func handleGetRepoSteps(cfgPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		repoName := r.PathValue("name")
+		cfg, err := aqueduct.ParseAqueductConfig(cfgPath)
+		if err != nil {
+			writeAPIError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		for _, repo := range cfg.Repos {
+			if repo.Name == repoName {
+				wfPath := repo.WorkflowPath
+				if !filepath.IsAbs(wfPath) {
+					wfPath = filepath.Join(filepath.Dir(cfgPath), wfPath)
+				}
+				wf, wfErr := aqueduct.ParseWorkflow(wfPath)
+				if wfErr != nil || wf == nil {
+					writeAPIJSON(w, http.StatusOK, []string{})
+					return
+				}
+				steps := make([]string, len(wf.Cataractae))
+				for i, step := range wf.Cataractae {
+					steps[i] = step.Name
+				}
+				writeAPIJSON(w, http.StatusOK, steps)
+				return
+			}
+		}
+		writeAPIError(w, http.StatusNotFound, "repo not found")
 	}
 }
 

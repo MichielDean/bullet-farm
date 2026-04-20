@@ -952,6 +952,41 @@ func TestAPI_GetRepos(t *testing.T) {
 	}
 }
 
+func TestAPI_GetRepoSteps_ReturnsSteps(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/myrepo/steps", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	var steps []string
+	if err := json.NewDecoder(w.Body).Decode(&steps); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	expected := []string{"implement", "review", "merge"}
+	if len(steps) != len(expected) {
+		t.Errorf("steps = %v, want %v", steps, expected)
+	}
+	for i, step := range steps {
+		if step != expected[i] {
+			t.Errorf("steps[%d] = %q, want %q", i, step, expected[i])
+		}
+	}
+}
+
+func TestAPI_GetRepoSteps_NotFoundRepo(t *testing.T) {
+	mux := newDashboardMux(tempCfg(t), tempDB(t))
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/nonexistent/steps", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
 func TestAPI_GetSkills(t *testing.T) {
 	mux := newDashboardMux(tempCfg(t), tempDB(t))
 	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)

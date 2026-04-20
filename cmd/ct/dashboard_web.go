@@ -1175,7 +1175,8 @@ func defaultAllowedOrigins() []string {
 func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Exempt SPA static routes so the login page can load without auth.
-		if strings.HasPrefix(r.URL.Path, "/app/") {
+		// Include exact "/app" path (no trailing slash) so the redirect to /app/ works without auth.
+		if r.URL.Path == "/app" || strings.HasPrefix(r.URL.Path, "/app/") {
 			next.ServeHTTP(w, r)
 			return
 		}

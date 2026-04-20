@@ -187,7 +187,7 @@ func TestAuthMiddleware_SPAExempt(t *testing.T) {
 	})
 	handler := apiAuthMiddleware(okHandler, "test-key")
 
-	for _, path := range []string{"/app/", "/app/droplets", "/app/assets/index.js"} {
+	for _, path := range []string{"/app", "/app/", "/app/droplets", "/app/assets/index.js"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)

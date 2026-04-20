@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
-import { createFilterSession, resumeFilterSession, listFilterSessions, getFilterSession, parseFilterMessages } from '../api/filter';
+import { createFilterSession, resumeFilterSession, listFilterSessions, parseFilterMessages } from '../api/filter';
 import type { FilterNewResponse, FilterResumeResponse, FilterSession } from '../api/types';
 
 function mockFetch(response: unknown, ok = true, status = 200) {

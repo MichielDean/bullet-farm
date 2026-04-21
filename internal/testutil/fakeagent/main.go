@@ -48,9 +48,9 @@ import (
 // becomes filterSessionResult.Text directly.
 const hardcodedProposals = `[{"title":"mock proposal","description":"test description","complexity":"standard","depends_on":[]}]`
 
-// hardcodedJSONEnvelope is returned when both --print and --output-format are
-// present. The result field becomes filterSessionResult.Text; session_id is a
-// stable test value used to verify session_id extraction.
+// hardcodedJSONEnvelope is returned when --output-format is present in
+// non-interactive mode. The result field becomes filterSessionResult.Text;
+// session_id is a stable test value used to verify session_id extraction.
 const hardcodedJSONEnvelope = `{"type":"result","subtype":"success","is_error":false,"result":"[{\"title\":\"mock proposal\",\"description\":\"test description\",\"complexity\":\"standard\",\"depends_on\":[]}]","session_id":"test-session-id-abc123"}`
 
 // hardcodedErrorEnvelope is returned in FAKEAGENT_MODE=error_envelope.

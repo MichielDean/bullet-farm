@@ -1,4 +1,4 @@
-export { ToastProvider, useToast } from '../context/ToastContext';
+export { ToastProvider, useToast, truncateToastMessage } from '../context/ToastContext';
 export type { Toast } from '../context/ToastContext';
 
 import { useToast } from '../context/ToastContext';

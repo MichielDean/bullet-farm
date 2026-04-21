@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { getAuthParams } from '../hooks/useAuth';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getStoredKey } from '../hooks/useAuth';
 import { truncateBuffer, isAuthCloseCode } from '../utils/buffer';
 import { TerminalView } from './TerminalView';
+
+export const MAX_HIGHLIGHTS = 200;
 
 interface PeekPanelProps {
   aqueductName: string;
@@ -32,12 +34,20 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
     setConnected(false);
     setError(null);
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const authParams = getAuthParams();
-    const wsUrl = `${protocol}//${window.location.host}/ws/aqueducts/${encodeURIComponent(aqueductName)}/peek${authParams ? '?' + authParams : ''}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/aqueducts/${encodeURIComponent(aqueductName)}/peek`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => { if (mountedRef.current) { setConnected(true); setError(null); } };
+    ws.onopen = () => {
+      if (mountedRef.current) {
+        setConnected(true);
+        setError(null);
+        const apiKey = getStoredKey();
+        if (apiKey) {
+          ws.send(JSON.stringify({ type: 'auth', token: apiKey }));
+        }
+      }
+    };
     ws.onmessage = (e) => {
       if (mountedRef.current) appendOutput(e.data as string);
     };
@@ -108,13 +118,23 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
     }
   }, [searchVisible]);
 
-  const highlightedOutput = searchQuery
-    ? output.split(searchQuery).map((part, i, arr) =>
-        i < arr.length - 1
-          ? [part, <mark key={`m-${i}`} className="bg-cistern-yellow/40 text-cistern-fg">{searchQuery}</mark>]
-          : part
-      )
-    : output;
+  const highlightedOutput = useMemo(() => {
+    if (!searchQuery) return output;
+    const parts = output.split(searchQuery);
+    const limited = parts.slice(0, MAX_HIGHLIGHTS);
+    const result: React.ReactNode[] = [];
+    for (let i = 0; i < limited.length; i++) {
+      result.push(limited[i]);
+      if (i < limited.length - 1) {
+        result.push(<mark key={`m-${i}`} className="bg-cistern-yellow/40 text-cistern-fg">{searchQuery}</mark>);
+      }
+    }
+    if (parts.length > MAX_HIGHLIGHTS) {
+      result.push(<span key="truncated" className="text-cistern-muted">… ({parts.length - MAX_HIGHLIGHTS} more matches)</span>);
+      result.push(parts[parts.length - 1]);
+    }
+    return result;
+  }, [output, searchQuery]);
 
   return (
     <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-cistern-bg border-l border-cistern-border shadow-2xl z-50 flex flex-col" role="dialog" aria-label={`Peek: ${aqueductName}`}>
@@ -167,7 +187,7 @@ export function PeekPanel({ aqueductName, onClose }: PeekPanelProps) {
           />
           {searchQuery && (
             <span className="text-xs text-cistern-muted font-mono">
-              {output.split(searchQuery).length - 1} match{output.split(searchQuery).length - 1 !== 1 ? 'es' : ''}
+              {Math.min(output.split(searchQuery).length - 1, MAX_HIGHLIGHTS)}{output.split(searchQuery).length - 1 > MAX_HIGHLIGHTS ? '+' : ''} match{output.split(searchQuery).length - 1 !== 1 ? 'es' : ''}
             </span>
           )}
         </div>

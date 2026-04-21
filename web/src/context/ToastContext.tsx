@@ -1,5 +1,12 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 
+const MAX_TOAST_MESSAGE_LENGTH = 300;
+
+export function truncateToastMessage(message: string): string {
+  if (message.length <= MAX_TOAST_MESSAGE_LENGTH) return message;
+  return message.slice(0, MAX_TOAST_MESSAGE_LENGTH) + '…';
+}
+
 export interface Toast {
   id: string;
   message: string;
@@ -48,7 +55,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const addToast = useCallback((message: string, type: Toast['type'] = 'info', duration = 3000) => {
     const id = `toast-${++counterRef.current}`;
-    const toast: Toast = { id, message, type, duration };
+    const toast: Toast = { id, message: truncateToastMessage(message), type, duration };
     setToasts((prev) => [...prev, toast]);
     if (duration > 0) {
       const timer = setTimeout(() => removeToast(id), duration);

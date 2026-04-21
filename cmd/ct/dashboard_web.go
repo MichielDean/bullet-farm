@@ -208,6 +208,14 @@ func wsSendBinary(w *bufio.Writer, data []byte) error {
 	return wsSendFrame(w, wsOpcodeBinary, data)
 }
 
+// wsClosePayload builds a WebSocket close frame payload (status code + reason).
+func wsClosePayload(code int, reason string) []byte {
+	buf := make([]byte, 2+len(reason))
+	binary.BigEndian.PutUint16(buf[:2], uint16(code))
+	copy(buf[2:], reason)
+	return buf
+}
+
 // wsSendFrame writes a single unfragmented WebSocket frame (FIN=1) and flushes.
 func wsSendFrame(w *bufio.Writer, opcode byte, payload []byte) error {
 	n := len(payload)
@@ -899,6 +907,9 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 	})
 
 	// WS /ws/aqueducts/{name}/peek — live streaming peek (poll every 500ms, send diffs).
+	// Auth is handled in-band: the client sends {"type":"auth","token":"..."} as
+	// the first WebSocket message after upgrade. The server validates before
+	// starting the stream. When no API key is configured, auth is skipped.
 	mux.HandleFunc("/ws/aqueducts/{name}/peek", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		if !isValidAqueductName(name) {
@@ -912,6 +923,34 @@ func newDashboardMuxInternalWith(cfgPath, dbPath string, tui *DashboardTUI, fetc
 			return // wsUpgrade already wrote the HTTP error
 		}
 		defer conn.Close()
+
+		// In-band WebSocket auth: if an API key is configured, read the first
+		// text frame and expect {"type":"auth","token":"<key>"}. Close with
+		// 4001 if auth fails; proceed immediately if no key is configured.
+		if apiKey != "" {
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck
+			opcode, payload, _, readErr := wsReadClientFrame(brw.Reader, make([]byte, wsMaxClientPayload))
+			if readErr != nil {
+				closePayload := wsClosePayload(4001, "auth required")
+				wsSendFrame(brw.Writer, wsOpcodeClose, closePayload) //nolint:errcheck
+				return
+			}
+			if opcode != wsOpcodeText {
+				closePayload := wsClosePayload(4001, "auth required")
+				wsSendFrame(brw.Writer, wsOpcodeClose, closePayload) //nolint:errcheck
+				return
+			}
+			var msg struct {
+				Type  string `json:"type"`
+				Token string `json:"token"`
+			}
+			if json.Unmarshal(payload, &msg) != nil || msg.Type != "auth" ||
+				subtle.ConstantTimeCompare([]byte(msg.Token), []byte(apiKey)) != 1 {
+				closePayload := wsClosePayload(4001, "invalid credentials")
+				wsSendFrame(brw.Writer, wsOpcodeClose, closePayload) //nolint:errcheck
+				return
+			}
+		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -1226,6 +1265,14 @@ func apiAuthMiddleware(next http.Handler, apiKey string) http.Handler {
 		// Exempt SPA static routes so the login page can load without auth.
 		// Include exact "/app" path (no trailing slash) so the redirect to /app/ works without auth.
 		if r.URL.Path == "/app" || strings.HasPrefix(r.URL.Path, "/app/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Exempt WS peek endpoints — authentication is handled in-band via the
+		// first WebSocket message after upgrade, not via URL query parameters.
+		// This prevents auth tokens from leaking into server access logs and
+		// browser history.
+		if strings.HasPrefix(r.URL.Path, "/ws/aqueducts/") {
 			next.ServeHTTP(w, r)
 			return
 		}

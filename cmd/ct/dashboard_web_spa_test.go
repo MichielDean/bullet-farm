@@ -150,6 +150,14 @@ func TestSPAHandler_SecurityHeadersOnIndexHTML(t *testing.T) {
 			t.Errorf("%s = %q, want %q", tc.header, got, tc.want)
 		}
 	}
+
+	csp := resp.Header.Get("Content-Security-Policy")
+	if !contains(csp, "connect-src 'self' ws://") {
+		t.Errorf("CSP connect-src should restrict WebSocket to same host, got: %s", csp)
+	}
+	if contains(csp, "connect-src 'self' ws:") && !contains(csp, "ws://") {
+		t.Errorf("CSP connect-src should not allow ws: wildcard, got: %s", csp)
+	}
 }
 
 func TestSPAHandler_SecurityHeadersOnAssets(t *testing.T) {
@@ -179,6 +187,44 @@ func stringContains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestSanitizeCSPHost(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"localhost:5737", "localhost:5737"},
+		{"127.0.0.1:8080", "127.0.0.1:8080"},
+		{"example.com", "example.com"},
+		{"host-with-hyphens.example.com", "host-with-hyphens.example.com"},
+		{"evil<script>", "evilscript"},
+		{"host;injection", "hostinjection"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		got := sanitizeCSPHost(tc.input)
+		if got != tc.want {
+			t.Errorf("sanitizeCSPHost(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestAuthMiddleware_WSPeekExempt(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := apiAuthMiddleware(okHandler, "test-key")
+
+	for _, path := range []string{"/ws/aqueducts/virgo/peek", "/ws/aqueducts/marcia/peek"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: status = %d, want %d (WS peek should be exempt from middleware auth)", path, w.Code, http.StatusOK)
+		}
+	}
 }
 
 func TestAuthMiddleware_SPAExempt(t *testing.T) {

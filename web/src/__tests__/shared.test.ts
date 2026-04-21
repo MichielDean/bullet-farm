@@ -12,6 +12,7 @@ describe('apiFetch', () => {
     vi.restoreAllMocks();
     global.fetch = originalFetch;
     localStorage.clear();
+    document.head.innerHTML = '';
   });
 
   it('returns parsed JSON on success', async () => {
@@ -45,7 +46,23 @@ describe('apiFetch', () => {
     await expect(apiFetch('/api/test')).rejects.toThrow('API error 500: Internal Server Error');
   });
 
-  it('dispatches cistern:auth-expired event and clears stored key on 401', async () => {
+  it('truncates long error response bodies', async () => {
+    const longBody = 'x'.repeat(300);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve(longBody),
+    });
+
+    await expect(apiFetch('/api/test')).rejects.toThrow(`API error 500: ${'x'.repeat(200)}…`);
+  });
+
+  it('dispatches cistern:auth-expired event and clears stored key on 401 when auth is required', async () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+
     localStorage.setItem('cistern_api_key', 'old-key');
 
     global.fetch = vi.fn().mockResolvedValue({
@@ -64,7 +81,31 @@ describe('apiFetch', () => {
     window.removeEventListener('cistern:auth-expired', handler);
   });
 
+  it('does not clear stored key on 401 when auth is not required', async () => {
+    localStorage.setItem('cistern_api_key', 'old-key');
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+    });
+
+    const handler = vi.fn();
+    window.addEventListener('cistern:auth-expired', handler);
+
+    await expect(apiFetch('/api/test')).rejects.toThrow('API error 401');
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(localStorage.getItem('cistern_api_key')).toBe('old-key');
+
+    window.removeEventListener('cistern:auth-expired', handler);
+  });
+
   it('dispatches cistern:auth-expired as a CustomEvent', async () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,

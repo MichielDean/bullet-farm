@@ -34,7 +34,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div className="text-center max-w-md">
             <div className="text-cistern-red text-lg font-mono mb-2">Something went wrong</div>
             <div className="text-cistern-muted text-sm mb-4">
-              {this.state.error?.message || 'An unexpected error occurred.'}
+              An unexpected error occurred. The error has been logged.
             </div>
             <button
               onClick={() => window.location.reload()}

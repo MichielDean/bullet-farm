@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useAuth, getAuthHeaders, getAuthParams } from '../hooks/useAuth';
+import { useAuth, getAuthHeaders, getAuthParams, isAuthRequired } from '../hooks/useAuth';
 
 describe('useAuth', () => {
   beforeEach(() => {
@@ -180,5 +180,23 @@ describe('getAuthParams', () => {
   it('encodes special characters in key', () => {
     localStorage.setItem('cistern_api_key', 'key with spaces&special=chars');
     expect(getAuthParams()).toBe('token=key%20with%20spaces%26special%3Dchars');
+  });
+});
+
+describe('isAuthRequired', () => {
+  afterEach(() => {
+    document.head.innerHTML = '';
+  });
+
+  it('returns false when no auth meta tag', () => {
+    expect(isAuthRequired()).toBe(false);
+  });
+
+  it('returns true when auth meta tag is present', () => {
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'cistern-auth');
+    meta.setAttribute('content', 'required');
+    document.head.appendChild(meta);
+    expect(isAuthRequired()).toBe(true);
   });
 });

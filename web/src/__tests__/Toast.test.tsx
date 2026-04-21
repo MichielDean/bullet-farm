@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { ToastProvider, useToast, ToastOutlet } from '../components/Toast';
+import { ToastProvider, useToast, ToastOutlet, truncateToastMessage } from '../components/Toast';
 
 function ToastTrigger({ message, type, duration }: { message: string; type?: 'success' | 'error' | 'info'; duration?: number }) {
   const { addToast } = useToast();
@@ -84,5 +84,18 @@ describe('Toast', () => {
       </TestWrapper>,
     );
     expect(container.querySelectorAll('[role="status"]').length).toBe(0);
+  });
+});
+
+describe('truncateToastMessage', () => {
+  it('returns short messages unchanged', () => {
+    expect(truncateToastMessage('Hello')).toBe('Hello');
+  });
+
+  it('truncates long messages with ellipsis', () => {
+    const longMsg = 'x'.repeat(400);
+    const result = truncateToastMessage(longMsg);
+    expect(result.length).toBeLessThan(longMsg.length);
+    expect(result.endsWith('…')).toBe(true);
   });
 });

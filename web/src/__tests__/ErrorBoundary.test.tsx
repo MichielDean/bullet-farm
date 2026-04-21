@@ -31,7 +31,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     );
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText('Test error message')).toBeInTheDocument();
+    expect(screen.getByText('An unexpected error occurred. The error has been logged.')).toBeInTheDocument();
   });
 
   it('shows Try Again button that reloads the page', () => {

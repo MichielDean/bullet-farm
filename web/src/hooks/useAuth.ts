@@ -59,6 +59,10 @@ export function useAuth() {
         setAuthenticated(false);
         setAuthError(true);
       }
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setAuthenticated(false);
+      setAuthError(true);
     });
 
     return () => { controller.abort(); };

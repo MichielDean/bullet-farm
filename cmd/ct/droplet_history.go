@@ -45,7 +45,7 @@ func runHistory(out io.Writer, id string) error {
 		return err
 	}
 
-	timeline, err := c.GetDropletTimeline(id)
+	timeline, err := c.GetDropletTimeline(id, 500)
 	if err != nil {
 		return err
 	}

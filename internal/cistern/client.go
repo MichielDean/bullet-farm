@@ -1241,14 +1241,29 @@ type DropletChange struct {
 }
 
 // GetDropletTimeline returns the event timeline for a droplet, ordered
-// oldest-first. This replaces the UNION query in GetDropletChanges for
-// log display.
-func (c *Client) GetDropletTimeline(id string) ([]TimelineEntry, error) {
-	rows, err := c.db.Query(`
+// oldest-first. A limit > 0 caps the result to the most recent limit events;
+// limit <= 0 returns all events. This replaces the UNION query in
+// GetDropletChanges for log display.
+func (c *Client) GetDropletTimeline(id string, limit int) ([]TimelineEntry, error) {
+	query := `
 		SELECT created_at, event_type, payload
 		FROM events
 		WHERE droplet_id = ?
-		ORDER BY created_at ASC`, id)
+		ORDER BY created_at ASC`
+	var args []any
+	args = append(args, id)
+	if limit > 0 {
+		query = `
+			SELECT created_at, event_type, payload FROM (
+				SELECT created_at, event_type, payload
+				FROM events
+				WHERE droplet_id = ?
+				ORDER BY created_at DESC
+				LIMIT ?
+			) ORDER BY created_at ASC`
+		args = append(args, limit)
+	}
+	rows, err := c.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("cistern: get droplet timeline %s: %w", id, err)
 	}

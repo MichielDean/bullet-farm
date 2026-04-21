@@ -2738,7 +2738,7 @@ func TestGetDropletTimeline_ReturnsEvents(t *testing.T) {
 
 	c.Pool(item.ID, "needs review")
 
-	entries, err := c.GetDropletTimeline(item.ID)
+	entries, err := c.GetDropletTimeline(item.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2763,7 +2763,7 @@ func TestGetDropletTimeline_OrderedOldestFirst(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	c.RecordEvent(item.ID, "pass", `{"cataractae":"reviewer"}`)
 
-	entries, err := c.GetDropletTimeline(item.ID)
+	entries, err := c.GetDropletTimeline(item.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2778,7 +2778,7 @@ func TestGetDropletTimeline_OrderedOldestFirst(t *testing.T) {
 func TestGetDropletTimeline_NotFoundReturnEmpty(t *testing.T) {
 	c := testClient(t)
 
-	entries, err := c.GetDropletTimeline("nonexistent")
+	entries, err := c.GetDropletTimeline("nonexistent", 0)
 	if err != nil {
 		t.Fatalf("expected no error for nonexistent droplet, got: %v", err)
 	}
@@ -2794,7 +2794,7 @@ func TestGetDropletTimeline_IncludesStructuredPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := c.GetDropletTimeline(item.ID)
+	entries, err := c.GetDropletTimeline(item.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2803,6 +2803,51 @@ func TestGetDropletTimeline_IncludesStructuredPayload(t *testing.T) {
 	}
 	if entries[0].Payload == "" {
 		t.Error("create event should have a non-empty payload")
+	}
+}
+
+func TestGetDropletTimeline_RespectsLimit_ReturnsNewest(t *testing.T) {
+	c := testClient(t)
+	item, err := c.Add("myrepo", "Limit task", "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Pool(item.ID, "first")
+	time.Sleep(10 * time.Millisecond)
+	c.RecordEvent(item.ID, "pass", `{"cataractae":"reviewer"}`)
+	time.Sleep(10 * time.Millisecond)
+	c.RecordEvent(item.ID, "dispatch", `{"aqueduct":"default","cataractae":"implement"}`)
+
+	entries, err := c.GetDropletTimeline(item.ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries with limit=2, want 2", len(entries))
+	}
+	if entries[0].EventType != "pass" {
+		t.Errorf("first entry EventType = %q, want 'pass' (newest entries with oldest first display)", entries[0].EventType)
+	}
+	if entries[1].EventType != "dispatch" {
+		t.Errorf("second entry EventType = %q, want 'dispatch'", entries[1].EventType)
+	}
+}
+
+func TestGetDropletTimeline_LimitZero_ReturnsAll(t *testing.T) {
+	c := testClient(t)
+	item, err := c.Add("myrepo", "No-limit task", "", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Pool(item.ID, "first")
+	c.RecordEvent(item.ID, "pass", `{"cataractae":"reviewer"}`)
+
+	entries, err := c.GetDropletTimeline(item.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("got %d entries with limit=0, want 3 (all events)", len(entries))
 	}
 }
 

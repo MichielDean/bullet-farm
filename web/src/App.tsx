@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -9,7 +9,15 @@ import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './components/LoginPage';
 
 export function AppLayout() {
-  const { required, authenticated, authError, login } = useAuth();
+  const { required, authenticated, authError, login, logout } = useAuth();
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      logout();
+    };
+    window.addEventListener('cistern:auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('cistern:auth-expired', handleAuthExpired);
+  }, [logout]);
 
   if (required && !authenticated) {
     return <LoginPage onLogin={login} error={authError} />;

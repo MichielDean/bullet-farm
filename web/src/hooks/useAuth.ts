@@ -23,7 +23,7 @@ function storeKey(key: string): void {
   }
 }
 
-function clearStoredKey(): void {
+export function clearStoredKey(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {

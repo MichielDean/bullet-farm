@@ -3962,6 +3962,9 @@ func TestMigration018_SchedulerNotesToEvents(t *testing.T) {
 		{"scheduler", "[circuit-breaker] 5 dead sessions in 15m0s with no outcome — pooling"},
 		{"scheduler", "cancelled: not needed [2026-04-21 03:00:05]"},
 		{"scheduler", "restarted at cataractae \"implement\" [2026-04-21 02:00:05]"},
+		{"scheduler", "cancelled [2026-04-21 04:00:05]"},
+		{"scheduler", "[scheduler:routing] cataractae=review signaled recirculate but has no on_recirculate route — restarting at implement"},
+		{"scheduler", "[scheduler:unknown-pattern] something we cannot parse"},
 		{"scheduler", "[scheduler:loop-recovery-pending] issue=iss-001 — open reviewer issue found at implement, routing back to implement (cycle 1/2)"},
 		{"manual", "a manual note that should not be touched"},
 	}
@@ -3999,13 +4002,18 @@ func TestMigration018_SchedulerNotesToEvents(t *testing.T) {
 
 	var schedulerNoteCount int
 	c.db.QueryRow(`SELECT COUNT(*) FROM cataractae_notes WHERE cataractae_name = 'scheduler'`).Scan(&schedulerNoteCount)
-	if schedulerNoteCount != 1 {
-		t.Errorf("scheduler note count after migration = %d, want 1 (loop-recovery-pending)", schedulerNoteCount)
+	if schedulerNoteCount != 2 {
+		t.Errorf("scheduler note count after migration = %d, want 2 (loop-recovery-pending + unparsable)", schedulerNoteCount)
 	}
-	var remainingContent string
-	c.db.QueryRow(`SELECT content FROM cataractae_notes WHERE cataractae_name = 'scheduler'`).Scan(&remainingContent)
-	if !strings.Contains(remainingContent, "[scheduler:loop-recovery-pending]") {
-		t.Errorf("remaining scheduler note = %q, want loop-recovery-pending marker", remainingContent)
+	var lrpCount int
+	c.db.QueryRow(`SELECT COUNT(*) FROM cataractae_notes WHERE cataractae_name = 'scheduler' AND content LIKE '%[scheduler:loop-recovery-pending]%'`).Scan(&lrpCount)
+	if lrpCount != 1 {
+		t.Errorf("loop-recovery-pending marker count = %d, want 1", lrpCount)
+	}
+	var unparsableCount int
+	c.db.QueryRow(`SELECT COUNT(*) FROM cataractae_notes WHERE cataractae_name = 'scheduler' AND content LIKE '%[scheduler:unknown-pattern]%'`).Scan(&unparsableCount)
+	if unparsableCount != 1 {
+		t.Errorf("unparsable scheduler note count = %d, want 1", unparsableCount)
 	}
 
 	var manualNoteCount int
@@ -4029,6 +4037,8 @@ func TestMigration018_SchedulerNotesToEvents(t *testing.T) {
 		{EventNoRoute, `"cataractae":"implement"`},
 		{EventCircuitBreaker, `"death_count":5`},
 		{EventCancel, `"reason":"not needed"`},
+		{EventCancel, `"reason":""`},
+		{EventNoRoute, `"cataractae":"review"`},
 		{EventRestart, `"cataractae":"implement"`},
 	}
 

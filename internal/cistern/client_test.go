@@ -3180,13 +3180,13 @@ func TestGetReady_RecordsDispatchEvent(t *testing.T) {
 	}
 	found := false
 	for _, ch := range changes {
-		if ch.Kind == "event" && strings.Contains(ch.Value, "dispatch: ") {
+		if ch.Kind == "event" && strings.Contains(ch.Value, "dispatch: ") && strings.Contains(ch.Value, "cataractae") && strings.Contains(ch.Value, "assignee") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("dispatch event not found in changes: %v", changes)
+		t.Errorf("dispatch event with cataractae/assignee not found in changes: %v", changes)
 	}
 }
 
@@ -3205,13 +3205,13 @@ func TestGetReadyForAqueduct_RecordsDispatchEvent(t *testing.T) {
 	}
 	found := false
 	for _, ch := range changes {
-		if ch.Kind == "event" && strings.Contains(ch.Value, "dispatch: ") && strings.Contains(ch.Value, "my-aqueduct") {
+		if ch.Kind == "event" && strings.Contains(ch.Value, "dispatch: ") && strings.Contains(ch.Value, "my-aqueduct") && strings.Contains(ch.Value, "cataractae") && strings.Contains(ch.Value, "assignee") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("dispatch event with aqueduct not found in changes: %v", changes)
+		t.Errorf("dispatch event with aqueduct, cataractae, and assignee not found in changes: %v", changes)
 	}
 }
 

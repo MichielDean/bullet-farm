@@ -44,6 +44,10 @@ var validEventTypes = map[string]bool{
 	EventCancel:      true,
 }
 
+type executor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 // externalRefRE validates the 'provider:key' format for external_ref values.
 // Both parts must consist solely of characters safe for use in git branch names
 // and shell awk extraction: letters, digits, hyphens, underscores, and (key only)
@@ -205,17 +209,19 @@ func (c *Client) Add(repo, title, description string, priority, complexity int, 
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("cistern: commit: %w", err)
-	}
-
 	createPayload, _ := json.Marshal(map[string]any{
 		"repo":       repo,
 		"title":      title,
 		"priority":   priority,
 		"complexity": complexity,
 	})
-	_ = c.RecordEvent(id, EventCreate, string(createPayload))
+	if err := c.recordEvent(tx, id, EventCreate, string(createPayload)); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("cistern: commit: %w", err)
+	}
 
 	return &Droplet{
 		ID:          id,
@@ -292,13 +298,20 @@ func (c *Client) GetReady(repo string) (*Droplet, error) {
 		return nil, fmt.Errorf("cistern: mark in_progress %s: %w", droplet.ID, err)
 	}
 
+	dispatchPayload, _ := json.Marshal(map[string]any{
+		"cataractae": droplet.CurrentCataractae,
+		"assignee":   droplet.Assignee,
+	})
+	if err := c.recordEvent(tx, droplet.ID, EventDispatch, string(dispatchPayload)); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("cistern: commit: %w", err)
 	}
 
 	droplet.Status = "in_progress"
 	droplet.UpdatedAt = now
-	_ = c.RecordEvent(droplet.ID, EventDispatch, "{}")
 	return &droplet, nil
 }
 
@@ -351,16 +364,21 @@ func (c *Client) GetReadyForAqueduct(repo, aqueductName string) (*Droplet, error
 	); err != nil {
 		return nil, fmt.Errorf("cistern: mark in_progress %s: %w", droplet.ID, err)
 	}
+
+	dispatchPayload, _ := json.Marshal(map[string]any{
+		"aqueduct":   aqueductName,
+		"cataractae": droplet.CurrentCataractae,
+		"assignee":   droplet.Assignee,
+	})
+	if err := c.recordEvent(tx, droplet.ID, EventDispatch, string(dispatchPayload)); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("cistern: commit: %w", err)
 	}
 	droplet.Status = "in_progress"
 	droplet.UpdatedAt = now
-	dispatchPayload, _ := json.Marshal(map[string]any{
-		"aqueduct": aqueductName,
-		"assignee": droplet.Assignee,
-	})
-	_ = c.RecordEvent(droplet.ID, EventDispatch, string(dispatchPayload))
 	return &droplet, nil
 }
 
@@ -561,7 +579,9 @@ func (c *Client) EditDroplet(id string, fields EditDropletFields) error {
 		changedFields = append(changedFields, "priority")
 	}
 	editPayload, _ := json.Marshal(map[string]any{"fields": changedFields})
-	_ = c.RecordEvent(id, EventEdit, string(editPayload))
+	if err := c.RecordEvent(id, EventEdit, string(editPayload)); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -594,13 +614,17 @@ func (c *Client) AddNote(id, step, content string) error {
 // be one of the Event* constants; payload must be valid JSON (use "{}" for
 // empty). Returns an error for unknown event types or invalid JSON.
 func (c *Client) RecordEvent(id, eventType, payload string) error {
+	return c.recordEvent(c.db, id, eventType, payload)
+}
+
+func (c *Client) recordEvent(exec executor, id, eventType, payload string) error {
 	if !validEventTypes[eventType] {
 		return fmt.Errorf("cistern: unknown event type %q", eventType)
 	}
 	if !json.Valid([]byte(payload)) {
 		return fmt.Errorf("cistern: event payload must be valid JSON, got %q", payload)
 	}
-	_, err := c.db.Exec(
+	_, err := exec.Exec(
 		`INSERT INTO events (droplet_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)`,
 		id, eventType, payload, time.Now().UTC(),
 	)
@@ -709,7 +733,9 @@ func (c *Client) CloseItem(id string) error {
 	if err := checkRowsAffected(res, id); err != nil {
 		return err
 	}
-	_ = c.RecordEvent(id, EventDelivered, "{}")
+	if err := c.RecordEvent(id, EventDelivered, "{}"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1359,7 +1385,9 @@ func (c *Client) Restart(id, cataractaeName string) (*Droplet, error) {
 	}
 
 	restartPayload, _ := json.Marshal(map[string]any{"cataractae": cataractaeName})
-	_ = c.RecordEvent(id, EventRestart, string(restartPayload))
+	if err := c.RecordEvent(id, EventRestart, string(restartPayload)); err != nil {
+		return nil, err
+	}
 
 	droplet.Status = "open"
 	droplet.Assignee = ""

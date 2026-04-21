@@ -194,7 +194,7 @@ func (m tabAppModel) execActionCmd(dropletID, action, input string) tea.Cmd {
 		case actionPool:
 			execErr = c.Pool(dropletID, "")
 		case actionRestart:
-			execErr = c.Assign(dropletID, "", input)
+			_, execErr = c.Restart(dropletID, input)
 		case actionAddNote:
 			execErr = c.AddNote(dropletID, "manual", input)
 		case actionSetStep:

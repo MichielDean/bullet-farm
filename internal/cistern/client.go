@@ -823,7 +823,7 @@ func (c *Client) GetNotes(id string) ([]CataractaeNote, error) {
 }
 
 // Pool marks a droplet as pooled — cannot currently flow forward — and records the reason.
-// assigned_aqueduct is cleared atomically so no ghost assignments linger.
+// assigned_aqueduct and outcome are cleared/set atomically so no ghost assignments linger.
 func (c *Client) Pool(id, reason string) error {
 	tx, err := c.db.Begin()
 	if err != nil {
@@ -831,9 +831,10 @@ func (c *Client) Pool(id, reason string) error {
 	}
 	defer tx.Rollback()
 
+	now := time.Now().UTC()
 	res, err := tx.Exec(
-		`UPDATE droplets SET status = 'pooled', assigned_aqueduct = '', updated_at = ? WHERE id = ?`,
-		time.Now().UTC(), id,
+		`UPDATE droplets SET status = 'pooled', outcome = 'pool', assigned_aqueduct = '', updated_at = ? WHERE id = ?`,
+		now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("cistern: pool %s: %w", id, err)

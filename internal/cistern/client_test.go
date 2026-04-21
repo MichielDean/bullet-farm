@@ -392,6 +392,22 @@ func TestPool(t *testing.T) {
 	if got.Status != "pooled" {
 		t.Errorf("status = %q, want %q", got.Status, "pooled")
 	}
+	if got.Outcome != "pool" {
+		t.Errorf("outcome = %q, want %q", got.Outcome, "pool")
+	}
+	changes, err := c.GetDropletChanges(item.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundPoolEvent := false
+	for _, ch := range changes {
+		if ch.Kind == "event" && strings.Contains(ch.Value, "pool") {
+			foundPoolEvent = true
+		}
+	}
+	if !foundPoolEvent {
+		t.Error("expected pool event in droplet changes")
+	}
 }
 
 func TestCloseItem(t *testing.T) {

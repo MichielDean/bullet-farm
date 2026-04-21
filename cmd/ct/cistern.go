@@ -686,13 +686,13 @@ var dropletPoolCmd = &cobra.Command{
 				return err
 			}
 		}
-		if err := c.SetOutcome(args[0], "pool"); err != nil {
-			return err
-		}
-		notifyCastellarius()
-		// When not in_progress, Castellarius will never observe this droplet.
-		// Directly pool so the reason is recorded in events with a non-empty payload.
-		if item.Status != "in_progress" {
+
+		if item.Status == "in_progress" {
+			if err := c.SetOutcome(args[0], "pool"); err != nil {
+				return err
+			}
+			notifyCastellarius()
+		} else {
 			if err := c.Pool(args[0], poolNotes); err != nil {
 				return err
 			}

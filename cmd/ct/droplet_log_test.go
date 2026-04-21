@@ -429,3 +429,116 @@ func TestRemapEvent_DisplaysHumanReadableDetails(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildLogEntries_SynthesizesCreateEvent_WhenMissing(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	item := &cistern.Droplet{
+		ID:         "pre-exist",
+		Repo:       "myrepo",
+		Title:      "Pre-existing task",
+		Priority:   1,
+		Complexity: 2,
+		Status:     "open",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	changes := []cistern.DropletChange{
+		{Time: now.Add(time.Minute), Kind: "note", Value: "implement: got started"},
+	}
+
+	entries := buildLogEntries(item, changes)
+
+	createFound := false
+	for _, e := range entries {
+		if e.Event == "created" {
+			createFound = true
+			if !strings.Contains(e.Detail, "repo: myrepo") {
+				t.Errorf("synthesized created entry missing repo: %s", e.Detail)
+			}
+			if !strings.Contains(e.Detail, "title: Pre-existing task") {
+				t.Errorf("synthesized created entry missing title: %s", e.Detail)
+			}
+			if e.Time != now.Format("2006-01-02 15:04:05") {
+				t.Errorf("synthesized created entry time = %q, want %q", e.Time, now.Format("2006-01-02 15:04:05"))
+			}
+			break
+		}
+	}
+	if !createFound {
+		t.Errorf("buildLogEntries should synthesize created event for pre-existing droplet; entries: %+v", entries)
+	}
+
+	noteFound := false
+	for _, e := range entries {
+		if e.Event == "note" && strings.Contains(e.Detail, "got started") {
+			noteFound = true
+		}
+	}
+	if !noteFound {
+		t.Errorf("buildLogEntries should still include notes; entries: %+v", entries)
+	}
+}
+
+func TestBuildLogEntries_DoesNotSynthesizeCreateEvent_WhenPresent(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	item := &cistern.Droplet{
+		ID:         "with-create",
+		Repo:       "myrepo",
+		Title:      "New task",
+		Priority:   1,
+		Complexity: 2,
+		Status:     "open",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	changes := []cistern.DropletChange{
+		{Time: now, Kind: "event", Value: "create: {\"repo\":\"myrepo\",\"title\":\"New task\",\"priority\":1,\"complexity\":2}"},
+		{Time: now.Add(time.Minute), Kind: "note", Value: "implement: got started"},
+	}
+
+	entries := buildLogEntries(item, changes)
+
+	createCount := 0
+	for _, e := range entries {
+		if e.Event == "created" {
+			createCount++
+		}
+	}
+	if createCount != 1 {
+		t.Errorf("expected exactly 1 created entry when event exists, got %d", createCount)
+	}
+}
+
+func TestBuildLogEntries_SynthesizedCreateBeforeOtherEntries(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	later := now.Add(2 * time.Minute)
+	item := &cistern.Droplet{
+		ID:         "pre-exist-order",
+		Repo:       "myrepo",
+		Title:      "Order task",
+		Priority:   1,
+		Complexity: 2,
+		Status:     "open",
+		CreatedAt:  now,
+		UpdatedAt:  later,
+	}
+
+	changes := []cistern.DropletChange{
+		{Time: later, Kind: "note", Value: "implement: started late"},
+	}
+
+	entries := buildLogEntries(item, changes)
+
+	if len(entries) < 2 {
+		t.Fatalf("expected at least 2 entries, got %d", len(entries))
+	}
+
+	if entries[0].Event != "created" {
+		t.Errorf("first entry should be 'created', got %q", entries[0].Event)
+	}
+	if entries[0].Time != now.Format("2006-01-02 15:04:05") {
+		t.Errorf("created entry time = %q, want %q", entries[0].Time, now.Format("2006-01-02 15:04:05"))
+	}
+}

@@ -102,6 +102,30 @@ func buildLogEntries(item *cistern.Droplet, changes []cistern.DropletChange) []l
 		})
 	}
 
+	hasCreate := false
+	for _, e := range entries {
+		if e.Event == "created" {
+			hasCreate = true
+			break
+		}
+	}
+
+	if !hasCreate && !item.CreatedAt.IsZero() {
+		createPayload, _ := json.Marshal(map[string]any{
+			"repo":       item.Repo,
+			"title":      item.Title,
+			"priority":   item.Priority,
+			"complexity": item.Complexity,
+		})
+		detail := remapPayloadCreate(string(createPayload))
+		entries = append(entries, logEntry{
+			sortTime: item.CreatedAt,
+			Time:     item.CreatedAt.Format("2006-01-02 15:04:05"),
+			Event:    "created",
+			Detail:   detail,
+		})
+	}
+
 	if !item.LastHeartbeatAt.IsZero() {
 		entries = append(entries, logEntry{
 			sortTime:   item.LastHeartbeatAt,

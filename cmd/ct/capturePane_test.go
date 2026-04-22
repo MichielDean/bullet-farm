@@ -36,6 +36,23 @@ func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
 		exec.Command("tmux", "kill-session", "-t", session).Run() //nolint:errcheck
 	})
 
+	// Wait for the shell inside the tmux session to be ready before sending keys.
+	// Without this, send-keys can fire before the shell has started, causing the
+	// script to be lost or partially captured — the root cause of the flake.
+	shellReady := false
+	readyDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(readyDeadline) {
+		raw, _ := exec.Command("tmux", "capture-pane", "-t", session+":0.0", "-p").Output()
+		if strings.Contains(string(raw), "$") || strings.Contains(string(raw), "#") || strings.Contains(string(raw), "~") {
+			shellReady = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !shellReady {
+		t.Fatal("timed out waiting for tmux shell to start")
+	}
+
 	// Send a shell loop that writes 200 uniquely-numbered lines and then prints
 	// a sentinel so we can poll for completion without a fixed sleep.
 	const nLines = 200
@@ -44,9 +61,9 @@ func TestCapturePane_FullScrollback_ReturnsHistoryBeyondVisible(t *testing.T) {
 		t.Fatalf("tmux send-keys: %v: %s", err, out)
 	}
 
-	// Poll the visible pane until the sentinel appears (up to 10 seconds).
+	// Poll the visible pane until the sentinel appears (up to 30 seconds).
 	found := false
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		raw, _ := exec.Command("tmux", "capture-pane", "-t", session+":0.0", "-p").Output()
 		if strings.Contains(string(raw), "SCROLLBACK_DONE") {

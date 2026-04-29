@@ -118,9 +118,7 @@ func fetchDashboardData(cfgPath, dbPath string) (*DashboardData, error) {
 		cataractae := make([]CataractaeInfo, len(configCataractae))
 		for i, ch := range configCataractae {
 			ci := CataractaeInfo{Name: ch.name, RepoName: ch.repo}
-			if wf, ok := allSteps[ch.repo]; ok {
-				ci.Steps = stepNames(wf)
-			}
+			ci.Steps = stepNames(allSteps[ch.repo])
 			cataractae[i] = ci
 		}
 		data.Cataractae = cataractae
@@ -133,9 +131,7 @@ func fetchDashboardData(cfgPath, dbPath string) (*DashboardData, error) {
 		cataractae := make([]CataractaeInfo, len(configCataractae))
 		for i, ch := range configCataractae {
 			ci := CataractaeInfo{Name: ch.name, RepoName: ch.repo}
-			if wf, ok := allSteps[ch.repo]; ok {
-				ci.Steps = stepNames(wf)
-			}
+			ci.Steps = stepNames(allSteps[ch.repo])
 			cataractae[i] = ci
 		}
 		data.Cataractae = cataractae
@@ -162,9 +158,7 @@ func fetchDashboardData(cfgPath, dbPath string) (*DashboardData, error) {
 	cataractae := make([]CataractaeInfo, len(configCataractae))
 	for i, ch := range configCataractae {
 		ci := CataractaeInfo{Name: ch.name, RepoName: ch.repo}
-		if wf, ok := allSteps[ch.repo]; ok {
-			ci.Steps = stepNames(wf)
-		}
+		ci.Steps = stepNames(allSteps[ch.repo])
 		if item, ok := assigneeMap[ch.name]; ok {
 			ci.DropletID = item.ID
 			ci.Title = item.Title
@@ -289,6 +283,9 @@ func cataractaeIndexInWorkflow(stepName string, cataractae []aqueduct.WorkflowCa
 
 // stepNames extracts step names from a workflow cataractae slice.
 func stepNames(wf []aqueduct.WorkflowCataractae) []string {
+	if len(wf) == 0 {
+		return []string{}
+	}
 	names := make([]string, len(wf))
 	for i, s := range wf {
 		names[i] = s.Name

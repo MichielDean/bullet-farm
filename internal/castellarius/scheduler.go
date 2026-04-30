@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"sync/atomic"
@@ -620,6 +621,13 @@ func (s *Castellarius) purgeOldItems() {
 	s.purgeOrphanedWorktrees()
 }
 
+// dropletIDRe matches the canonical droplet ID format: 1-3 lowercase
+// letters, a dash, then 5 lowercase alphanumeric characters. This is used
+// by purgeOrphanedWorktrees to distinguish per-droplet worktrees from
+// repo source directories, even when the configured prefix doesn't match
+// the actual droplet IDs in the database.
+var dropletIDRe = regexp.MustCompile(`^[a-z]{1,3}-[a-z0-9]{5}$`)
+
 // purgeOrphanedWorktrees removes per-droplet worktrees whose droplets are no
 // longer active (delivered, cancelled, pooled, or deleted from DB). This catches
 // worktrees that escaped the normal observe-path cleanup due to Castellarius
@@ -628,7 +636,8 @@ func (s *Castellarius) purgeOldItems() {
 // Safe guards:
 //   - Skips _primary (shared object store for the repo)
 //   - Skips named aqueduct worker directories (alpha, virgo, etc.)
-//   - Skips directories that don't match the repo's droplet prefix
+//   - Skips directories that don't look like droplet IDs (must match
+//     the configured prefix OR the droplet ID regex pattern)
 //   - Only removes worktrees whose droplet is delivered/cancelled/pooled
 //     or entirely absent from the database
 func (s *Castellarius) purgeOrphanedWorktrees() {
@@ -671,7 +680,10 @@ func (s *Castellarius) purgeOrphanedWorktrees() {
 			if knownDirs[name] {
 				continue
 			}
-			if !strings.HasPrefix(name, prefix) {
+
+			matchesPrefix := strings.HasPrefix(name, prefix)
+			looksLikeDroplet := dropletIDRe.MatchString(name)
+			if !matchesPrefix && !looksLikeDroplet {
 				continue
 			}
 
@@ -679,7 +691,9 @@ func (s *Castellarius) purgeOrphanedWorktrees() {
 			dropletStatus := "unknown"
 			droplet, err := client.Get(name)
 			if err != nil {
-				remove = true
+				if matchesPrefix {
+					remove = true
+				}
 			} else {
 				dropletStatus = droplet.Status
 				switch droplet.Status {
@@ -693,7 +707,8 @@ func (s *Castellarius) purgeOrphanedWorktrees() {
 				removed++
 				s.logger.Info("orphaned worktree removed",
 					"repo", repo.Name, "droplet", name,
-					"droplet_status", dropletStatus)
+					"droplet_status", dropletStatus,
+					"prefix_match", matchesPrefix)
 			}
 		}
 
@@ -701,6 +716,59 @@ func (s *Castellarius) purgeOrphanedWorktrees() {
 			s.logger.Info("orphaned worktree purge complete",
 				"repo", repo.Name, "removed", removed)
 		}
+
+		s.purgeStaleBranches(repo.Name, primaryDir, prefix, client)
+	}
+}
+
+// purgeStaleBranches removes local feature branches whose droplets are in
+// terminal states. This catches branches left behind when the normal
+// observe-path or orphan-purge removed the worktree but the branch deletion
+// failed (e.g., git worktree lock), or when git fetch recreated the local
+// tracking branch.
+func (s *Castellarius) purgeStaleBranches(repoName, primaryDir, prefix string, client CisternClient) {
+	listCmd := exec.Command("git", "branch", "--format", "%(refname:short)")
+	listCmd.Dir = primaryDir
+	out, err := listCmd.Output()
+	if err != nil {
+		s.logger.Warn("stale branch scan: git branch failed", "repo", repoName, "error", err)
+		return
+	}
+
+	branches := strings.Split(strings.TrimSpace(string(out)), "\n")
+	deleted := 0
+	for _, branch := range branches {
+		if !strings.HasPrefix(branch, "feat/") {
+			continue
+		}
+		dropletID := strings.TrimPrefix(branch, "feat/")
+		if dropletID == "" {
+			continue
+		}
+
+		droplet, err := client.Get(dropletID)
+		if err != nil {
+			continue
+		}
+		switch droplet.Status {
+		case "delivered", "cancelled", "pooled":
+			delCmd := exec.Command("git", "branch", "-D", branch)
+			delCmd.Dir = primaryDir
+			if delErr := delCmd.Run(); delErr != nil {
+				s.logger.Warn("stale branch delete failed",
+					"repo", repoName, "branch", branch, "error", delErr)
+			} else {
+				deleted++
+				s.logger.Info("stale branch deleted",
+					"repo", repoName, "branch", branch,
+					"droplet_status", droplet.Status)
+			}
+		}
+	}
+
+	if deleted > 0 {
+		s.logger.Info("stale branch purge complete",
+			"repo", repoName, "deleted", deleted)
 	}
 }
 
@@ -1642,8 +1710,8 @@ func prepareBranchInSandbox(dir, itemID string) error {
 
 	// Configure git identity so commits don't fail.
 	for _, args := range [][]string{
-		{"git", "config", "user.name", "Cistern Agent"},
-		{"git", "config", "user.email", "agent@cistern.local"},
+		{"git", "config", "user.name", "Lobsterdog Contributors"},
+		{"git", "config", "user.email", "noreply@lobsterdog.dev"},
 		{"git", "config", "core.editor", "true"},
 		{"git", "config", "sequence.editor", "true"},
 	} {
@@ -1845,8 +1913,8 @@ func prepareDropletWorktreeWithLogger(logger *slog.Logger, primaryDir, sandboxRo
 	}
 
 	for _, args := range [][]string{
-		{"git", "config", "user.name", "Cistern Agent"},
-		{"git", "config", "user.email", "agent@cistern.local"},
+		{"git", "config", "user.name", "Lobsterdog Contributors"},
+		{"git", "config", "user.email", "noreply@lobsterdog.dev"},
 	} {
 		c := exec.Command(args[0], args[1:]...)
 		c.Dir = worktreePath

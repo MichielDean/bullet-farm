@@ -47,8 +47,8 @@ func makeBareAndClone(t *testing.T) string {
 
 	branchMustRun(t, branchGitCmd(".", "init", "--bare", remoteDir))
 	branchMustRun(t, branchGitCmd(".", "init", initDir))
-	branchMustRun(t, branchGitCmd(initDir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(initDir, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(initDir, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(initDir, "config", "user.name", "Lobsterdog Contributors"))
 
 	if err := os.WriteFile(filepath.Join(initDir, "README.md"), []byte("init\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -61,8 +61,8 @@ func makeBareAndClone(t *testing.T) string {
 
 	// Clone the bare remote to create the primary (inherits origin remote).
 	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, primaryDir))
-	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Lobsterdog Contributors"))
 
 	return primaryDir
 }
@@ -116,16 +116,16 @@ func TestPrepareBranchInSandbox_NewBranch_ConfiguresGitIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("git config user.name: %v", err)
 	}
-	if got := strings.TrimSpace(string(nameOut)); got != "Cistern Agent" {
-		t.Errorf("user.name = %q, want %q", got, "Cistern Agent")
+	if got := strings.TrimSpace(string(nameOut)); got != "Lobsterdog Contributors" {
+		t.Errorf("user.name = %q, want %q", got, "Lobsterdog Contributors")
 	}
 
 	emailOut, err := exec.Command("git", "-C", dir, "config", "user.email").Output()
 	if err != nil {
 		t.Fatalf("git config user.email: %v", err)
 	}
-	if got := strings.TrimSpace(string(emailOut)); got != "agent@cistern.local" {
-		t.Errorf("user.email = %q, want %q", got, "agent@cistern.local")
+	if got := strings.TrimSpace(string(emailOut)); got != "noreply@lobsterdog.dev" {
+		t.Errorf("user.email = %q, want %q", got, "noreply@lobsterdog.dev")
 	}
 }
 
@@ -456,8 +456,8 @@ func TestPurgeOrphanedWorktrees_RemovesDeliveredDropletWorktree(t *testing.T) {
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
 	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 
 	_, err := prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"delivered")
 	if err != nil {
@@ -516,8 +516,8 @@ func TestPurgeOrphanedWorktrees_RemovesDeletedDropletWorktree(t *testing.T) {
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
 	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 
 	_, err := prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"purged")
 	if err != nil {
@@ -567,8 +567,8 @@ func TestPurgeOrphanedWorktrees_SkipsAqueductWorkerDirs(t *testing.T) {
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
 	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 
 	branchMustRun(t, branchGitCmd(dstPrimary, "worktree", "add", filepath.Join(sandboxRoot, repoName, "alpha"), "HEAD"))
 	branchMustRun(t, branchGitCmd(dstPrimary, "worktree", "add", filepath.Join(sandboxRoot, repoName, "beta"), "HEAD"))
@@ -611,8 +611,8 @@ func TestPurgeOrphanedWorktrees_SkipsNonPrefixDirs(t *testing.T) {
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
 	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 
 	if err := os.MkdirAll(filepath.Join(sandboxRoot, repoName, "other-dir"), 0o755); err != nil {
 		t.Fatal(err)
@@ -653,8 +653,8 @@ func TestPurgeOrphanedWorktrees_RemovesCancelledAndPooled(t *testing.T) {
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
 	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 
 	_, err := prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"cancelled")
 	if err != nil {
@@ -688,6 +688,59 @@ func TestPurgeOrphanedWorktrees_RemovesCancelledAndPooled(t *testing.T) {
 	}
 	if worktreeExists(t, sandboxRoot, repoName, prefix+"pooled") {
 		t.Error("pooled droplet worktree should have been removed")
+	}
+}
+
+// TestPurgeOrphanedWorktrees_PrefixMismatch_StillPurgesOrphans verifies that
+// when the configured prefix doesn't match actual droplet IDs (e.g. config says
+// "lm" but droplets use "ll"), the regex fallback still catches orphaned
+// worktrees via the DB lookup.
+func TestPurgeOrphanedWorktrees_PrefixMismatch_StillPurgesOrphans(t *testing.T) {
+	primaryDir := makeBareAndClone(t)
+	sandboxRoot := t.TempDir()
+	repoName := "test-repo"
+	configPrefix := "lm-"
+
+	if err := os.MkdirAll(filepath.Join(sandboxRoot, repoName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
+	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
+
+	_, err := prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, "ll-abcde")
+	if err != nil {
+		t.Fatalf("prepare worktree: %v", err)
+	}
+
+	if !worktreeExists(t, sandboxRoot, repoName, "ll-abcde") {
+		t.Fatal("worktree should exist before purge")
+	}
+
+	client := newMockClient()
+	client.items["ll-abcde"] = &cistern.Droplet{ID: "ll-abcde", Status: "cancelled"}
+
+	s := &Castellarius{
+		config: aqueduct.AqueductConfig{
+			Repos: []aqueduct.RepoConfig{
+				{Name: repoName, Prefix: configPrefix, Names: []string{"alpha"}},
+			},
+		},
+		clients:     map[string]CisternClient{repoName: client},
+		pools:       map[string]*AqueductPool{repoName: NewAqueductPool(repoName, []string{"alpha"})},
+		sandboxRoot: sandboxRoot,
+		logger:      newBranchLifecycleLogger(io.Discard),
+	}
+
+	s.purgeOrphanedWorktrees()
+
+	if worktreeExists(t, sandboxRoot, repoName, "ll-abcde") {
+		t.Error("prefix-mismatched cancelled droplet worktree should have been removed via regex fallback")
+	}
+	if branchExists(t, dstPrimary, "feat/ll-abcde") {
+		t.Error("feature branch for prefix-mismatched cancelled droplet should have been deleted")
 	}
 }
 
@@ -729,8 +782,8 @@ func makeEmptyBareAndClone(t *testing.T) string {
 	// Clone the bare remote. This creates a primary clone with origin set,
 	// but origin/main is unborn (no commits).
 	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, primaryDir))
-	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Lobsterdog Contributors"))
 
 	return primaryDir
 }
@@ -947,8 +1000,8 @@ func TestPrepareBranchInSandbox_EmptyRepo_CreatesOrphanBranch(t *testing.T) {
 	// (simulating the worktree EnsureWorktree would create).
 	worktreeDir := filepath.Join(t.TempDir(), "sandbox")
 	branchMustRun(t, branchGitCmd(primaryDir, "worktree", "add", "--orphan", "-b", "_worker_sandbox", worktreeDir))
-	branchMustRun(t, branchGitCmd(worktreeDir, "config", "user.email", "test@test.com"))
-	branchMustRun(t, branchGitCmd(worktreeDir, "config", "user.name", "Test"))
+	branchMustRun(t, branchGitCmd(worktreeDir, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(worktreeDir, "config", "user.name", "Lobsterdog Contributors"))
 
 	// Now prepareBranchInSandbox on the orphan worktree.
 	if err := prepareBranchInSandbox(worktreeDir, "drop-empty-branch"); err != nil {
@@ -963,5 +1016,78 @@ func TestPrepareBranchInSandbox_EmptyRepo_CreatesOrphanBranch(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(branchOut)); got != "feat/drop-empty-branch" {
 		t.Errorf("current branch = %q, want feat/drop-empty-branch", got)
+	}
+}
+
+// --- purgeStaleBranches tests ---
+
+// TestPurgeStaleBranches_DeletesTerminalDropletBranches verifies that
+// purgeStaleBranches removes local feat/<id> branches for droplets in
+// delivered/cancelled/pooled status, while preserving branches for active
+// droplets and non-feat branches.
+func TestPurgeStaleBranches_DeletesTerminalDropletBranches(t *testing.T) {
+	primaryDir := makeBareAndClone(t)
+	sandboxRoot := t.TempDir()
+	repoName := "test-repo"
+	prefix := "te-"
+
+	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
+	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
+
+	_, err := prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"deliver")
+	if err != nil {
+		t.Fatalf("prepare worktree: %v", err)
+	}
+	_, err = prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"cancel")
+	if err != nil {
+		t.Fatalf("prepare worktree: %v", err)
+	}
+	_, err = prepareDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"active")
+	if err != nil {
+		t.Fatalf("prepare worktree: %v", err)
+	}
+
+	removeDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"deliver", true)
+	removeDropletWorktree(dstPrimary, sandboxRoot, repoName, prefix+"cancel", true)
+
+	if !branchExists(t, dstPrimary, "feat/"+prefix+"deliver") {
+		t.Fatal("feat/te-deliver branch should exist after keepBranch cleanup")
+	}
+	if !branchExists(t, dstPrimary, "feat/"+prefix+"cancel") {
+		t.Fatal("feat/te-cancel branch should exist before purge")
+	}
+	if !branchExists(t, dstPrimary, "feat/"+prefix+"active") {
+		t.Fatal("feat/te-active branch should exist before purge")
+	}
+
+	client := newMockClient()
+	client.items[prefix+"deliver"] = &cistern.Droplet{ID: prefix + "deliver", Status: "delivered"}
+	client.items[prefix+"cancel"] = &cistern.Droplet{ID: prefix + "cancel", Status: "cancelled"}
+	client.items[prefix+"active"] = &cistern.Droplet{ID: prefix + "active", Status: "in_progress"}
+
+	s := &Castellarius{
+		config: aqueduct.AqueductConfig{
+			Repos: []aqueduct.RepoConfig{
+				{Name: repoName, Prefix: prefix, Names: []string{"alpha"}},
+			},
+		},
+		clients:     map[string]CisternClient{repoName: client},
+		pools:       map[string]*AqueductPool{repoName: NewAqueductPool(repoName, []string{"alpha"})},
+		sandboxRoot: sandboxRoot,
+		logger:      newBranchLifecycleLogger(io.Discard),
+	}
+
+	s.purgeStaleBranches(repoName, dstPrimary, prefix, client)
+
+	if branchExists(t, dstPrimary, "feat/"+prefix+"deliver") {
+		t.Error("feat/te-deliver should be deleted (delivered droplet)")
+	}
+	if branchExists(t, dstPrimary, "feat/"+prefix+"cancel") {
+		t.Error("feat/te-cancel should be deleted (cancelled droplet)")
+	}
+	if !branchExists(t, dstPrimary, "feat/"+prefix+"active") {
+		t.Error("feat/te-active should be preserved (in-progress droplet)")
 	}
 }

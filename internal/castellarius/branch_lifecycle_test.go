@@ -35,8 +35,9 @@ func branchMustRun(t *testing.T, cmd *exec.Cmd) {
 //	base/remote/ — bare git repo with one commit on main
 //	base/primary/ — full clone of remote (has origin remote set)
 //
-// Returns the primary directory. Callers have origin/main available for fetch.
-func makeBareAndClone(t *testing.T) string {
+// Returns the primary directory and the bare remote directory.
+// Callers have origin/main available for fetch.
+func makeBareAndClone(t *testing.T) (string, string) {
 	t.Helper()
 	base := t.TempDir()
 	remoteDir := filepath.Join(base, "remote")
@@ -64,7 +65,7 @@ func makeBareAndClone(t *testing.T) string {
 	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.email", "noreply@lobsterdog.dev"))
 	branchMustRun(t, branchGitCmd(primaryDir, "config", "user.name", "Lobsterdog Contributors"))
 
-	return primaryDir
+	return primaryDir, remoteDir
 }
 
 // currentBranch returns the symbolic branch name of HEAD, or "HEAD" if detached.
@@ -92,7 +93,7 @@ func branchExists(t *testing.T, dir, branchName string) bool {
 // TestPrepareBranchInSandbox_NewBranch verifies that calling prepareBranchInSandbox
 // on a repo that does not yet have the feature branch creates it from origin/main.
 func TestPrepareBranchInSandbox_NewBranch(t *testing.T) {
-	dir := makeBareAndClone(t)
+	dir, _ := makeBareAndClone(t)
 
 	if err := prepareBranchInSandbox(dir, "drop-new"); err != nil {
 		t.Fatalf("prepareBranchInSandbox: %v", err)
@@ -106,7 +107,7 @@ func TestPrepareBranchInSandbox_NewBranch(t *testing.T) {
 // TestPrepareBranchInSandbox_NewBranch_ConfiguresGitIdentity verifies that
 // git user.name and user.email are set in the repo after the call.
 func TestPrepareBranchInSandbox_NewBranch_ConfiguresGitIdentity(t *testing.T) {
-	dir := makeBareAndClone(t)
+	dir, _ := makeBareAndClone(t)
 
 	if err := prepareBranchInSandbox(dir, "drop-ident"); err != nil {
 		t.Fatalf("prepareBranchInSandbox: %v", err)
@@ -133,7 +134,7 @@ func TestPrepareBranchInSandbox_NewBranch_ConfiguresGitIdentity(t *testing.T) {
 // already exists, prepareBranchInSandbox checks it out without resetting it —
 // preserving any commits already on the branch.
 func TestPrepareBranchInSandbox_ResumeBranch(t *testing.T) {
-	dir := makeBareAndClone(t)
+	dir, _ := makeBareAndClone(t)
 
 	// First call creates the branch.
 	if err := prepareBranchInSandbox(dir, "drop-resume"); err != nil {
@@ -177,7 +178,7 @@ func TestPrepareBranchInSandbox_ResumeBranch(t *testing.T) {
 // deletes the feat/<id> branch ref in the primary clone, not just the worktree
 // directory. Without this, dead branch refs accumulate indefinitely.
 func TestRemoveDropletWorktree_DeletesBranch(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 
 	// Create a worktree so there's a branch to remove.
@@ -201,7 +202,7 @@ func TestRemoveDropletWorktree_DeletesBranch(t *testing.T) {
 // TestPrepareDropletWorktree_NewWorktree_CreatesOnFeatureBranch verifies that a
 // new worktree is created at the correct path on the feature branch.
 func TestPrepareDropletWorktree_NewWorktree_CreatesOnFeatureBranch(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 
 	worktreePath, err := prepareDropletWorktree(primaryDir, sandboxRoot, "myrepo", "drop-new")
@@ -222,7 +223,7 @@ func TestPrepareDropletWorktree_NewWorktree_CreatesOnFeatureBranch(t *testing.T)
 // the feature branch does not yet exist, the new worktree is created from
 // origin/main and the worktree is clean — no dirty state from the primary clone.
 func TestPrepareDropletWorktree_FreshBranch_StartsAtOriginMain(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 
 	originMainSHA := func() string {
@@ -273,7 +274,7 @@ func newBranchLifecycleLogger(w io.Writer) *slog.Logger {
 // branch ref survives in the primary clone (stagnant path).
 func TestRemoveDropletWorktree_KeepBranch_WhenStagnant_PreservesFeatureBranch(t *testing.T) {
 	// Given: a worktree created for a droplet with a commit on the feature branch.
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	l := newBranchLifecycleLogger(io.Discard)
 
@@ -306,7 +307,7 @@ func TestRemoveDropletWorktree_KeepBranch_WhenStagnant_PreservesFeatureBranch(t 
 // removed (done/cancelled path).
 func TestRemoveDropletWorktree_DeletesBranchAndDir_WhenDone(t *testing.T) {
 	// Given: a worktree created for a droplet.
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	l := newBranchLifecycleLogger(io.Discard)
 
@@ -335,7 +336,7 @@ func TestRemoveDropletWorktree_DeletesBranchAndDir_WhenDone(t *testing.T) {
 // the no-b path, retaining all prior commits.
 func TestPrepareDropletWorktree_ResumesFromExistingBranch_AfterStagnantCleanup(t *testing.T) {
 	// Given: a worktree created, agent commits some work, stagnant cleanup runs.
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	l := newBranchLifecycleLogger(io.Discard)
 
@@ -393,7 +394,7 @@ func TestPrepareDropletWorktree_ResumesFromExistingBranch_AfterStagnantCleanup(t
 // Run with -race to confirm no Go-level data races are introduced by the
 // mutex acquisition pattern.
 func TestPrepareDropletWorktree_ConcurrentSameRepo(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 
 	const repoName = "myrepo"
@@ -445,7 +446,7 @@ func worktreeExists(t *testing.T, sandboxRoot, repoName, dropletID string) bool 
 // purgeOrphanedWorktrees removes a worktree whose droplet is in "delivered"
 // status, while leaving active droplet worktrees untouched.
 func TestPurgeOrphanedWorktrees_RemovesDeliveredDropletWorktree(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	prefix := "test-"
@@ -505,7 +506,7 @@ func TestPurgeOrphanedWorktrees_RemovesDeliveredDropletWorktree(t *testing.T) {
 // purgeOrphanedWorktrees removes a worktree whose droplet has been purged
 // from the database entirely (Get returns not-found error).
 func TestPurgeOrphanedWorktrees_RemovesDeletedDropletWorktree(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	prefix := "test-"
@@ -556,7 +557,7 @@ func TestPurgeOrphanedWorktrees_RemovesDeletedDropletWorktree(t *testing.T) {
 // matching aqueduct worker names (alpha, beta, etc.) are never removed even
 // though they don't match the droplet prefix.
 func TestPurgeOrphanedWorktrees_SkipsAqueductWorkerDirs(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	_, remoteDir := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	prefix := "test-"
@@ -566,12 +567,12 @@ func TestPurgeOrphanedWorktrees_SkipsAqueductWorkerDirs(t *testing.T) {
 	}
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
-	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
+	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, dstPrimary))
 	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
 	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 
-	branchMustRun(t, branchGitCmd(dstPrimary, "worktree", "add", filepath.Join(sandboxRoot, repoName, "alpha"), "HEAD"))
-	branchMustRun(t, branchGitCmd(dstPrimary, "worktree", "add", filepath.Join(sandboxRoot, repoName, "beta"), "HEAD"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "worktree", "add", "--detach", filepath.Join(sandboxRoot, repoName, "alpha"), "main"))
+	branchMustRun(t, branchGitCmd(dstPrimary, "worktree", "add", "--detach", filepath.Join(sandboxRoot, repoName, "beta"), "main"))
 
 	client := newMockClient()
 
@@ -600,7 +601,7 @@ func TestPurgeOrphanedWorktrees_SkipsAqueductWorkerDirs(t *testing.T) {
 // TestPurgeOrphanedWorktrees_SkipsNonPrefixDirs verifies that directories
 // that don't match the droplet prefix (e.g. random dirs) are skipped.
 func TestPurgeOrphanedWorktrees_SkipsNonPrefixDirs(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	prefix := "test-"
@@ -642,7 +643,7 @@ func TestPurgeOrphanedWorktrees_SkipsNonPrefixDirs(t *testing.T) {
 // TestPurgeOrphanedWorktrees_RemovesCancelledAndPooled verifies that
 // worktrees for cancelled and pooled droplets are also removed.
 func TestPurgeOrphanedWorktrees_RemovesCancelledAndPooled(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	prefix := "test-"
@@ -696,7 +697,7 @@ func TestPurgeOrphanedWorktrees_RemovesCancelledAndPooled(t *testing.T) {
 // "lm" but droplets use "ll"), the regex fallback still catches orphaned
 // worktrees via the DB lookup.
 func TestPurgeOrphanedWorktrees_PrefixMismatch_StillPurgesOrphans(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	configPrefix := "lm-"
@@ -791,7 +792,7 @@ func makeEmptyBareAndClone(t *testing.T) string {
 // TestRepoHasCommits_TrueWhenCommitsExist verifies that repoHasCommits returns
 // true when origin/main has commits.
 func TestRepoHasCommits_TrueWhenCommitsExist(t *testing.T) {
-	dir := makeBareAndClone(t)
+	dir, _ := makeBareAndClone(t)
 
 	has, err := repoHasCommits(dir, "origin/main")
 	if err != nil {
@@ -1026,13 +1027,13 @@ func TestPrepareBranchInSandbox_EmptyRepo_CreatesOrphanBranch(t *testing.T) {
 // delivered/cancelled/pooled status, while preserving branches for active
 // droplets and non-feat branches.
 func TestPurgeStaleBranches_DeletesTerminalDropletBranches(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	_, remoteDir := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "test-repo"
 	prefix := "te-"
 
 	dstPrimary := filepath.Join(sandboxRoot, repoName, "_primary")
-	branchMustRun(t, branchGitCmd(".", "clone", primaryDir, dstPrimary))
+	branchMustRun(t, branchGitCmd(".", "clone", remoteDir, dstPrimary))
 	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.email", "noreply@lobsterdog.dev"))
 	branchMustRun(t, branchGitCmd(dstPrimary, "config", "user.name", "Lobsterdog Contributors"))
 

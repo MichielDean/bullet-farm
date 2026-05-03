@@ -514,7 +514,7 @@ func TestRemoveDropletWorktree_NonGitDir_NoOp(t *testing.T) {
 // worktree also deletes the feat/<id> branch from the primary clone so branches
 // do not accumulate permanently.
 func TestRemoveDropletWorktree_DeletesBranchFromPrimary(t *testing.T) {
-	primaryDir := makeBareAndClone(t)
+	primaryDir, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 
 	// Create a worktree on feat/drop-rm.

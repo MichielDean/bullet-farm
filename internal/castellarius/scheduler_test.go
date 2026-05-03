@@ -2468,7 +2468,7 @@ func TestPrepareDropletWorktree_LogsWorktreeCreated(t *testing.T) {
 	l := newTestLogger(&buf)
 
 	// makeBareAndClone provides a primary with origin/main available for fetch.
-	primary := makeBareAndClone(t)
+	primary, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "logrepo"
 
@@ -2495,7 +2495,7 @@ func TestPrepareDropletWorktree_LogsWorktreeResumed(t *testing.T) {
 	var buf bytes.Buffer
 	l := newTestLogger(&buf)
 
-	primary := makeBareAndClone(t)
+	primary, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "logrepo"
 
@@ -2522,7 +2522,7 @@ func TestRemoveDropletWorktree_LogsWorktreeDeleted(t *testing.T) {
 	var buf bytes.Buffer
 	l := newTestLogger(&buf)
 
-	primary := makeBareAndClone(t)
+	primary, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "logrepo"
 
@@ -2549,7 +2549,7 @@ func TestRemoveDropletWorktree_LogsWarn_WhenWorktreeMissing(t *testing.T) {
 	var buf bytes.Buffer
 	l := newTestLogger(&buf)
 
-	primary := makeBareAndClone(t)
+	primary, _ := makeBareAndClone(t)
 	sandboxRoot := t.TempDir()
 	repoName := "logrepo"
 	dropletID := "ci-wt-missing"
